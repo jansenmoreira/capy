@@ -1,0 +1,4 @@
+command script import lldb/capy.py
+
+type summary add -F capy.capy_string capy_string
+type summary add -F capy.capy_vec capy_vec

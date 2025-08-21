@@ -1,0 +1,6 @@
+-Iinclude
+-Itests
+-std=c11
+-Wno-extra-semi
+-pedantic-errors
+-Wno-unused-includes
