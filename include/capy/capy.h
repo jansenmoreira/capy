@@ -2,6 +2,7 @@
 #define CAPY_H
 
 #include <capy/arena.h>
+#include <capy/assert.h>
 #include <capy/hash.h>
 #include <capy/smap.h>
 #include <capy/string.h>

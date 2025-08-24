@@ -1,8 +1,7 @@
 #ifndef CAPY_SMAP_H
 #define CAPY_SMAP_H
 
-#include <stdint.h>
-#include <stddef.h>
+#include <capy/std.h>
 
 struct capy_smap
 {

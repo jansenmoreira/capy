@@ -2,10 +2,9 @@
 #define CAPY_STRING_H
 
 #include <capy/arena.h>
-#include <capy/hash.h>
+#include <capy/assert.h>
+#include <capy/std.h>
 #include <stddef.h>
-#include <stdint.h>
-#include <string.h>
 
 typedef struct capy_string
 {
@@ -17,12 +16,24 @@ capy_string capy_string_copy(capy_arena *arena, capy_string s);
 capy_string capy_string_tolower(capy_arena *arena, capy_string s);
 capy_string capy_string_toupper(capy_arena *arena, capy_string s);
 
-static inline capy_string capy_string_slice(capy_string s, size_t begin, size_t end)
+static inline capy_string capy_string_slice(capy_string s, ptrdiff_t begin, ptrdiff_t end)
 {
-    if (begin > end || s.data == NULL || begin >= s.size || end > s.size)
+    ptrdiff_t size = s.size;
+
+    capy_assert(begin <= size);  // GCOVR_EXCL_LINE
+    capy_assert(end <= size);    // GCOVR_EXCL_LINE
+
+    if (begin < 0)
     {
-        return (capy_string){.data = NULL};
+        begin = size + begin;
     }
+
+    if (end < 0)
+    {
+        end = size + end;
+    }
+
+    capy_assert(begin <= end);  // GCOVR_EXCL_LINE
 
     s.data += begin;
     s.size = end - begin;
@@ -30,27 +41,31 @@ static inline capy_string capy_string_slice(capy_string s, size_t begin, size_t 
     return s;
 }
 
-static inline int capy_string_equals(capy_string a, capy_string b)
+static inline int capy_string_eq(capy_string a, capy_string b)
 {
     return (a.size == b.size) ? strncmp(a.data, b.data, b.size) == 0 : 0;
 }
 
-#define capy_string_bytes(s, n) \
-    ((capy_string){.data = (s), .size = n})
+static inline capy_string capy_string_bytes(const char *data, size_t size)
+{
+    return (capy_string){.data = data, .size = size};
+}
 
-#define capy_string_lit(s) \
-    capy_string_bytes((s), sizeof(s) - 1)
+static inline capy_string capy_string_shl(capy_string s, size_t size)
+{
+    return (capy_string){.data = s.data + size, .size = s.size - size};
+}
 
-#define capy_string_cstr(s) \
-    capy_string_bytes((s), strlen(s))
+static inline capy_string capy_string_shr(capy_string s, size_t size)
+{
+    return (capy_string){.data = s.data, .size = s.size - size};
+}
 
-#define capy_string_resize(s, n) \
-    capy_string_bytes((s).data, n)
+static inline capy_string capy_string_cstr(const char *data)
+{
+    return (capy_string){.data = data, .size = strlen(data)};
+}
 
-#define capy_string_shrinkl(s, n) \
-    ((capy_string){.data = (s).data + (n), .size = (s).size - (n)})
-
-#define capy_string_shrinkr(s, n) \
-    capy_string_resize((s), (s).size - (n));
+#define capy_string_literal(s) ((capy_string){.data = (s), .size = sizeof(s) - 1})
 
 #endif

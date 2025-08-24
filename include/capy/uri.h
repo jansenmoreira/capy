@@ -2,11 +2,12 @@
 #define CAPY_URI_H
 
 #include <capy/arena.h>
+#include <capy/std.h>
 #include <capy/string.h>
 
-typedef struct capy_URI
+typedef struct capy_uri
 {
-    capy_string schema;
+    capy_string scheme;
     capy_string authority;
     capy_string userinfo;
     capy_string host;
@@ -14,10 +15,11 @@ typedef struct capy_URI
     capy_string path;
     capy_string query;
     capy_string fragment;
-    capy_string ipv4;
-    capy_string ipv6;
-} capy_URI;
+} capy_uri;
 
-capy_URI *capy_URI_decode(capy_arena *arena, capy_string input);
+int capy_uri_valid(capy_uri uri);
+capy_string capy_uri_string(capy_arena *arena, capy_uri uri);
+capy_uri capy_uri_parse(capy_string input);
+capy_uri capy_uri_resolve_reference(capy_arena *arena, capy_uri base, capy_uri relative);
 
 #endif

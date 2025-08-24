@@ -1,8 +1,7 @@
 #ifndef CAPY_ARENA_H
 #define CAPY_ARENA_H
 
-#include <stdalign.h>
-#include <stddef.h>
+#include <capy/std.h>
 
 typedef struct capy_arena capy_arena;
 

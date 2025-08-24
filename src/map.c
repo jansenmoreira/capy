@@ -1,6 +1,5 @@
 #include <capy/capy.h>
 #include <errno.h>
-#include <stdlib.h>
 
 void *capy_smap_get(void **ptr, ptrdiff_t pair_size, const char *key)
 {
@@ -56,7 +55,7 @@ int capy_smap_set(void **ptr, ptrdiff_t pair_size, const char *key, void *value)
 
         for (ptrdiff_t i = 0; smap != NULL && i < smap->capacity; i++)
         {
-            const char **src = (const char**)(*ptr) + (pair_size * i);
+            const char **src = (const char **)(*ptr) + (pair_size * i);
 
             if (src[0] == NULL || src[0] == TOMBSTONE)
             {
@@ -69,7 +68,7 @@ int capy_smap_set(void **ptr, ptrdiff_t pair_size, const char *key, void *value)
             for (;;)
             {
                 size_t index = sizeof(struct capy_smap) + (pair_size * k);
-                const char **dst = (const char**)(buffer + index);
+                const char **dst = (const char **)(buffer + index);
 
                 if (dst[0] == NULL)
                 {
@@ -94,7 +93,7 @@ int capy_smap_set(void **ptr, ptrdiff_t pair_size, const char *key, void *value)
     for (;;)
     {
         size_t index = sizeof(struct capy_smap) + (pair_size * k);
-        const char **dst = (const char**)((uint8_t *)(*ptr) + index);
+        const char **dst = (const char **)((uint8_t *)(*ptr) + index);
 
         if (dst[0] == NULL || dst[0] == TOMBSTONE || strcmp(*dst, key) == 0)
         {
@@ -121,14 +120,14 @@ void capy_smap_delete(void **ptr, ptrdiff_t pair_size, const char *key)
 
 void *capy_smap_next(void *data, ptrdiff_t pair_size, void *it)
 {
-    uint8_t* end = (uint8_t*)(data) + (pair_size * capy_smap_capacity(data));
-    uint8_t* cursor = it;
+    uint8_t *end = (uint8_t *)(data) + (pair_size * capy_smap_capacity(data));
+    uint8_t *cursor = it;
 
     cursor = (cursor == NULL) ? data : cursor + pair_size;
 
     while (cursor < end)
     {
-        const char **item = (const char**)(cursor);
+        const char **item = (const char **)(cursor);
 
         if (item[0] != NULL && item[0] != TOMBSTONE)
         {

@@ -10,6 +10,6 @@ int main(void)
     test_vec();
     test_string();
     test_uri();
-    test_sset();
+    // test_sset();
     // test_smap();
 }

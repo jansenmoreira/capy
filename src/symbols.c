@@ -1,5 +1,4 @@
 #include <capy/capy.h>
-#include <stdlib.h>
 
 const char *capy_symbols_add(const char ***pool, const char *str)
 {

@@ -1,81 +1,105 @@
-#include <asm-generic/errno-base.h>
-#include <assert.h>
 #include <capy/capy.h>
 #include <errno.h>
-#include <stddef.h>
-#include <stdlib.h>
 
-void *capy_vec_init(capy_arena *arena, size_t element_size, size_t capacity, int strategy)
+static inline capy_vec *capy_vec_head(void *ptr)
+{
+    capy_assert(ptr != NULL);  // GCOVR_EXCL_LINE
+
+    capy_vec *data = *(capy_vec **)(ptr);
+
+    capy_assert(data != NULL);  // GCOVR_EXCL_LINE
+
+    return data - 1;
+}
+
+void *capy_vec_init(capy_arena *arena, size_t element_size, size_t capacity)
 {
     size_t total = sizeof(capy_vec) + (element_size * capacity);
 
     capy_vec *vector = capy_arena_grow(arena, total, alignof(capy_vec));
 
+    if (!vector)
+    {
+        return NULL;
+    }
+
     vector->arena = arena;
     vector->capacity = capacity;
     vector->element_size = element_size;
-    vector->strategy = strategy;
 
-    if (vector)
-    {
-        return vector->data;
-    }
-
-    return NULL;
+    return vector->data;
 }
 
-int capy_vec_reserve(void **ptr, size_t capacity)
+int capy_vec_reserve(void *ptr, size_t capacity)
 {
-    capy_vec *vec = capy_vec_head(*ptr);
+    capy_vec *vec = capy_vec_head(ptr);
 
-    assert(vec != NULL);
+    capy_assert(vec != NULL);  // GCOVR_EXCL_LINE
 
-    if (vec->capacity < capacity)
+    if (capacity <= vec->capacity)
     {
-        switch (vec->strategy)
+        return 0;
+    }
+
+    if (vec->arena == NULL)
+    {
+        return ENOMEM;
+    }
+
+    uint8_t *vec_top = vec->data + (vec->element_size * vec->capacity);
+    uint8_t *arena_top = capy_arena_top(vec->arena);
+
+    if (vec_top == arena_top)
+    {
+        if (capy_arena_grow(vec->arena, vec->element_size * (capacity - vec->capacity), 0) == NULL)
         {
-            case CAPY_VEC_UNBOUNDED:
-            {
-                if (capy_arena_grow(vec->arena, capacity - vec->capacity, 0) == NULL)
-                {
-                    return ENOMEM;
-                }
-            }
-            break;
+            return ENOMEM;
+        }
+    }
+    else
+    {
+        void *data = capy_vec_init(vec->arena, vec->element_size, capacity);
 
-            case CAPY_VEC_REALLOC:
-            {
-                void *data = capy_vec_init(vec->arena, vec->element_size, capacity, vec->strategy);
-
-                if (data == NULL)
-                {
-                    return ENOMEM;
-                }
-
-                memcpy(data, vec->data, vec->size * vec->element_size);
-
-                *ptr = data;
-                vec = capy_vec_head(data);
-            }
-            break;
-
-            default:
-            {
-                return ENOMEM;
-            }
+        if (data == NULL)
+        {
+            return ENOMEM;
         }
 
-        vec->capacity = capacity;
+        memcpy(data, vec->data, vec->size * vec->element_size);
+
+        *(void **)(ptr) = data;
+
+        vec = capy_vec_head(ptr);
     }
+
+    vec->capacity = capacity;
 
     return 0;
 }
 
-int capy_vec_resize(void **ptr, size_t size)
+int capy_vec_push(void *ptr, void *value)
 {
-    capy_vec *vec = capy_vec_head(*ptr);
+    capy_vec *vec = capy_vec_head(ptr);
+    return capy_vec_insert(ptr, vec->size, 1, value);
+}
 
-    assert(vec != NULL);
+int capy_vec_pop(void *ptr)
+{
+    capy_vec *vec = capy_vec_head(ptr);
+
+    if (vec->size)
+    {
+        return capy_vec_resize(ptr, vec->size - 1);
+    }
+
+    return EINVAL;
+}
+
+int capy_vec_resize(void *ptr, size_t size)
+{
+    capy_vec *vec = capy_vec_head(ptr);
+
+    capy_assert(vec != NULL);  // GCOVR_EXCL_LINE
 
     if (size > vec->capacity)
     {
@@ -86,7 +110,7 @@ int capy_vec_resize(void **ptr, size_t size)
             return err;
         }
 
-        vec = capy_vec_head(*ptr);
+        vec = capy_vec_head(ptr);
     }
 
     vec->size = size;
@@ -94,11 +118,11 @@ int capy_vec_resize(void **ptr, size_t size)
     return 0;
 }
 
-int capy_vec_insert(void **ptr, size_t position, size_t size, void *values)
+int capy_vec_insert(void *ptr, size_t position, size_t size, void *values)
 {
-    capy_vec *vec = capy_vec_head(*ptr);
+    capy_vec *vec = capy_vec_head(ptr);
 
-    assert(vec != NULL);
+    capy_assert(vec != NULL);  // GCOVR_EXCL_LINE
 
     if (position > vec->size)
     {
@@ -114,7 +138,7 @@ int capy_vec_insert(void **ptr, size_t position, size_t size, void *values)
         return err;
     }
 
-    vec = capy_vec_head(*ptr);
+    vec = capy_vec_head(ptr);
 
     if (tail_size > 0)
     {
@@ -133,11 +157,11 @@ int capy_vec_insert(void **ptr, size_t position, size_t size, void *values)
     return 0;
 }
 
-int capy_vec_delete(void **ptr, size_t position, size_t size)
+int capy_vec_delete(void *ptr, size_t position, size_t size)
 {
-    capy_vec *vec = capy_vec_head(*ptr);
+    capy_vec *vec = capy_vec_head(ptr);
 
-    assert(vec != NULL);
+    capy_assert(vec != NULL);  // GCOVR_EXCL_LINE
 
     if (position + size > vec->size)
     {

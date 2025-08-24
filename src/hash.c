@@ -1,3 +1,32 @@
+/*
+ * rapidhash V3 - Very fast, high quality, platform-independent hashing algorithm.
+ *
+ * Based on 'wyhash', by Wang Yi <godspeed_china@yeah.net>
+ *
+ * Copyright (C) 2025 Nicolas De Carli
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ *
+ * You can contact the author at:
+ *   - rapidhash source repository: https://github.com/Nicoshev/rapidhash
+ */
+
 #include <capy/capy.h>
 
 static const uint64_t rapidhash_secret[8] = {
@@ -11,7 +40,7 @@ static const uint64_t rapidhash_secret[8] = {
     0xaaaaaaaaaaaaaaaaull,
 };
 
-static inline void rapidhash_mum(uint64_t *A, uint64_t *B)
+static inline void rapidhash_mul128(uint64_t *A, uint64_t *B)
 {
     __uint128_t r = *A;
     r *= *B;
@@ -21,7 +50,7 @@ static inline void rapidhash_mum(uint64_t *A, uint64_t *B)
 
 static inline uint64_t rapidhash_mix(uint64_t A, uint64_t B)
 {
-    rapidhash_mum(&A, &B);
+    rapidhash_mul128(&A, &B);
     return A ^ B;
 }
 
@@ -31,7 +60,6 @@ static inline uint64_t rapidhash_read64(const uint8_t *p)
     memcpy(&v, p, sizeof(uint64_t));
     return v;
 }
-
 static inline uint64_t rapidhash_read32(const uint8_t *p)
 {
     uint32_t v;
@@ -39,12 +67,12 @@ static inline uint64_t rapidhash_read32(const uint8_t *p)
     return v;
 }
 
-uint64_t rapidhash(const void *key, ptrdiff_t len, uint64_t seed, const uint64_t *secret)
+static inline uint64_t rapidhash_nano(const void *key, size_t len, uint64_t seed, const uint64_t *secret)
 {
-    const uint8_t *p = key;
+    const uint8_t *p = (const uint8_t *)(key);
     seed ^= rapidhash_mix(seed ^ secret[2], secret[1]);
     uint64_t a = 0, b = 0;
-    ptrdiff_t i = len;
+    size_t i = len;
 
     if (len <= 16)
     {
@@ -110,13 +138,12 @@ uint64_t rapidhash(const void *key, ptrdiff_t len, uint64_t seed, const uint64_t
     a ^= secret[1];
     b ^= seed;
 
-    rapidhash_mum(&a, &b);
+    rapidhash_mul128(&a, &b);
 
     return rapidhash_mix(a ^ secret[7], b ^ secret[1] ^ i);
 }
 
 uint64_t capy_hash(const char *key, uint64_t length)
 {
-    uint64_t hash = rapidhash(key, length, 0, rapidhash_secret);
-    return hash;
+    return rapidhash_nano(key, length, 0, rapidhash_secret);
 }

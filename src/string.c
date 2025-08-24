@@ -5,7 +5,7 @@ capy_string capy_string_copy(capy_arena *arena, capy_string s)
 {
     if (s.size == 0)
     {
-        return (capy_string){.data = NULL};
+        return (capy_string){NULL};
     }
 
     char *buffer = capy_arena_make(char, arena, s.size + 1);

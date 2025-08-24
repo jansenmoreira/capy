@@ -1,7 +1,5 @@
-#include <assert.h>
 #include <capy/capy.h>
 #include <errno.h>
-#include <stdalign.h>
 #include <sys/mman.h>
 #include <unistd.h>
 
@@ -32,7 +30,7 @@ capy_arena *capy_arena_init(size_t limit)
 
     if (mprotect(arena, page_size, PROT_READ | PROT_WRITE) < 0)
     {
-        return NULL;
+        return NULL;  // GCOVR_EXCL_LINE
     }
 
     arena->size = 40;
@@ -45,15 +43,25 @@ capy_arena *capy_arena_init(size_t limit)
 
 int capy_arena_free(capy_arena *arena)
 {
-    return munmap(arena, arena->limit), errno;
+    if (munmap(arena, arena->limit) < 0)
+    {
+        return errno;  // GCOVR_EXCL_LINE
+    }
+
+    return 0;
 }
 
 void *capy_arena_grow(capy_arena *arena, size_t size, size_t align)
 {
-    assert(arena != NULL);
+    capy_assert(arena != NULL);  // GCOVR_EXCL_LINE
 
     size_t begin = (align) ? align_to(arena->size, align) : arena->size;
     size_t end = begin + size;
+
+    if (end > arena->limit)
+    {
+        return NULL;
+    }
 
     if (end > arena->capacity)
     {
@@ -61,7 +69,7 @@ void *capy_arena_grow(capy_arena *arena, size_t size, size_t align)
 
         if (mprotect(arena, capacity, PROT_READ | PROT_WRITE) < 0)
         {
-            return NULL;
+            return NULL;  // GCOVR_EXCL_LINE
         }
 
         arena->capacity = capacity;

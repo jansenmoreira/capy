@@ -1,58 +1,101 @@
+#include "capy/vec.h"
+
+#include <asm-generic/errno-base.h>
+#include <asm-generic/errno.h>
+
+#include "capy/arena.h"
 #include "test.h"
 
 int test_vec(void)
 {
-    capy_arena *arena = capy_arena_init(GiB(8ULL));
+    capy_arena *arena1 = capy_arena_init(KiB(1));
 
-    uint16_t *vec1 = capy_vec_init_u16(arena, 8, CAPY_VEC_REALLOC);
-    float *vec2 = capy_vec_init_f32(arena, 8, CAPY_VEC_REALLOC);
-    uint16_t *vec3 = capy_vec_init_u16(arena, 8, CAPY_VEC_REALLOC);
+    int16_t *vec1 = capy_vec_of(int16_t, arena1, 8);
 
-    int a = capy_vec_reserve_u16(&vec1, 40);
-    capy_vec_resize_u16(&vec1, 11);
-    capy_vec_resize_u16(&vec3, 11);
+    int err = capy_vec_insert(&vec1, 1, 1, NULL);
+    expect_s_eq(err, EINVAL);
 
-    vec1[0] = 0;
-    vec3[0] = 0;
+    err = capy_vec_insert(&vec1, 0, KiB(2), NULL);
+    expect_s_eq(err, ENOMEM);
 
-    for (uint16_t i = 1; i <= 10; i++)
+    for (int16_t i = 1; i <= 10; i++)
     {
-        vec1[i] = i * 10;
-        vec3[i] = i;
-        capy_vec_push_f32(&vec2, i * i);
+        err = capy_vec_push(&vec1, &i);
+        expect_s_eq(err, 0);
     }
 
-    capy_vec_resize_f32(&vec2, capy_vec_size(vec2) - 1);
+    int16_t buffer1[] = {-1, -2, -3, -4, -5, -6, -7, -8, -9, -10};
+    int16_t expected[] = {1, 2, 3, 4, 5, -1, -2, -3, -4, -5, 6, 7, 8, 9, 10, -6, -7, -8, -9, -10, 0};
 
-    int limit = capy_vec_size(vec2);
-    for (int i = 0; i < limit; i++)
+    err = capy_vec_insert(&vec1, 5, 5, buffer1);
+    expect_s_eq(err, 0);
+
+    err = capy_vec_insert(&vec1, capy_vec_size(vec1), 5, buffer1 + 5);
+    expect_s_eq(err, 0);
+
+    err = capy_vec_insert(&vec1, capy_vec_size(vec1), 1, NULL);
+    expect_s_eq(err, 0);
+    expect_u_eq(capy_vec_size(vec1), 21);
+
+    for (int16_t i = 0; i < arrlen(expected); i++)
     {
-        float last = vec2[capy_vec_size(vec2) - 1];
-        capy_vec_pop_f32(&vec2);
-        printf("%.2f\n", last);
+        expect_u_eq(vec1[i], expected[i]);
     }
 
-    for (int i = 0; i < capy_vec_size(vec1); i++)
+    err = capy_vec_pop(&vec1);
+    expect_s_eq(err, 0);
+    expect_u_eq(capy_vec_size(vec1), 20);
+
+    err = capy_vec_delete(&vec1, 5, 5);
+    expect_s_eq(err, 0);
+    expect_u_eq(capy_vec_size(vec1), 15);
+
+    err = capy_vec_delete(&vec1, 10, 5);
+    expect_s_eq(err, 0);
+    expect_u_eq(capy_vec_size(vec1), 10);
+
+    for (int16_t i = 0; i < 10; i++)
     {
-        printf("%d\n", vec1[i]);
+        expect_u_eq(vec1[i], i + 1);
     }
 
-    capy_vec_insertvals_u16(&vec1, 5, 3, NULL);
-    capy_vec_insertvals_u16(&vec1, 14, 2, NULL);
+    err = capy_vec_delete(&vec1, 0, 10);
+    expect_s_eq(err, 0);
+    expect_u_eq(capy_vec_size(vec1), 0);
 
-    for (int i = 5; i < 5 + 3; i++)
-    {
-        vec1[i] = i * 1000;
-    }
+    err = capy_vec_pop(&vec1);
+    expect_s_eq(err, EINVAL);
 
-    capy_vec_insertvals_u16(&vec3, 5, capy_vec_size(vec1), vec1);
+    err = capy_vec_delete(&vec1, 0, 1);
+    expect_s_eq(err, EINVAL);
 
-    uint16_t t = 1234;
-    capy_vec_insertvals_u16(&vec3, 0, 1, &t);
-    capy_vec_insert_u16(&vec3, 20, 888);
-    capy_vec_insert_u16(&vec3, 20, 999);
+    float *vec2 = capy_arena_make(float, arena1, 64);
+    expect_p_ne(vec2, NULL);
 
-    capy_vec_delete_u16(&vec3, 6, 18);
+    int16_t *last_vec1 = vec1;
+    err = capy_vec_resize(&vec1, 64);
+    expect_s_eq(err, 0);
+    expect_p_ne(vec1, last_vec1);
+
+    vec2 = capy_arena_make(float, arena1, 64);
+    expect_p_ne(vec2, NULL);
+
+    err = capy_vec_resize(&vec1, KiB(2));
+    expect_s_eq(err, ENOMEM);
+
+    capy_vec_fixed(vec1);
+
+    err = capy_vec_resize(&vec1, 128);
+    expect_s_eq(err, 0);
+
+    err = capy_vec_resize(&vec1, 128);
+    expect_s_eq(err, 0);
+
+    err = capy_vec_reserve(&vec1, 64);
+    expect_s_eq(err, 0);
+
+    err = capy_vec_resize(&vec1, KiB(2));
+    expect_s_eq(err, ENOMEM);
 
     return 0;
 }

@@ -1,23 +1,46 @@
+#include "capy/string.h"
+
 #include "test.h"
+
+struct
+{
+    capy_string input;
+    int begin;
+    int end;
+    capy_string expected;
+} slices[] = {
+    {str("+AZaz12"), 0, 7, str("+AZaz12")},
+    {str("+AZaz12"), 1, 5, str("AZaz")},
+    {str("+AZaz12"), 0, 0, str("")},
+    {str("+AZaz12"), -2, 7, str("12")},
+    {str("+AZaz12"), 0, -2, str("+AZaz")},
+};
 
 int test_string(void)
 {
-    capy_string s = capy_string_lit("+AZaz12");
+    capy_arena *arena = capy_arena_init(MiB(1));
 
-    capy_arena *arena = capy_arena_init(1024);
+    const char *buffer = "012345";
 
-    capy_string lower = capy_string_tolower(arena, s);
-    capy_string upper = capy_string_toupper(arena, s);
-    capy_string slice = capy_string_slice(s, 1, 3);
+    capy_string cstr = capy_string_cstr(buffer);
+    expect_str_eq(str("012345"), cstr);
 
-    expect(capy_string_equals(capy_string_lit("+azaz12"), lower));
-    expect(capy_string_equals(capy_string_lit("+AZAZ12"), upper));
-    expect(capy_string_equals(capy_string_lit("AZ"), slice));
+    capy_string bytes = capy_string_bytes(buffer, 4);
+    expect_str_eq(str("0123"), bytes);
 
-    expect(capy_string_slice((capy_string){NULL}, 0, 5).size == 0);
-    expect(capy_string_slice(s, 0, 9).size == 0);
-    expect(capy_string_slice(s, 3, 2).size == 0);
-    expect(capy_string_slice(s, 9, 15).size == 0);
+    capy_string lower = capy_string_tolower(arena, str("+AZaz12"));
+    capy_string upper = capy_string_toupper(arena, str("+AZaz12"));
+    capy_string empty = (capy_string){NULL};
+
+    expect_str_eq(str("+azaz12"), lower);
+    expect_str_eq(str("+AZAZ12"), upper);
+    expect_str_eq(capy_string_copy(arena, str("")), empty);
+
+    for (int i = 0; i < arrlen(slices); i++)
+    {
+        capy_string result = capy_string_slice(slices[i].input, slices[i].begin, slices[i].end);
+        expect_str_eq(result, slices[i].expected);
+    }
 
     return 0;
 }
