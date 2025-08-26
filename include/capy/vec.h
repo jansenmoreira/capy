@@ -21,13 +21,6 @@ static inline size_t capy_vec_size(void *data)
     return ((capy_vec *)(data)-1)->size;
 }
 
-static inline size_t capy_vec_capacity(void *data)
-{
-    capy_assert(data != NULL);  // GCOVR_EXCL_LINE
-
-    return ((capy_vec *)(data)-1)->capacity;
-}
-
 static inline void capy_vec_fixed(void *data)
 {
     capy_assert(data != NULL);  // GCOVR_EXCL_LINE
@@ -36,12 +29,12 @@ static inline void capy_vec_fixed(void *data)
 }
 
 void *capy_vec_init(capy_arena *arena, size_t element_size, size_t capacity);
-int capy_vec_reserve(void *lvptr, size_t capacity);
-int capy_vec_resize(void *lvptr, size_t size);
-int capy_vec_insert(void *lvptr, size_t position, size_t size, void *values);
-int capy_vec_delete(void *lvptr, size_t position, size_t size);
-int capy_vec_pop(void *lvptr);
-int capy_vec_push(void *lvptr, void *value);
+void *capy_vec_reserve(void *data, size_t capacity);
+void *capy_vec_resize(void *data, size_t size);
+void *capy_vec_insert(void *data, size_t position, size_t size, void *values);
+void *capy_vec_delete(void *data, size_t position, size_t size);
+void *capy_vec_pop(void *data);
+void *capy_vec_push(void *data, void *value);
 
 #define capy_vec_of(T, arena, capacity) \
     ((T *)(capy_vec_init((arena), sizeof(T), (capacity))))

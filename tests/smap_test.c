@@ -1,131 +1,124 @@
+#include "capy/arena.h"
+#include "capy/string.h"
 #include "test.h"
 
-struct smap_pair_point tests[] = {
-    {.key = "a", .value.x = 1.0f},
-    {.key = "b", .value.x = 2.0f},
-    {.key = "c", .value.x = 3.0f},
-    {.key = "d", .value.x = 4.0f},
-    {.key = "e", .value.x = 5.0f},
-    {.key = "f", .value.x = 6.0f},
-    {.key = "g", .value.x = 7.0f},
-    {.key = "h", .value.x = 8.0f},
-    {.key = "i", .value.x = 9.0f},
-    {.key = "j", .value.x = 10.0f},
-    {.key = "k", .value.x = 11.0f},
-    {.key = "l", .value.x = 12.0f},
-    {.key = "m", .value.x = 13.0f},
-    {.key = "n", .value.x = 14.0f},
-    {.key = "o", .value.x = 15.0f},
-    {.key = "p", .value.x = 16.0f},
-    {.key = "q", .value.x = 17.0f},
-    {.key = "r", .value.x = 18.0f},
-    {.key = "s", .value.x = 19.0f},
-    {.key = "t", .value.x = 20.0f},
-    {.key = "u", .value.x = 21.0f},
-    {.key = "v", .value.x = 22.0f},
-    {.key = "w", .value.x = 23.0f},
-    {.key = "x", .value.x = 24.0f},
-    {.key = "y", .value.x = 25.0f},
-    {.key = "z", .value.x = 26.0f},
+static string_pair fields[] = {
+    {.key = str("a"), .value = str("A")},
+    {.key = str("b"), .value = str("B")},
+    {.key = str("c"), .value = str("C")},
+    {.key = str("d"), .value = str("D")},
+    {.key = str("e"), .value = str("E")},
+    {.key = str("f"), .value = str("F")},
+    {.key = str("g"), .value = str("G")},
+    {.key = str("h"), .value = str("H")},
+    {.key = str("i"), .value = str("I")},
+    {.key = str("j"), .value = str("J")},
+    {.key = str("k"), .value = str("K")},
+    {.key = str("l"), .value = str("L")},
+    {.key = str("m"), .value = str("M")},
+    {.key = str("n"), .value = str("N")},
+    {.key = str("o"), .value = str("O")},
+    {.key = str("p"), .value = str("P")},
+    {.key = str("q"), .value = str("Q")},
+    {.key = str("r"), .value = str("R")},
+    {.key = str("s"), .value = str("S")},
+    {.key = str("t"), .value = str("T")},
+    {.key = str("u"), .value = str("U")},
+    {.key = str("v"), .value = str("V")},
+    {.key = str("w"), .value = str("W")},
+    {.key = str("x"), .value = str("X")},
+    {.key = str("y"), .value = str("Y")},
+    {.key = str("z"), .value = str("Z")},
 };
 
-int test_smap(void)
+static int test_smap(void)
 {
-    //     struct smap_pair_point pair;
+    capy_arena *tiny_arena = capy_arena_init(KiB(1));
+    string_pair *tiny_smap = capy_smap_of(string_pair, tiny_arena, 16);
 
-    //     struct smap_pair_point *smap1 = NULL;
+    size_t max = 16 * 2 / 3;
 
-    //     for (int i = 0; i < 11; i++)
-    //     {
-    //         capy_smap_set_point(&smap1, tests[i]);
-    //     }
+    for (size_t i = 0; i < max; i++)
+    {
+        tiny_smap = capy_smap_set(tiny_smap, &fields[i].key);
+        expect_p_ne(tiny_smap, NULL);
+    }
 
-    //     for (int i = 0; i < 11; i++)
-    //     {
-    //         pair = capy_smap_get_point(&smap1, tests[i].key);
-    //         capy_expect(strcmp(pair.key, tests[i].key) == 0);
-    //         capy_expect(pair.value.x == tests[i].value.x);
-    //     }
+    tiny_smap = capy_smap_set(tiny_smap, &fields[max - 1].key);
+    expect_p_eq(tiny_smap, NULL);
 
-    //     pair = capy_smap_get_point(&smap1, tests[11].key);
-    //     capy_expect(pair.key == NULL);
+    capy_arena *arena = capy_arena_init(MiB(1));
+    string_pair *smap = capy_smap_of(string_pair, arena, 32);
 
-    //     capy_smap_delete_point(&smap1, tests[10].key);
-    //     capy_smap_delete_point(&smap1, "0");
+    for (size_t i = 0; i < arrlen(fields); i++)
+    {
+        smap = capy_smap_set(smap, &fields[i].key);
+        expect_p_ne(smap, NULL);
+    }
 
-    //     for (int i = 11; i < 26; i++)
-    //     {
-    //         capy_smap_set_point(&smap1, tests[i]);
-    //     }
+    string_pair *pair = NULL;
 
-    //     pair = capy_smap_get_point(&smap1, tests[10].key);
-    //     capy_expect(pair.key == NULL);
+    for (size_t i = 0; i < arrlen(fields); i++)
+    {
+        pair = capy_smap_get(smap, fields[i].key);
+        expect_p_ne(pair, NULL);
+        expect_str_eq(pair->key, fields[i].key);
+        expect_str_eq(pair->value, fields[i].value);
+    }
 
-    //     return 0;
-    // }
+    smap = capy_smap_delete(smap, str("d"));
+    expect_p_ne(smap, NULL);
 
-    // int test_sset(void)
-    // {
-    //     const char **sset1 = NULL;
+    pair = capy_smap_get(smap, str("d"));
+    expect_p_eq(pair, NULL);
 
-    //     for (int i = 0; i < 11; i++)
-    //     {
-    //         capy_sset_set(&sset1, tests[i].key);
-    //     }
+    smap = capy_smap_set(smap, &(string_pair){str("d"), str("d")}.key);
+    expect_p_ne(smap, NULL);
 
-    //     for (int i = 0; i < 11; i++)
-    //     {
-    //         const char *value = capy_sset_get(&sset1, tests[i].key);
-    //         capy_expect(strcmp(value, tests[i].key) == 0);
-    //     }
+    smap = capy_smap_set(smap, &(string_pair){str("q"), str("q")}.key);
+    expect_p_ne(smap, NULL);
 
-    //     capy_expect(capy_sset_get(&sset1, tests[11].key) == NULL);
+    pair = capy_smap_get(smap, str("d"));
+    expect_p_ne(pair, NULL);
+    expect_str_eq(pair->key, str("d"));
+    expect_str_eq(pair->value, str("d"));
 
-    //     capy_sset_delete(&sset1, tests[10].key);
-    //     capy_sset_delete(&sset1, "0");
+    pair = capy_smap_get(smap, str("q"));
+    expect_p_ne(pair, NULL);
+    expect_str_eq(pair->key, str("q"));
+    expect_str_eq(pair->value, str("q"));
 
-    //     for (int i = 11; i < 26; i++)
-    //     {
-    //         capy_sset_set(&sset1, tests[i].key);
-    //     }
+    smap = capy_smap_delete(smap, str("0"));
+    expect_p_ne(smap, NULL);
 
-    //     capy_expect(capy_sset_get(&sset1, tests[10].key) == NULL);
+    smap = capy_smap_delete(smap, str("z"));
+    expect_p_ne(smap, NULL);
 
-    //     return 0;
-    // }
+    char buffer[32];
 
-    // int test_symbols(void)
-    // {
-    //     char txt[100] = {'a', 0, 'b', 0, 'a', 0};
+    for (size_t i = 0; i < 20; i++)
+    {
+        size_t written = (size_t)(snprintf(buffer, 31, "%d", (int)(i)));
+        capy_string number = capy_string_bytes(buffer, written);
 
-    //     const char *a1 = "a";
-    //     const char *a2 = &txt[0];
-    //     const char *a3 = &txt[4];
-    //     const char *b1 = "b";
-    //     const char *b2 = &txt[2];
+        number = capy_string_copy(arena, number);
 
-    //     const char **symbols = NULL;
+        smap = capy_smap_set(smap, &(string_pair){number, number}.key);
+        expect_p_ne(smap, NULL);
+    }
 
-    //     const char *str_a1 = capy_symbols_add(&symbols, a1);
-    //     const char *str_a2 = capy_symbols_add(&symbols, a2);
-    //     const char *str_a3 = capy_symbols_add(&symbols, a3);
-    //     const char *str_a4 = capy_symbols_add(&symbols, "a");
+    for (size_t i = 0; i < 20; i++)
+    {
+        size_t written = (size_t)(snprintf(buffer, 31, "%d", (int)(i)));
+        capy_string number = capy_string_bytes(buffer, written);
 
-    //     capy_expect(str_a1 == str_a2);
-    //     capy_expect(str_a1 == str_a3);
-    //     capy_expect(str_a1 == str_a4);
+        pair = capy_smap_get(smap, number);
+        expect_p_ne(pair, NULL);
+        expect_str_eq(pair->key, number);
+        expect_str_eq(pair->value, number);
+    }
 
-    //     const char *str_b1 = capy_symbols_add(&symbols, b1);
-    //     const char *str_b2 = capy_symbols_add(&symbols, b2);
-    //     const char *str_b3 = capy_symbols_add(&symbols, "b");
-
-    //     capy_expect(str_b1 == str_b2);
-    //     capy_expect(str_b1 == str_b3);
-
-    //     capy_symbols_add(&symbols, "test1");
-    //     capy_symbols_add(&symbols, "example1");
-
-    //     capy_symbols_free(&symbols);
+    expect_u_eq(capy_smap_size(smap), 45);
 
     return 0;
 }

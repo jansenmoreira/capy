@@ -98,7 +98,7 @@ int capy_arena_shrink(capy_arena *arena, void *addr)
         return EINVAL;
     }
 
-    arena->size = size;
+    arena->size = (size_t)(size);
 
     return 0;
 }

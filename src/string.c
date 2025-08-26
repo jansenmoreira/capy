@@ -17,28 +17,61 @@ capy_string capy_string_copy(capy_arena *arena, capy_string s)
 
 capy_string capy_string_tolower(capy_arena *arena, capy_string s)
 {
-    s = capy_string_copy(arena, s);
+    char *data = capy_arena_make(char, arena, s.size + 1);
 
-    char *data = (char *)(s.data);
-
-    for (int i = 0; i < s.size; i++)
+    for (size_t i = 0; i < s.size; i++)
     {
-        data[i] = tolower(s.data[i]);
+        data[i] = (char)(tolower(s.data[i]));
     }
 
-    return s;
+    return capy_string_bytes(data, s.size);
 }
 
 capy_string capy_string_toupper(capy_arena *arena, capy_string s)
 {
-    s = capy_string_copy(arena, s);
+    char *data = capy_arena_make(char, arena, s.size + 1);
 
-    char *data = (char *)(s.data);
-
-    for (int i = 0; i < s.size; i++)
+    for (size_t i = 0; i < s.size; i++)
     {
-        data[i] = toupper(s.data[i]);
+        data[i] = (char)(toupper(s.data[i]));
     }
 
-    return s;
+    return capy_string_bytes(data, s.size);
+}
+
+capy_string capy_string_join(capy_arena *arena, capy_string delimiter, int n, capy_string *s)
+{
+    if (n < 1)
+    {
+        return (capy_string){NULL};
+    }
+
+    size_t size = 0;
+
+    for (int i = 0; i < n; i++)
+    {
+        if (i == 0)
+        {
+            size += delimiter.size;
+        }
+
+        size += s[i].size;
+    }
+
+    char *buffer = capy_arena_make(char, arena, size + 1);
+    char *cursor = buffer;
+
+    for (int i = 0; i < n; i++)
+    {
+        if (i != 0)
+        {
+            strncpy(cursor, delimiter.data, delimiter.size);
+            cursor += delimiter.size;
+        }
+
+        strncpy(cursor, s[i].data, s[i].size);
+        cursor += s[i].size;
+    }
+
+    return capy_string_bytes(buffer, size);
 }

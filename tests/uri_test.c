@@ -3,7 +3,7 @@
 #include "capy/string.h"
 #include "test.h"
 
-struct
+static struct
 {
     capy_string raw;
     capy_string scheme;
@@ -14,8 +14,7 @@ struct
     capy_string path;
     capy_string query;
     capy_string fragment;
-    int is_valid;
-
+    int64_t is_valid;
 } uris[] = {
     {
         .raw = str("http://foo@localhost:8080/post?id=1#title"),
@@ -284,7 +283,7 @@ struct
     },
 };
 
-struct
+static struct
 {
     capy_string base;
     capy_string reference;
@@ -337,11 +336,11 @@ struct
     {str("http://a/b/c/d;p?q"), str("http:g"), str("http:g")},
 };
 
-int test_uri(void)
+static int test_uri(void)
 {
     capy_arena *arena = capy_arena_init(GiB(8ULL));
 
-    for (int i = 0; i < arrlen(uris); i++)
+    for (size_t i = 0; i < arrlen(uris); i++)
     {
         capy_uri uri = capy_uri_parse(uris[i].raw);
 
@@ -356,7 +355,7 @@ int test_uri(void)
         expect_str_eq(uri.fragment, uris[i].fragment);
     }
 
-    for (int i = 0; i < arrlen(uris_reference); i++)
+    for (size_t i = 0; i < arrlen(uris_reference); i++)
     {
         capy_uri base = capy_uri_parse(uris_reference[i].base);
         capy_uri reference = capy_uri_parse(uris_reference[i].reference);

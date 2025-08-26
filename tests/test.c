@@ -1,4 +1,5 @@
 #include "arena_test.c"
+#include "http_test.c"
 #include "smap_test.c"
 #include "string_test.c"
 #include "uri_test.c"
@@ -10,6 +11,6 @@ int main(void)
     test_vec();
     test_string();
     test_uri();
-    // test_sset();
-    // test_smap();
+    test_smap();
+    test_http();
 }

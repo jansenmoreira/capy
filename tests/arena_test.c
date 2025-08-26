@@ -4,11 +4,11 @@
 
 #include "test.h"
 
-int test_arena(void)
+static int test_arena(void)
 {
     int err;
 
-    ptrdiff_t limit = GiB(8ULL);
+    size_t limit = GiB(8ULL);
 
     expect_p_eq(capy_arena_init(TiB(128ULL)), MAP_FAILED);
 
@@ -19,14 +19,14 @@ int test_arena(void)
 
     capy_arena *addr = arena;
 
-    ptrdiff_t last_size = arena->size;
+    ptrdiff_t last_size = (ptrdiff_t)(arena->size);
     uint8_t *a1 = capy_arena_make(uint8_t, arena, 99);
 
     void *top = capy_arena_top(arena);
 
     expect_p_ne(a1, NULL);
     expect_p_eq(arena, addr);
-    expect_s_eq((ptrdiff_t)(a1) % alignof(uint8_t), 0);
+    expect_u_eq((size_t)(a1) % alignof(uint8_t), 0);
     expect_s_gte(arena->size - last_size, 99);
 
     last_size = arena->size;
@@ -34,7 +34,7 @@ int test_arena(void)
 
     expect_p_ne(a2, NULL);
     expect_p_eq(arena, addr);
-    expect_s_eq((ptrdiff_t)(a2) % alignof(uint16_t), 0);
+    expect_u_eq((size_t)(a2) % alignof(uint16_t), 0);
     expect_s_gte(arena->size - last_size, sizeof(uint16_t) * 49);
 
     last_size = arena->size;
@@ -42,7 +42,7 @@ int test_arena(void)
 
     expect_p_ne(a3, NULL);
     expect_p_eq(arena, addr);
-    expect_s_eq((ptrdiff_t)(a3) % alignof(double), 0);
+    expect_u_eq((size_t)(a3) % alignof(double), 0);
     expect_s_gte(arena->size - last_size, sizeof(double) * 3333);
 
     last_size = arena->size;
@@ -50,7 +50,7 @@ int test_arena(void)
 
     expect_p_ne(a4, NULL);
     expect_p_eq(arena, addr);
-    expect_s_eq((ptrdiff_t)(a4) % alignof(uint8_t), 0);
+    expect_u_eq((size_t)(a4) % alignof(uint8_t), 0);
     expect_s_gte(arena->size - last_size, 1);
 
     last_size = arena->size;
@@ -58,7 +58,7 @@ int test_arena(void)
 
     expect_p_ne(a5, NULL);
     expect_p_eq(arena, addr);
-    expect_s_eq((ptrdiff_t)(a5) % alignof(struct point), 0);
+    expect_u_eq((size_t)(a5) % alignof(struct point), 0);
     expect_s_gte(arena->size - last_size, sizeof(struct point) * 1);
 
     err = capy_arena_shrink(arena, a3);
@@ -78,7 +78,7 @@ int test_arena(void)
     err = capy_arena_shrink(arena, NULL);
     expect_s_eq(err, EINVAL);
 
-    err = capy_arena_free(arena), arena = NULL;
+    err = capy_arena_free(arena);
     expect_s_eq(err, 0);
 
     return 0;

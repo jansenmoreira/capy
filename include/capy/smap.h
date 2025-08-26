@@ -1,81 +1,57 @@
 #ifndef CAPY_SMAP_H
 #define CAPY_SMAP_H
 
+#include <capy/arena.h>
+#include <capy/assert.h>
 #include <capy/std.h>
+#include <capy/string.h>
 
-struct capy_smap
+typedef struct capy_smap
 {
-    ptrdiff_t size;
-    ptrdiff_t capacity;
-};
+    size_t size;
+    size_t capacity;
+    size_t element_size;
+    capy_arena *arena;
+    uint8_t data[];
+} capy_smap;
 
-static inline struct capy_smap *capy_smap_head(void *data)
+static inline size_t capy_smap_size(void *data)
 {
-    return (data == NULL) ? NULL : (struct capy_smap *)(data)-1;
+    capy_assert(data != NULL);  // GCOVR_EXCL_LINE
+
+    return ((capy_smap *)(data)-1)->size;
 }
 
-static inline ptrdiff_t capy_smap_size(void *data)
+void *capy_smap_init(capy_arena *arena, size_t element_size, size_t capacity);
+void *capy_smap_get(void *ptr, capy_string key);
+void *capy_smap_set(void *ptr, capy_string *pair);
+void *capy_smap_delete(void *ptr, capy_string key);
+
+#define TOMBSTONE ((void *)-1)
+
+#define capy_smap_of(T, arena, capacity) \
+    ((T *)(capy_smap_init((arena), sizeof(T), (capacity))))
+
+// String Set
+
+static inline capy_string *capy_sset_init(capy_arena *arena, size_t capacity)
 {
-    return (data == NULL) ? 0 : ((struct capy_smap *)(data)-1)->size;
+    return capy_smap_init(arena, sizeof(capy_string), capacity);
 }
 
-static inline ptrdiff_t capy_smap_capacity(void *data)
+static inline bool capy_sset_has(capy_string **ptr, capy_string key)
 {
-    return (data == NULL) ? 0 : ((struct capy_smap *)(data)-1)->capacity;
+    return capy_smap_get(ptr, key) != NULL;
 }
 
-void *capy_smap_get(void **ptr, ptrdiff_t pair_size, const char *key);
-int capy_smap_set(void **ptr, ptrdiff_t pair_size, const char *key, void *index);
-void capy_smap_delete(void **ptr, ptrdiff_t pair_size, const char *key);
-void *capy_smap_next(void *data, ptrdiff_t pair_size, void *it);
-
-#define TOMBSTONE ((void *)SIZE_MAX)
-
-#define capy_smap_define(tag, T)                                         \
-    static inline int capy_smap_set_##tag(T **smap, T pair)              \
-    {                                                                    \
-        return capy_smap_set((void **)smap, sizeof(T), pair.key, &pair); \
-    }                                                                    \
-                                                                         \
-    static inline void capy_smap_delete_##tag(T **smap, const char *key) \
-    {                                                                    \
-        capy_smap_delete((void **)smap, sizeof(T), key);                 \
-    }                                                                    \
-                                                                         \
-    static inline T capy_smap_get_##tag(T **smap, const char *key)       \
-    {                                                                    \
-        T *pair = capy_smap_get((void **)smap, sizeof(T), key);          \
-        return (pair == NULL) ? (T){key = NULL} : *pair;                 \
-    }                                                                    \
-                                                                         \
-    static inline T *capy_smap_next_##tag(T *smap, T *it)                \
-    {                                                                    \
-        return capy_smap_next((void *)smap, sizeof(T), it);              \
-    }
-
-static inline int capy_sset_set(const char ***sset, const char *key)
+static inline capy_string *capy_sset_set(capy_string **ptr, capy_string key)
 {
-    return capy_smap_set((void **)sset, sizeof(const char *), key, &key);
+    return capy_smap_set(ptr, &key);
 }
 
-static inline void capy_sset_delete(const char ***sset, const char *key)
+static inline capy_string *capy_sset_delete(capy_string **ptr, capy_string key)
 {
-    capy_smap_delete((void **)sset, sizeof(const char *), key);
+    return capy_smap_delete(ptr, key);
 }
-
-static inline const char *capy_sset_get(const char ***sset, const char *key)
-{
-    const char **value = capy_smap_get((void **)sset, sizeof(const char *), key);
-    if (value == NULL) return NULL;
-    return *value;
-}
-
-static inline const char **capy_sset_next(const char **sset, const char **it)
-{
-    return capy_smap_next((void *)sset, sizeof(const char *), it);
-}
-
-const char *capy_symbols_add(const char ***pool, const char *str);
-void capy_symbols_free(const char ***pool);
 
 #endif

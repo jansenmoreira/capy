@@ -1,22 +1,22 @@
 #include <capy/capy.h>
 
-#define URI_GEN_DELIM 0x1
-#define URI_SUB_DELIM 0x2
-#define URI_UNRESERVED 0x4
-#define URI_SCHEME_BEGIN 0x8
+#define URI_GEN_DELIM 0x01
+#define URI_SUB_DELIM 0x02
+#define URI_UNRESERVED 0x04
+#define URI_SCHEME_BEGIN 0x08
 #define URI_SCHEME_CONTINUE 0x10
 #define URI_HEXDIGIT 0x20
 #define URI_DIGIT 0x40
 #define URI_PCT_ENCODED 0x80
 
-static uint8_t uri_char_categories[256] = {
-    [':'] = URI_GEN_DELIM,
-    ['/'] = URI_GEN_DELIM,
-    ['?'] = URI_GEN_DELIM,
+static uint8_t uri_byte_catg_table[256] = {
     ['#'] = URI_GEN_DELIM,
+    ['/'] = URI_GEN_DELIM,
+    [':'] = URI_GEN_DELIM,
+    ['?'] = URI_GEN_DELIM,
+    ['@'] = URI_GEN_DELIM,
     ['['] = URI_GEN_DELIM,
     [']'] = URI_GEN_DELIM,
-    ['@'] = URI_GEN_DELIM,
 
     ['!'] = URI_SUB_DELIM,
     ['$'] = URI_SUB_DELIM,
@@ -35,6 +35,17 @@ static uint8_t uri_char_categories[256] = {
     ['_'] = URI_UNRESERVED,
     ['~'] = URI_UNRESERVED,
 
+    ['"'] = 0,
+    ['%'] = 0,
+    ['<'] = 0,
+    ['>'] = 0,
+    ['\\'] = 0,
+    ['^'] = 0,
+    ['`'] = 0,
+    ['{'] = 0,
+    ['|'] = 0,
+    ['}'] = 0,
+
     ['0'] = URI_UNRESERVED | URI_SCHEME_CONTINUE | URI_HEXDIGIT | URI_DIGIT,
     ['1'] = URI_UNRESERVED | URI_SCHEME_CONTINUE | URI_HEXDIGIT | URI_DIGIT,
     ['2'] = URI_UNRESERVED | URI_SCHEME_CONTINUE | URI_HEXDIGIT | URI_DIGIT,
@@ -45,6 +56,33 @@ static uint8_t uri_char_categories[256] = {
     ['7'] = URI_UNRESERVED | URI_SCHEME_CONTINUE | URI_HEXDIGIT | URI_DIGIT,
     ['8'] = URI_UNRESERVED | URI_SCHEME_CONTINUE | URI_HEXDIGIT | URI_DIGIT,
     ['9'] = URI_UNRESERVED | URI_SCHEME_CONTINUE | URI_HEXDIGIT | URI_DIGIT,
+
+    ['A'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE | URI_HEXDIGIT,
+    ['B'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE | URI_HEXDIGIT,
+    ['C'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE | URI_HEXDIGIT,
+    ['D'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE | URI_HEXDIGIT,
+    ['E'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE | URI_HEXDIGIT,
+    ['F'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE | URI_HEXDIGIT,
+    ['G'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
+    ['H'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
+    ['I'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
+    ['J'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
+    ['K'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
+    ['L'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
+    ['M'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
+    ['N'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
+    ['O'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
+    ['P'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
+    ['Q'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
+    ['R'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
+    ['S'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
+    ['T'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
+    ['U'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
+    ['V'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
+    ['W'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
+    ['X'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
+    ['Y'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
+    ['Z'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
 
     ['a'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE | URI_HEXDIGIT,
     ['b'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE | URI_HEXDIGIT,
@@ -72,71 +110,63 @@ static uint8_t uri_char_categories[256] = {
     ['x'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
     ['y'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
     ['z'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
-    ['A'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE | URI_HEXDIGIT,
-    ['B'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE | URI_HEXDIGIT,
-    ['C'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE | URI_HEXDIGIT,
-    ['D'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE | URI_HEXDIGIT,
-    ['E'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE | URI_HEXDIGIT,
-    ['F'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE | URI_HEXDIGIT,
-    ['G'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
-    ['H'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
-    ['I'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
-    ['J'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
-    ['K'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
-    ['L'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
-    ['M'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
-    ['N'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
-    ['O'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
-    ['P'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
-    ['Q'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
-    ['R'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
-    ['S'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
-    ['T'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
-    ['U'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
-    ['V'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
-    ['W'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
-    ['X'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
-    ['Y'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
-    ['Z'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
 };
 
-capy_string uri_parse_hex_word(capy_string input)
+static inline uint8_t uri_byte_catg(char c)
 {
-    int i;
+    return uri_byte_catg_table[(uint8_t)(c)];
+}
+
+static capy_string uri_parse_hex_word(capy_string input)
+{
+    size_t i;
 
     for (i = 0; i < 4 && i < input.size; i++)
     {
-        if ((uri_char_categories[input.data[i]] & URI_HEXDIGIT) == 0)
+        if ((uri_byte_catg(input.data[i]) & URI_HEXDIGIT) == 0)
         {
             break;
         }
     }
 
-    return (input.size = i, input);
+    input.size = i;
+
+    return input;
 }
 
-capy_string uri_parse_dec_octet(capy_string input)
+static capy_string uri_parse_dec_octet(capy_string input)
 {
     switch (input.data[0])
     {
         case '0':
-            return (input.size = 1, input);
+        {
+            input.size = 1;
+            return input;
+        }
+        break;
 
         case '1':
         case '2':
         {
-            if (input.size >= 2 && uri_char_categories[input.data[1]] & URI_DIGIT)
+            if (input.size >= 2 && uri_byte_catg(input.data[1]) & URI_DIGIT)
             {
-                if (input.size >= 3 && uri_char_categories[input.data[2]] & URI_DIGIT)
+                if (input.size >= 3 && uri_byte_catg(input.data[2]) & URI_DIGIT)
                 {
-                    return (input.size = 3, input);
+                    input.size = 3;
                 }
-
-                return (input.size = 2, input);
+                else
+                {
+                    input.size = 2;
+                }
+            }
+            else
+            {
+                input.size = 1;
             }
 
-            return (input.size = 1, input);
+            return input;
         }
+        break;
 
         case '3':
         case '4':
@@ -146,20 +176,26 @@ capy_string uri_parse_dec_octet(capy_string input)
         case '8':
         case '9':
         {
-            if (input.size >= 2 && uri_char_categories[input.data[1]] & URI_DIGIT)
+            if (input.size >= 2 && uri_byte_catg(input.data[1]) & URI_DIGIT)
             {
-                return (input.size = 2, input);
+                input.size = 2;
+            }
+            else
+            {
+                input.size = 1;
             }
 
-            return (input.size = 1, input);
+            return input;
         }
-
-        default:
-            return (input.size = 0, input);
+        break;
     }
+
+    input.size = 0;
+
+    return input;
 }
 
-capy_string uri_token_advance(capy_string input)
+static capy_string uri_token_advance(capy_string input)
 {
     capy_assert(input.size);  // GCOVR_EXCL_LINE
 
@@ -173,18 +209,18 @@ capy_string uri_token_advance(capy_string input)
     }
 }
 
-int uri_token_categories(capy_string input)
+static int uri_token_categories(capy_string input)
 {
     capy_assert(input.size);  // GCOVR_EXCL_LINE
 
     if (input.data[0] != '%')
     {
-        return uri_char_categories[input.data[0]];
+        return uri_byte_catg(input.data[0]);
     }
 
     if (input.size < 3 ||
-        !(uri_char_categories[input.data[1]] & URI_HEXDIGIT) ||
-        !(uri_char_categories[input.data[2]] & URI_HEXDIGIT))
+        !(uri_byte_catg(input.data[1]) & URI_HEXDIGIT) ||
+        !(uri_byte_catg(input.data[2]) & URI_HEXDIGIT))
     {
         return 0;
     }
@@ -192,7 +228,7 @@ int uri_token_categories(capy_string input)
     return URI_PCT_ENCODED;
 }
 
-int uri_valid_tokens(capy_string s, int categories, const char *chars)
+static size_t uri_valid_tokens(capy_string s, int categories, const char *chars)
 {
     capy_string input = s;
 
@@ -215,37 +251,37 @@ int uri_valid_tokens(capy_string s, int categories, const char *chars)
     return s.size;
 }
 
-static inline int uri_valid_userinfo(capy_string userinfo)
+static inline size_t uri_valid_userinfo(capy_string userinfo)
 {
     return uri_valid_tokens(userinfo, URI_UNRESERVED | URI_SUB_DELIM | URI_PCT_ENCODED, ":");
 }
 
-static inline int uri_valid_port(capy_string port)
+static inline size_t uri_valid_port(capy_string port)
 {
     return uri_valid_tokens(port, URI_DIGIT, "");
 }
 
-static inline int uri_valid_fragment(capy_string fragment)
+static inline size_t uri_valid_fragment(capy_string fragment)
 {
     return uri_valid_tokens(fragment, URI_UNRESERVED | URI_SUB_DELIM | URI_PCT_ENCODED, ":@/?");
 }
 
-static inline int uri_valid_query(capy_string query)
+static inline size_t uri_valid_query(capy_string query)
 {
     return uri_valid_tokens(query, URI_UNRESERVED | URI_SUB_DELIM | URI_PCT_ENCODED, ":@/?");
 }
 
-static inline int uri_valid_reg_name(capy_string host)
+static inline size_t uri_valid_reg_name(capy_string host)
 {
     return uri_valid_tokens(host, URI_UNRESERVED | URI_SUB_DELIM | URI_PCT_ENCODED, "");
 }
 
-static inline int uri_valid_segment(capy_string segment)
+static inline size_t uri_valid_segment(capy_string segment)
 {
     return uri_valid_tokens(segment, URI_UNRESERVED | URI_PCT_ENCODED | URI_SUB_DELIM, ":@");
 }
 
-static int uri_valid_ipv4(capy_string host)
+static size_t uri_valid_ipv4(capy_string host)
 {
     capy_string input = host;
 
@@ -274,15 +310,15 @@ static int uri_valid_ipv4(capy_string host)
     return (input.size == 0) ? host.size : 0;
 }
 
-static int uri_valid_ipv6(capy_string host)
+static size_t uri_valid_ipv6(capy_string host)
 {
     capy_string input = host;
 
-    int prefix = 0;
-    int suffix = 0;
-    int short_form = 0;
+    size_t prefix = 0;
+    size_t suffix = 0;
+    size_t short_form = 0;
 
-    for (int i = 0; prefix + suffix + short_form < 8 && input.size; i++)
+    while (prefix + suffix + short_form < 8 && input.size)
     {
         if ((!short_form && prefix == 6) || (short_form && suffix < 6))
         {
@@ -351,7 +387,7 @@ static int uri_valid_ipv6(capy_string host)
     return host.size;
 }
 
-static int uri_valid_host(capy_string host)
+static size_t uri_valid_host(capy_string host)
 {
     if (host.data[0] == '[' && host.data[host.size - 1] == ']')
     {
@@ -373,7 +409,7 @@ static int uri_valid_host(capy_string host)
     return uri_valid_reg_name(host);
 }
 
-static int uri_valid_scheme(capy_string scheme)
+static size_t uri_valid_scheme(capy_string scheme)
 {
     capy_string input = scheme;
 
@@ -397,11 +433,11 @@ static int uri_valid_scheme(capy_string scheme)
     return scheme.size;
 }
 
-static int uri_valid_path(capy_string path)
+static size_t uri_valid_path(capy_string path)
 {
     capy_string input = path;
 
-    int segment_size = 0;
+    size_t segment_size = 0;
 
     while (segment_size < input.size)
     {
@@ -473,7 +509,7 @@ static capy_string uri_path_remove_dot_segments(capy_arena *arena, capy_string p
     {
         size_t size = input.size;
 
-        for (int i = 0; i < input.size; i++)
+        for (size_t i = 0; i < input.size; i++)
         {
             if (input.data[i] == '/')
             {
@@ -516,9 +552,9 @@ static capy_string uri_path_remove_dot_segments(capy_arena *arena, capy_string p
 
 capy_uri capy_uri_parse(capy_string input)
 {
-    capy_uri uri = {NULL};
+    capy_uri uri = {{NULL}};
 
-    for (int i = 0; i < input.size; i++)
+    for (size_t i = 0; i < input.size; i++)
     {
         char c = input.data[i];
 
@@ -539,7 +575,7 @@ capy_uri capy_uri_parse(capy_string input)
     {
         input = capy_string_shl(input, 2);
 
-        int i;
+        size_t i;
 
         for (i = 0; i < input.size; i++)
         {
@@ -557,7 +593,7 @@ capy_uri capy_uri_parse(capy_string input)
 
     if (input.size)
     {
-        int i;
+        size_t i;
 
         for (i = 0; i < input.size; i++)
         {
@@ -577,7 +613,7 @@ capy_uri capy_uri_parse(capy_string input)
     {
         input = capy_string_shl(input, 1);
 
-        int i;
+        size_t i;
 
         for (i = 0; i < input.size && input.data[i] != '#'; i++)
         {
@@ -595,7 +631,7 @@ capy_uri capy_uri_parse(capy_string input)
 
     uri.host = uri.authority;
 
-    for (int i = 0; i < uri.host.size; i++)
+    for (size_t i = 0; i < uri.host.size; i++)
     {
         if (uri.host.data[i] == '@')
         {
@@ -605,9 +641,9 @@ capy_uri capy_uri_parse(capy_string input)
         }
     }
 
-    for (int i = uri.host.size - 1; i >= 0; i--)
+    for (size_t i = uri.host.size; i > 0; i--)
     {
-        char c = uri.host.data[i];
+        char c = uri.host.data[i - 1];
 
         if (c == ']')
         {
@@ -615,8 +651,8 @@ capy_uri capy_uri_parse(capy_string input)
         }
         else if (c == ':')
         {
-            uri.port = capy_string_shl(uri.host, i + 1);
-            uri.host = capy_string_slice(uri.host, 0, i);
+            uri.port = capy_string_shl(uri.host, i);
+            uri.host = capy_string_slice(uri.host, 0, i - 1);
             break;
         }
     }
@@ -666,7 +702,7 @@ int capy_uri_valid(capy_uri uri)
 
 capy_uri capy_uri_resolve_reference(capy_arena *arena, capy_uri base, capy_uri reference)
 {
-    capy_uri uri = {NULL};
+    capy_uri uri = {{NULL}};
 
     if (reference.scheme.size)
     {

@@ -18,6 +18,8 @@
 
 #define str(s) capy_string_literal(s)
 
+#define Ref(T, v) (&(T[]){(v)})
+
 struct capy_arena
 {
     ptrdiff_t size;
@@ -33,13 +35,11 @@ struct point
     float z;
 };
 
-struct smap_pair_point
+typedef struct string_pair
 {
-    const char *key;
-    struct point value;
-};
-
-capy_smap_define(point, struct smap_pair_point)
+    capy_string key;
+    capy_string value;
+} string_pair;
 
 #define expect(exp, format, file, line, lhs, rhs) \
     ((exp) ? 0 : (fprintf(stderr, (format), (file), (line), (lhs), (rhs)), abort(), 0))
