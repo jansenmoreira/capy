@@ -1,5 +1,3 @@
-#include "capy/string.h"
-
 #include "test.h"
 
 static struct

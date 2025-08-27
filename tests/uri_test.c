@@ -1,6 +1,3 @@
-#include "capy/uri.h"
-
-#include "capy/string.h"
 #include "test.h"
 
 static struct

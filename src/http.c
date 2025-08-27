@@ -1,12 +1,5 @@
-#include "capy/http.h"
-
-#include <asm-generic/errno-base.h>
-#include <asm-generic/errno.h>
 #include <capy/capy.h>
 #include <errno.h>
-
-#include "capy/string.h"
-#include "capy/uri.h"
 
 #define HTTP_VCHAR 0x1
 #define HTTP_TOKEN 0x2
@@ -157,7 +150,7 @@ static capy_http_method capy_http_parse_method(capy_string input)
         {
             if (capy_string_eq(capy_string_shl(input, 1), ONNECT))
             {
-                return CAPY_HTTP_METHOD_CONNECT;
+                return CAPY_HTTP_CONNECT;
             }
         }
         break;
@@ -166,7 +159,7 @@ static capy_http_method capy_http_parse_method(capy_string input)
         {
             if (capy_string_eq(capy_string_shl(input, 1), ELETE))
             {
-                return CAPY_HTTP_METHOD_DELETE;
+                return CAPY_HTTP_DELETE;
             }
         }
         break;
@@ -175,7 +168,7 @@ static capy_http_method capy_http_parse_method(capy_string input)
         {
             if (capy_string_eq(capy_string_shl(input, 1), ET))
             {
-                return CAPY_HTTP_METHOD_GET;
+                return CAPY_HTTP_GET;
             }
         }
         break;
@@ -184,7 +177,7 @@ static capy_http_method capy_http_parse_method(capy_string input)
         {
             if (capy_string_eq(capy_string_shl(input, 1), EAD))
             {
-                return CAPY_HTTP_METHOD_HEAD;
+                return CAPY_HTTP_HEAD;
             }
         }
         break;
@@ -193,7 +186,7 @@ static capy_http_method capy_http_parse_method(capy_string input)
         {
             if (capy_string_eq(capy_string_shl(input, 1), PTIONS))
             {
-                return CAPY_HTTP_METHOD_OPTIONS;
+                return CAPY_HTTP_OPTIONS;
             }
         }
         break;
@@ -206,7 +199,7 @@ static capy_http_method capy_http_parse_method(capy_string input)
                 {
                     if (input.data[2] == 'T')
                     {
-                        return CAPY_HTTP_METHOD_PUT;
+                        return CAPY_HTTP_PUT;
                     }
                 }
                 break;
@@ -215,7 +208,7 @@ static capy_http_method capy_http_parse_method(capy_string input)
                 {
                     if (capy_string_eq(capy_string_shl(input, 3), OST))
                     {
-                        return CAPY_HTTP_METHOD_POST;
+                        return CAPY_HTTP_POST;
                     }
                 }
                 break;
@@ -227,7 +220,7 @@ static capy_http_method capy_http_parse_method(capy_string input)
         {
             if (capy_string_eq(capy_string_shl(input, 1), RACE))
             {
-                return CAPY_HTTP_METHOD_TRACE;
+                return CAPY_HTTP_TRACE;
             }
         }
         break;
@@ -259,7 +252,7 @@ static capy_http_version capy_http_parse_version(capy_string input)
         {
             if (input.data[7] == '9')
             {
-                return CAPY_HTTP_VERSION_09;
+                return CAPY_HTTP_09;
             }
         }
         break;
@@ -269,9 +262,9 @@ static capy_http_version capy_http_parse_version(capy_string input)
             switch (input.data[7])
             {
                 case '0':
-                    return CAPY_HTTP_VERSION_10;
+                    return CAPY_HTTP_10;
                 case '1':
-                    return CAPY_HTTP_VERSION_11;
+                    return CAPY_HTTP_11;
             }
         }
         break;
@@ -280,7 +273,7 @@ static capy_http_version capy_http_parse_version(capy_string input)
         {
             if (input.data[7] == '0')
             {
-                return CAPY_HTTP_VERSION_20;
+                return CAPY_HTTP_20;
             }
         }
         break;
@@ -289,7 +282,7 @@ static capy_http_version capy_http_parse_version(capy_string input)
         {
             if (input.data[7] == '0')
             {
-                return CAPY_HTTP_VERSION_30;
+                return CAPY_HTTP_30;
             }
         }
         break;
@@ -355,6 +348,20 @@ static int http_message_get_token(capy_string *buffer, capy_string *token, const
     *token = capy_string_slice(input, 0, token_size);
     *buffer = capy_string_shl(input, i);
     return 0;
+}
+
+capy_string capy_http_write_response(capy_arena *arena, capy_http_response *response)
+{
+    (void)arena;
+    (void)response;
+
+    return capy_string_literal(
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Length: 7\r\n"
+        "Content-Type: text/plain\r\n"
+        "Connection: close\r\n"
+        "\r\n"
+        "200 OK\n");
 }
 
 capy_http_request *capy_http_parse_header(capy_arena *arena, capy_string input, size_t line_limit)

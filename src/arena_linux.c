@@ -91,14 +91,21 @@ void *capy_arena_top(capy_arena *arena)
 
 int capy_arena_shrink(capy_arena *arena, void *addr)
 {
-    ptrdiff_t size = (uint8_t *)(addr) - (uint8_t *)(arena);
+    ptrdiff_t diff = (uint8_t *)(addr) - (uint8_t *)(arena);
 
-    if (size < (ptrdiff_t)(sizeof(capy_arena)) || (size_t)(size) > arena->size)
+    if (diff < (ptrdiff_t)(sizeof(capy_arena)))
     {
         return EINVAL;
     }
 
-    arena->size = (size_t)(size);
+    size_t size = (size_t)(diff);
+
+    if (size > arena->size)
+    {
+        return EINVAL;
+    }
+
+    arena->size = size;
 
     return 0;
 }

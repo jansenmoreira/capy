@@ -20,14 +20,6 @@
 
 #define Ref(T, v) (&(T[]){(v)})
 
-struct capy_arena
-{
-    ptrdiff_t size;
-    ptrdiff_t capacity;
-    ptrdiff_t limit;
-    ptrdiff_t page_size;
-};
-
 struct point
 {
     float x;

@@ -1,5 +1,3 @@
-#include "capy/arena.h"
-#include "capy/string.h"
 #include "test.h"
 
 static string_pair fields[] = {

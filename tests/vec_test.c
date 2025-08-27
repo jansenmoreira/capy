@@ -1,9 +1,3 @@
-#include "capy/vec.h"
-
-#include <asm-generic/errno-base.h>
-#include <asm-generic/errno.h>
-
-#include "capy/arena.h"
 #include "test.h"
 
 static int test_vec(void)
