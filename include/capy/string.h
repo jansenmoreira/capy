@@ -16,6 +16,7 @@ capy_string capy_string_copy(capy_arena *arena, capy_string s);
 capy_string capy_string_tolower(capy_arena *arena, capy_string s);
 capy_string capy_string_toupper(capy_arena *arena, capy_string s);
 capy_string capy_string_join(capy_arena *arena, capy_string delimiter, int n, capy_string *s);
+size_t capy_string_hex(capy_string input, int64_t *value);
 
 static inline capy_string capy_string_slice(capy_string s, size_t begin, size_t end)
 {

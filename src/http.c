@@ -3,6 +3,8 @@
 
 #define HTTP_VCHAR 0x1
 #define HTTP_TOKEN 0x2
+#define HTTP_DIGIT 0x4
+#define HTTP_HEXDIGIT 0x8
 
 static uint8_t http_char_categories[256] = {
     ['!'] = HTTP_VCHAR | HTTP_TOKEN,
@@ -20,16 +22,16 @@ static uint8_t http_char_categories[256] = {
     ['-'] = HTTP_VCHAR | HTTP_TOKEN,
     ['.'] = HTTP_VCHAR | HTTP_TOKEN,
     ['/'] = HTTP_VCHAR,
-    ['0'] = HTTP_VCHAR | HTTP_TOKEN,
-    ['1'] = HTTP_VCHAR | HTTP_TOKEN,
-    ['2'] = HTTP_VCHAR | HTTP_TOKEN,
-    ['3'] = HTTP_VCHAR | HTTP_TOKEN,
-    ['4'] = HTTP_VCHAR | HTTP_TOKEN,
-    ['5'] = HTTP_VCHAR | HTTP_TOKEN,
-    ['6'] = HTTP_VCHAR | HTTP_TOKEN,
-    ['7'] = HTTP_VCHAR | HTTP_TOKEN,
-    ['8'] = HTTP_VCHAR | HTTP_TOKEN,
-    ['9'] = HTTP_VCHAR | HTTP_TOKEN,
+    ['0'] = HTTP_VCHAR | HTTP_TOKEN | HTTP_DIGIT | HTTP_HEXDIGIT,
+    ['1'] = HTTP_VCHAR | HTTP_TOKEN | HTTP_DIGIT | HTTP_HEXDIGIT,
+    ['2'] = HTTP_VCHAR | HTTP_TOKEN | HTTP_DIGIT | HTTP_HEXDIGIT,
+    ['3'] = HTTP_VCHAR | HTTP_TOKEN | HTTP_DIGIT | HTTP_HEXDIGIT,
+    ['4'] = HTTP_VCHAR | HTTP_TOKEN | HTTP_DIGIT | HTTP_HEXDIGIT,
+    ['5'] = HTTP_VCHAR | HTTP_TOKEN | HTTP_DIGIT | HTTP_HEXDIGIT,
+    ['6'] = HTTP_VCHAR | HTTP_TOKEN | HTTP_DIGIT | HTTP_HEXDIGIT,
+    ['7'] = HTTP_VCHAR | HTTP_TOKEN | HTTP_DIGIT | HTTP_HEXDIGIT,
+    ['8'] = HTTP_VCHAR | HTTP_TOKEN | HTTP_DIGIT | HTTP_HEXDIGIT,
+    ['9'] = HTTP_VCHAR | HTTP_TOKEN | HTTP_DIGIT | HTTP_HEXDIGIT,
     [':'] = HTTP_VCHAR,
     [';'] = HTTP_VCHAR,
     ['<'] = HTTP_VCHAR,
@@ -37,12 +39,12 @@ static uint8_t http_char_categories[256] = {
     ['>'] = HTTP_VCHAR,
     ['?'] = HTTP_VCHAR,
     ['@'] = HTTP_VCHAR,
-    ['A'] = HTTP_VCHAR | HTTP_TOKEN,
-    ['B'] = HTTP_VCHAR | HTTP_TOKEN,
-    ['C'] = HTTP_VCHAR | HTTP_TOKEN,
-    ['D'] = HTTP_VCHAR | HTTP_TOKEN,
-    ['E'] = HTTP_VCHAR | HTTP_TOKEN,
-    ['F'] = HTTP_VCHAR | HTTP_TOKEN,
+    ['A'] = HTTP_VCHAR | HTTP_TOKEN | HTTP_HEXDIGIT,
+    ['B'] = HTTP_VCHAR | HTTP_TOKEN | HTTP_HEXDIGIT,
+    ['C'] = HTTP_VCHAR | HTTP_TOKEN | HTTP_HEXDIGIT,
+    ['D'] = HTTP_VCHAR | HTTP_TOKEN | HTTP_HEXDIGIT,
+    ['E'] = HTTP_VCHAR | HTTP_TOKEN | HTTP_HEXDIGIT,
+    ['F'] = HTTP_VCHAR | HTTP_TOKEN | HTTP_HEXDIGIT,
     ['G'] = HTTP_VCHAR | HTTP_TOKEN,
     ['H'] = HTTP_VCHAR | HTTP_TOKEN,
     ['I'] = HTTP_VCHAR | HTTP_TOKEN,
@@ -69,12 +71,12 @@ static uint8_t http_char_categories[256] = {
     ['^'] = HTTP_VCHAR | HTTP_TOKEN,
     ['_'] = HTTP_VCHAR | HTTP_TOKEN,
     ['`'] = HTTP_VCHAR | HTTP_TOKEN,
-    ['a'] = HTTP_VCHAR | HTTP_TOKEN,
-    ['b'] = HTTP_VCHAR | HTTP_TOKEN,
-    ['c'] = HTTP_VCHAR | HTTP_TOKEN,
-    ['d'] = HTTP_VCHAR | HTTP_TOKEN,
-    ['e'] = HTTP_VCHAR | HTTP_TOKEN,
-    ['f'] = HTTP_VCHAR | HTTP_TOKEN,
+    ['a'] = HTTP_VCHAR | HTTP_TOKEN | HTTP_HEXDIGIT,
+    ['b'] = HTTP_VCHAR | HTTP_TOKEN | HTTP_HEXDIGIT,
+    ['c'] = HTTP_VCHAR | HTTP_TOKEN | HTTP_HEXDIGIT,
+    ['d'] = HTTP_VCHAR | HTTP_TOKEN | HTTP_HEXDIGIT,
+    ['e'] = HTTP_VCHAR | HTTP_TOKEN | HTTP_HEXDIGIT,
+    ['f'] = HTTP_VCHAR | HTTP_TOKEN | HTTP_HEXDIGIT,
     ['g'] = HTTP_VCHAR | HTTP_TOKEN,
     ['h'] = HTTP_VCHAR | HTTP_TOKEN,
     ['i'] = HTTP_VCHAR | HTTP_TOKEN,
@@ -136,7 +138,7 @@ static capy_http_method capy_http_parse_method(capy_string input)
     static const capy_string ET = capy_string_literal("ET");
     static const capy_string EAD = capy_string_literal("EAD");
     static const capy_string PTIONS = capy_string_literal("PTIONS");
-    static const capy_string OST = capy_string_literal("ST");
+    static const capy_string OST = capy_string_literal("OST");
     static const capy_string RACE = capy_string_literal("TRACE");
 
     if (input.size < 3 || input.size > 7)
@@ -206,7 +208,7 @@ static capy_http_method capy_http_parse_method(capy_string input)
 
                 default:
                 {
-                    if (capy_string_eq(capy_string_shl(input, 3), OST))
+                    if (capy_string_eq(capy_string_shl(input, 1), OST))
                     {
                         return CAPY_HTTP_POST;
                     }
@@ -291,40 +293,13 @@ static capy_http_version capy_http_parse_version(capy_string input)
     return CAPY_HTTP_VERSION_UNK;
 }
 
-static int http_message_read_line(capy_string *buffer, capy_string *line, size_t limit)
-{
-    size_t i = 0;
-    capy_string input = *buffer;
-
-    for (i = 0; input.size && input.data[i] != '\n'; i++)
-    {
-        if (input.size == limit)
-        {
-            return EINVAL;
-        }
-    }
-
-    if (input.data[i - 1] == '\r')
-    {
-        *line = capy_string_slice(input, 0, i - 1ULL);
-    }
-    else
-    {
-        *line = capy_string_slice(input, 0, i);
-    }
-
-    *buffer = capy_string_shl(input, i + 1);
-
-    return 0;
-}
-
-static int http_message_get_token(capy_string *buffer, capy_string *token, const char *delimiters, int ows)
+static capy_string http_message_get_token(capy_string *buffer, const char *delimiters, int ows)
 {
     capy_string input = *buffer;
 
-    size_t i, token_size = 0;
+    size_t i, token_size = -1;
 
-    for (i = 0; !token_size && i < input.size; i++)
+    for (i = 0; token_size == (size_t)(-1) && i < input.size; i++)
     {
         for (const char *it = delimiters; it[0] != 0; it++)
         {
@@ -336,7 +311,7 @@ static int http_message_get_token(capy_string *buffer, capy_string *token, const
         }
     }
 
-    if (token_size == 0)
+    if (token_size == (size_t)(-1))
     {
         token_size = i;
     }
@@ -345,101 +320,161 @@ static int http_message_get_token(capy_string *buffer, capy_string *token, const
     {
     }
 
-    *token = capy_string_slice(input, 0, token_size);
     *buffer = capy_string_shl(input, i);
-    return 0;
+
+    return capy_string_slice(input, 0, token_size);
 }
 
 capy_string capy_http_write_response(capy_arena *arena, capy_http_response *response)
 {
-    (void)arena;
-    (void)response;
+    size_t response_size = 8 * 1024;
+    char *response_buffer = capy_arena_make(char, arena, 8 * 1024);
 
-    return capy_string_literal(
-        "HTTP/1.1 200 OK\r\n"
-        "Content-Length: 7\r\n"
+    const char *format =
+        "HTTP/1.1 %d\r\n"
+        "Content-Length: %llu\r\n"
         "Content-Type: text/plain\r\n"
-        "Connection: close\r\n"
         "\r\n"
-        "200 OK\n");
+        "%.*s";
+
+    response_size = snprintf(response_buffer,
+                             response_size,
+                             format,
+                             response->status,
+                             response->content.size,
+                             (int)response->content.size,
+                             response->content.data);
+
+    return capy_string_bytes(response_buffer, response_size);
 }
 
-capy_http_request *capy_http_parse_header(capy_arena *arena, capy_string input, size_t line_limit)
+int capy_http_parse_request_line(capy_arena *arena, capy_string line, capy_http_request *request)
 {
-    capy_string line = {NULL};
-    capy_string method = {NULL};
-    capy_string uri = {NULL};
-    capy_string version = {NULL};
+    capy_string method = http_message_get_token(&line, " ", false);
 
-    if (http_message_read_line(&input, &line, line_limit))
+    if (method.size == 0)
     {
-        return NULL;
+        return EINVAL;
     }
 
-    if (http_message_get_token(&line, &method, " ", false))
+    capy_string uri = http_message_get_token(&line, " ", false);
+
+    if (uri.size == 0)
     {
-        return NULL;
+        return EINVAL;
     }
 
-    if (http_message_get_token(&line, &uri, " ", false))
+    capy_string version = http_message_get_token(&line, " ", false);
+
+    if (version.size == 0)
     {
-        return NULL;
+        return EINVAL;
     }
 
-    if (http_message_get_token(&line, &version, " ", false))
-    {
-        return NULL;
-    }
-
-    capy_http_request *request = capy_arena_make(capy_http_request, arena, 1);
     request->method = capy_http_parse_method(method);
-    request->uri = capy_uri_parse(uri);
-    request->version = capy_http_parse_version(version);
-    request->headers = capy_smap_of(capy_http_field, arena, 16);
 
-    for (;;)
+    if (request->method == CAPY_HTTP_METHOD_UNK)
     {
-        if (http_message_read_line(&input, &line, line_limit))
-        {
-            return NULL;
-        }
-
-        if (line.size == 0)
-        {
-            break;
-        }
-
-        capy_http_field field;
-
-        if (http_message_get_token(&line, &field.name, ":", false))
-        {
-            return NULL;
-        }
-
-        if (!http_valid_characters(field.name, HTTP_TOKEN, NULL))
-        {
-            return NULL;
-        }
-
-        field.value = capy_string_trim(line);
-
-        if (!http_valid_characters(field.value, HTTP_VCHAR, " \t"))
-        {
-            return NULL;
-        }
-
-        field.name = capy_string_tolower(arena, field.name);
-        field.value = capy_string_copy(arena, field.value);
-
-        capy_http_field *header = capy_smap_get(request->headers, field.name);
-
-        if (header != NULL && header->value.size)
-        {
-            field.value = capy_string_join(arena, capy_string_literal(", "), 2, (capy_string[]){header->value, field.value});
-        }
-
-        capy_smap_set(request->headers, &field.name);
+        return EINVAL;
     }
 
-    return request;
+    request->version = capy_http_parse_version(version);
+
+    if (request->version == CAPY_HTTP_VERSION_UNK)
+    {
+        return EINVAL;
+    }
+
+    request->uri = capy_uri_parse(uri);
+
+    if (!capy_uri_valid(request->uri))
+    {
+        return EINVAL;
+    }
+
+    request->uri.scheme = capy_string_copy(arena, request->uri.scheme);
+    request->uri.authority = capy_string_copy(arena, request->uri.authority);
+    request->uri.userinfo = capy_string_copy(arena, request->uri.userinfo);
+    request->uri.host = capy_string_copy(arena, request->uri.host);
+    request->uri.port = capy_string_copy(arena, request->uri.port);
+    request->uri.path = capy_string_copy(arena, request->uri.path);
+    request->uri.query = capy_string_copy(arena, request->uri.query);
+    request->uri.fragment = capy_string_copy(arena, request->uri.fragment);
+
+    return 0;
+}
+
+int capy_http_content_length(capy_http_request *request)
+{
+    capy_http_field *content_length = capy_smap_get(request->headers, capy_string_literal("content-length"));
+
+    if (content_length != NULL)
+    {
+        if (!http_valid_characters(content_length->value, HTTP_DIGIT, ""))
+        {
+            return EINVAL;
+        }
+
+        request->content_length = atoi(content_length->value.data);
+    }
+
+    capy_http_field *transfer_encoding = capy_smap_get(request->headers, capy_string_literal("transfer-encoding"));
+
+    if (transfer_encoding != NULL)
+    {
+        capy_string input = transfer_encoding->value;
+
+        while (input.size)
+        {
+            capy_string token = http_message_get_token(&input, ",", true);
+
+            token = capy_string_trim(token);
+
+            if (capy_string_eq(token, capy_string_literal("chunked")))
+            {
+                request->chunked = true;
+                request->content_length = 0;
+            }
+        }
+    }
+
+    return 0;
+}
+
+int capy_http_parse_field(capy_arena *arena, capy_string line, capy_http_field **fields)
+{
+    capy_http_field field;
+
+    field.name = http_message_get_token(&line, ":", false);
+
+    if (field.name.size == 0)
+    {
+        return EINVAL;
+    }
+
+    if (!http_valid_characters(field.name, HTTP_TOKEN, NULL))
+    {
+        return EINVAL;
+    }
+
+    field.value = capy_string_trim(line);
+
+    if (!http_valid_characters(field.value, HTTP_VCHAR, " \t"))
+    {
+        return EINVAL;
+    }
+
+    field.name = capy_string_tolower(arena, field.name);
+    field.value = capy_string_copy(arena, field.value);
+
+    capy_http_field *existing = capy_smap_get(*fields, field.name);
+
+    if (existing != NULL && existing->value.size)
+    {
+        field.value = capy_string_join(arena, capy_string_literal(", "), 2, (capy_string[]){existing->value, field.value});
+    }
+
+    *fields = capy_smap_set(*fields, &field.name);
+
+    return 0;
 }

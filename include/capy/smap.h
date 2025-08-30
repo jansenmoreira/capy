@@ -22,6 +22,13 @@ static inline size_t capy_smap_size(void *data)
     return ((capy_smap *)(data)-1)->size;
 }
 
+static inline size_t capy_smap_capacity(void *data)
+{
+    capy_assert(data != NULL);  // GCOVR_EXCL_LINE
+
+    return ((capy_smap *)(data)-1)->capacity;
+}
+
 void *capy_smap_init(capy_arena *arena, size_t element_size, size_t capacity);
 void *capy_smap_get(void *ptr, capy_string key);
 void *capy_smap_set(void *ptr, capy_string *pair);

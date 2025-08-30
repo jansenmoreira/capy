@@ -107,7 +107,10 @@ typedef struct capy_http_request
     capy_http_version version;
     capy_uri uri;
     capy_http_field *headers;
+    capy_http_field *trailers;
     const char *content;
+    size_t content_length;
+    int chunked;
 } capy_http_request;
 
 typedef struct capy_http_response
@@ -118,11 +121,14 @@ typedef struct capy_http_response
     capy_http_status status;
 } capy_http_response;
 
-capy_http_request *capy_http_parse_header(capy_arena *arena, capy_string input, size_t request_line_limit);
+int capy_http_parse_request_line(capy_arena *arena, capy_string input, capy_http_request *request);
+int capy_http_content_length(capy_http_request *request);
+int capy_http_parse_field(capy_arena *arena, capy_string input, capy_http_field **fields);
+
 capy_string capy_http_write_response(capy_arena *arena, capy_http_response *response);
 
 typedef int(capy_http_handler)(capy_arena *arena, capy_http_request *request, capy_http_response *response);
 
-int capy_http_serve(const char *addr, const char *port, capy_http_handler handler);
+int capy_http_serve(const char *host, const char *port, size_t workers_count, capy_http_handler handler);
 
 #endif

@@ -1,6 +1,101 @@
 #include <capy/capy.h>
 #include <ctype.h>
 
+size_t capy_string_hex(capy_string input, int64_t *value)
+{
+    size_t bytes = 0;
+    int64_t tmp = 0;
+    int64_t mult = 1;
+
+    if (input.size && input.data[0] == '-')
+    {
+        mult = -1;
+        capy_string_shl(input, 1);
+    }
+
+    while (input.size)
+    {
+        switch (input.data[0])
+        {
+            case '0':
+                tmp = (tmp << 4) + 0;
+                break;
+            case '1':
+                tmp = (tmp << 4) + 1;
+                break;
+            case '2':
+                tmp = (tmp << 4) + 2;
+                break;
+            case '3':
+                tmp = (tmp << 4) + 3;
+                break;
+            case '4':
+                tmp = (tmp << 4) + 4;
+                break;
+            case '5':
+                tmp = (tmp << 4) + 5;
+                break;
+            case '6':
+                tmp = (tmp << 4) + 6;
+                break;
+            case '7':
+                tmp = (tmp << 4) + 7;
+                break;
+            case '8':
+                tmp = (tmp << 4) + 8;
+                break;
+            case '9':
+                tmp = (tmp << 4) + 9;
+                break;
+            case 'A':
+                tmp = (tmp << 4) + 10;
+                break;
+            case 'B':
+                tmp = (tmp << 4) + 11;
+                break;
+            case 'C':
+                tmp = (tmp << 4) + 12;
+                break;
+            case 'D':
+                tmp = (tmp << 4) + 13;
+                break;
+            case 'E':
+                tmp = (tmp << 4) + 14;
+                break;
+            case 'F':
+                tmp = (tmp << 4) + 15;
+                break;
+            case 'a':
+                tmp = (tmp << 4) + 10;
+                break;
+            case 'b':
+                tmp = (tmp << 4) + 11;
+                break;
+            case 'c':
+                tmp = (tmp << 4) + 12;
+                break;
+            case 'd':
+                tmp = (tmp << 4) + 13;
+                break;
+            case 'e':
+                tmp = (tmp << 4) + 14;
+                break;
+            case 'f':
+                tmp = (tmp << 4) + 15;
+                break;
+            default:
+                *value = tmp * mult;
+                return bytes;
+        }
+
+        bytes += 1;
+        input = capy_string_shl(input, 1);
+    }
+
+    *value = tmp * mult;
+    return bytes;
+}
+
 capy_string capy_string_copy(capy_arena *arena, capy_string s)
 {
     if (s.size == 0)

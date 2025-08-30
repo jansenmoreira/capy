@@ -21,6 +21,13 @@ static inline size_t capy_vec_size(void *data)
     return ((capy_vec *)(data)-1)->size;
 }
 
+static inline size_t capy_vec_capacity(void *data)
+{
+    capy_assert(data != NULL);  // GCOVR_EXCL_LINE
+
+    return ((capy_vec *)(data)-1)->capacity;
+}
+
 static inline void capy_vec_fixed(void *data)
 {
     capy_assert(data != NULL);  // GCOVR_EXCL_LINE
