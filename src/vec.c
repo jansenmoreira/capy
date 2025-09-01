@@ -1,11 +1,9 @@
 #include <capy/capy.h>
 
-static inline capy_vec *capy_vec_head(void *data)
-{
-    capy_assert(data != NULL);  // GCOVR_EXCL_LINE
-
-    return (capy_vec *)(data)-1;
-}
+extern inline capy_vec *capy_vec_head(void *data);
+extern inline size_t capy_vec_size(void *data);
+extern inline size_t capy_vec_capacity(void *data);
+extern inline void capy_vec_fixed(void *data);
 
 void *capy_vec_init(capy_arena *arena, size_t element_size, size_t capacity)
 {
@@ -29,7 +27,7 @@ void *capy_vec_reserve(void *data, size_t capacity)
 {
     capy_vec *vec = capy_vec_head(data);
 
-    capy_assert(vec != NULL);  // GCOVR_EXCL_LINE
+    capy_assert(vec != NULL);
 
     if (capacity <= vec->capacity)
     {
@@ -79,8 +77,8 @@ void *capy_vec_pop(void *data)
 {
     capy_vec *vec = capy_vec_head(data);
 
-    capy_assert(vec != NULL);    // GCOVR_EXCL_LINE
-    capy_assert(vec->size > 0);  // GCOVR_EXCL_LINE
+    capy_assert(vec != NULL);
+    capy_assert(vec->size > 0);
 
     return capy_vec_resize(data, vec->size - 1);
 }
@@ -89,7 +87,7 @@ void *capy_vec_resize(void *data, size_t size)
 {
     capy_vec *vec = capy_vec_head(data);
 
-    capy_assert(vec != NULL);  // GCOVR_EXCL_LINE
+    capy_assert(vec != NULL);
 
     if (size > vec->capacity)
     {
@@ -112,8 +110,8 @@ void *capy_vec_insert(void *data, size_t position, size_t size, void *values)
 {
     capy_vec *vec = capy_vec_head(data);
 
-    capy_assert(vec != NULL);            // GCOVR_EXCL_LINE
-    capy_assert(position <= vec->size);  // GCOVR_EXCL_LINE
+    capy_assert(vec != NULL);
+    capy_assert(position <= vec->size);
 
     size_t tail_size = vec->size - position;
 
@@ -147,8 +145,8 @@ void *capy_vec_delete(void *data, size_t position, size_t size)
 {
     capy_vec *vec = capy_vec_head(data);
 
-    capy_assert(vec != NULL);                   // GCOVR_EXCL_LINE
-    capy_assert(position + size <= vec->size);  // GCOVR_EXCL_LINE
+    capy_assert(vec != NULL);
+    capy_assert(position + size <= vec->size);
 
     size_t tail_size = vec->size - (position + size);
 

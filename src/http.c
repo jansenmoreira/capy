@@ -103,7 +103,7 @@ static uint8_t http_char_categories[256] = {
     ['~'] = HTTP_VCHAR | HTTP_TOKEN,
 };
 
-static int http_valid_characters(capy_string s, int categories, const char *chars)
+static int http_string_validate(capy_string s, int categories, const char *chars)
 {
     capy_string input = s;
 
@@ -111,17 +111,9 @@ static int http_valid_characters(capy_string s, int categories, const char *char
     {
         if ((http_char_categories[(uint8_t)(input.data[0])] & categories) == 0)
         {
-            if (chars == NULL)
+            if (!capy_char_is(input.data[0], chars))
             {
                 return false;
-            }
-
-            for (int i = 0; chars[i] != input.data[0]; i++)
-            {
-                if (chars[i] == 0)
-                {
-                    return false;
-                }
             }
         }
 
@@ -131,26 +123,63 @@ static int http_valid_characters(capy_string s, int categories, const char *char
     return true;
 }
 
-static capy_http_method capy_http_parse_method(capy_string input)
+static capy_string http_next_token(capy_string *buffer, const char *delimiters)
+{
+    capy_string input = *buffer;
+
+    size_t i;
+
+    for (i = 0; i < input.size; i++)
+    {
+        if (capy_char_is(input.data[i], delimiters))
+        {
+            break;
+        }
+    }
+
+    *buffer = capy_string_shl(input, i);
+
+    return capy_string_slice(input, 0, i);
+}
+
+static size_t http_consume_chars(capy_string *buffer, const char *chars)
+{
+    capy_string input = *buffer;
+
+    size_t i;
+
+    for (i = 0; i < input.size && capy_char_is(input.data[i], chars); i++)
+    {
+    }
+
+    *buffer = capy_string_shl(input, i);
+
+    return i;
+}
+
+capy_http_method capy_http_parse_method(capy_string input)
 {
     static const capy_string ONNECT = capy_string_literal("ONNECT");
     static const capy_string ELETE = capy_string_literal("ELETE");
     static const capy_string ET = capy_string_literal("ET");
     static const capy_string EAD = capy_string_literal("EAD");
     static const capy_string PTIONS = capy_string_literal("PTIONS");
+    static const capy_string UT = capy_string_literal("UT");
     static const capy_string OST = capy_string_literal("OST");
-    static const capy_string RACE = capy_string_literal("TRACE");
+    static const capy_string RACE = capy_string_literal("RACE");
 
     if (input.size < 3 || input.size > 7)
     {
         return CAPY_HTTP_METHOD_UNK;
     }
 
+    capy_string suffix = capy_string_shl(input, 1);
+
     switch (input.data[0])
     {
         case 'C':
         {
-            if (capy_string_eq(capy_string_shl(input, 1), ONNECT))
+            if (capy_string_eq(suffix, ONNECT))
             {
                 return CAPY_HTTP_CONNECT;
             }
@@ -159,7 +188,7 @@ static capy_http_method capy_http_parse_method(capy_string input)
 
         case 'D':
         {
-            if (capy_string_eq(capy_string_shl(input, 1), ELETE))
+            if (capy_string_eq(suffix, ELETE))
             {
                 return CAPY_HTTP_DELETE;
             }
@@ -168,7 +197,7 @@ static capy_http_method capy_http_parse_method(capy_string input)
 
         case 'G':
         {
-            if (capy_string_eq(capy_string_shl(input, 1), ET))
+            if (capy_string_eq(suffix, ET))
             {
                 return CAPY_HTTP_GET;
             }
@@ -177,7 +206,7 @@ static capy_http_method capy_http_parse_method(capy_string input)
 
         case 'H':
         {
-            if (capy_string_eq(capy_string_shl(input, 1), EAD))
+            if (capy_string_eq(suffix, EAD))
             {
                 return CAPY_HTTP_HEAD;
             }
@@ -186,7 +215,7 @@ static capy_http_method capy_http_parse_method(capy_string input)
 
         case 'O':
         {
-            if (capy_string_eq(capy_string_shl(input, 1), PTIONS))
+            if (capy_string_eq(suffix, PTIONS))
             {
                 return CAPY_HTTP_OPTIONS;
             }
@@ -195,43 +224,34 @@ static capy_http_method capy_http_parse_method(capy_string input)
 
         case 'P':
         {
-            switch (input.data[1])
+            if (capy_string_eq(suffix, UT))
             {
-                case 'U':
-                {
-                    if (input.data[2] == 'T')
-                    {
-                        return CAPY_HTTP_PUT;
-                    }
-                }
-                break;
-
-                default:
-                {
-                    if (capy_string_eq(capy_string_shl(input, 1), OST))
-                    {
-                        return CAPY_HTTP_POST;
-                    }
-                }
-                break;
+                return CAPY_HTTP_PUT;
+            }
+            else if (capy_string_eq(suffix, OST))
+            {
+                return CAPY_HTTP_POST;
             }
         }
         break;
 
         case 'T':
         {
-            if (capy_string_eq(capy_string_shl(input, 1), RACE))
+            if (capy_string_eq(suffix, RACE))
             {
                 return CAPY_HTTP_TRACE;
             }
         }
         break;
+
+        default:
+            break;
     }
 
     return CAPY_HTTP_METHOD_UNK;
 }
 
-static capy_http_version capy_http_parse_version(capy_string input)
+capy_http_version capy_http_parse_version(capy_string input)
 {
     if (input.size != 8)
     {
@@ -267,6 +287,8 @@ static capy_http_version capy_http_parse_version(capy_string input)
                     return CAPY_HTTP_10;
                 case '1':
                     return CAPY_HTTP_11;
+                default:
+                    break;
             }
         }
         break;
@@ -288,41 +310,12 @@ static capy_http_version capy_http_parse_version(capy_string input)
             }
         }
         break;
+
+        default:
+            break;
     }
 
     return CAPY_HTTP_VERSION_UNK;
-}
-
-static capy_string http_message_get_token(capy_string *buffer, const char *delimiters, int ows)
-{
-    capy_string input = *buffer;
-
-    size_t i, token_size = -1;
-
-    for (i = 0; token_size == (size_t)(-1) && i < input.size; i++)
-    {
-        for (const char *it = delimiters; it[0] != 0; it++)
-        {
-            if (input.data[i] == it[0])
-            {
-                token_size = i;
-                break;
-            }
-        }
-    }
-
-    if (token_size == (size_t)(-1))
-    {
-        token_size = i;
-    }
-
-    for (; ows && i < input.size && input.data[i] == ' '; i++)
-    {
-    }
-
-    *buffer = capy_string_shl(input, i);
-
-    return capy_string_slice(input, 0, token_size);
 }
 
 capy_string capy_http_write_response(capy_arena *arena, capy_http_response *response)
@@ -337,36 +330,36 @@ capy_string capy_http_write_response(capy_arena *arena, capy_http_response *resp
         "\r\n"
         "%.*s";
 
-    response_size = snprintf(response_buffer,
-                             response_size,
-                             format,
-                             response->status,
-                             response->content.size,
-                             (int)response->content.size,
-                             response->content.data);
+    response_size = (size_t)(snprintf(response_buffer,
+                                      response_size,
+                                      format,
+                                      response->status,
+                                      response->content.size,
+                                      (int)response->content.size,
+                                      response->content.data));
 
     return capy_string_bytes(response_buffer, response_size);
 }
 
 int capy_http_parse_request_line(capy_arena *arena, capy_string line, capy_http_request *request)
 {
-    capy_string method = http_message_get_token(&line, " ", false);
+    capy_string method = http_next_token(&line, " ");
 
-    if (method.size == 0)
+    if (http_consume_chars(&line, " ") != 1)
     {
         return EINVAL;
     }
 
-    capy_string uri = http_message_get_token(&line, " ", false);
+    capy_string uri = http_next_token(&line, " ");
 
-    if (uri.size == 0)
+    if (http_consume_chars(&line, " ") != 1)
     {
         return EINVAL;
     }
 
-    capy_string version = http_message_get_token(&line, " ", false);
+    capy_string version = http_next_token(&line, " ");
 
-    if (version.size == 0)
+    if (line.size != 0)
     {
         return EINVAL;
     }
@@ -392,31 +385,29 @@ int capy_http_parse_request_line(capy_arena *arena, capy_string line, capy_http_
         return EINVAL;
     }
 
-    request->uri.scheme = capy_string_copy(arena, request->uri.scheme);
-    request->uri.authority = capy_string_copy(arena, request->uri.authority);
-    request->uri.userinfo = capy_string_copy(arena, request->uri.userinfo);
-    request->uri.host = capy_string_copy(arena, request->uri.host);
-    request->uri.port = capy_string_copy(arena, request->uri.port);
-    request->uri.path = capy_string_copy(arena, request->uri.path);
-    request->uri.query = capy_string_copy(arena, request->uri.query);
-    request->uri.fragment = capy_string_copy(arena, request->uri.fragment);
+    int err = 0;
+
+    err |= capy_string_copy(arena, request->uri.scheme, &request->uri.scheme);
+    err |= capy_string_copy(arena, request->uri.authority, &request->uri.authority);
+    err |= capy_string_copy(arena, request->uri.userinfo, &request->uri.userinfo);
+    err |= capy_string_copy(arena, request->uri.host, &request->uri.host);
+    err |= capy_string_copy(arena, request->uri.port, &request->uri.port);
+    err |= capy_string_copy(arena, request->uri.path, &request->uri.path);
+    err |= capy_string_copy(arena, request->uri.query, &request->uri.query);
+    err |= capy_string_copy(arena, request->uri.fragment, &request->uri.fragment);
+
+    if (err)
+    {
+        return ENOMEM;
+    }
 
     return 0;
 }
 
-int capy_http_content_length(capy_http_request *request)
+int capy_http_content_attributes(capy_http_request *request)
 {
-    capy_http_field *content_length = capy_smap_get(request->headers, capy_string_literal("content-length"));
-
-    if (content_length != NULL)
-    {
-        if (!http_valid_characters(content_length->value, HTTP_DIGIT, ""))
-        {
-            return EINVAL;
-        }
-
-        request->content_length = atoi(content_length->value.data);
-    }
+    request->content_length = 0;
+    request->chunked = 0;
 
     capy_http_field *transfer_encoding = capy_smap_get(request->headers, capy_string_literal("transfer-encoding"));
 
@@ -426,16 +417,31 @@ int capy_http_content_length(capy_http_request *request)
 
         while (input.size)
         {
-            capy_string token = http_message_get_token(&input, ",", true);
+            capy_string token = http_next_token(&input, ",");
 
-            token = capy_string_trim(token);
+            token = capy_string_trim(token, " \t");
 
             if (capy_string_eq(token, capy_string_literal("chunked")))
             {
                 request->chunked = true;
                 request->content_length = 0;
             }
+
+            http_consume_chars(&input, ",");
         }
+    }
+
+    capy_http_field *content_length = capy_smap_get(request->headers, capy_string_literal("content-length"));
+
+    if (content_length != NULL)
+    {
+        if (request->chunked || !http_string_validate(content_length->value, HTTP_DIGIT, ""))
+        {
+            return EINVAL;
+        }
+
+        request->content_length = strtoull(content_length->value.data, NULL, 10);
+        request->chunked = 0;
     }
 
     return 0;
@@ -445,36 +451,53 @@ int capy_http_parse_field(capy_arena *arena, capy_string line, capy_http_field *
 {
     capy_http_field field;
 
-    field.name = http_message_get_token(&line, ":", false);
+    field.name = http_next_token(&line, ":");
 
-    if (field.name.size == 0)
+    if (field.name.size == 0 || !http_string_validate(field.name, HTTP_TOKEN, NULL))
     {
         return EINVAL;
     }
 
-    if (!http_valid_characters(field.name, HTTP_TOKEN, NULL))
+    if (http_consume_chars(&line, ":") != 1)
     {
         return EINVAL;
     }
 
-    field.value = capy_string_trim(line);
+    field.value = capy_string_trim(line, " \t");
 
-    if (!http_valid_characters(field.value, HTTP_VCHAR, " \t"))
+    if (!http_string_validate(field.value, HTTP_VCHAR, NULL))
     {
         return EINVAL;
     }
 
-    field.name = capy_string_tolower(arena, field.name);
-    field.value = capy_string_copy(arena, field.value);
+    int err = 0;
 
-    capy_http_field *existing = capy_smap_get(*fields, field.name);
+    err |= capy_string_tolower(arena, field.name, &field.name);
+    err |= capy_string_copy(arena, field.value, &field.value);
 
-    if (existing != NULL && existing->value.size)
+    capy_http_field *other = capy_smap_get(*fields, field.name);
+
+    if (other)
     {
-        field.value = capy_string_join(arena, capy_string_literal(", "), 2, (capy_string[]){existing->value, field.value});
+        err |= capy_string_join(arena,
+                                capy_string_literal(", "),
+                                2, (capy_string[]){other->value, field.value},
+                                &field.value);
     }
 
-    *fields = capy_smap_set(*fields, &field.name);
+    if (err)
+    {
+        return ENOMEM;
+    }
+
+    capy_http_field *tmp = capy_smap_set(*fields, &field.name);
+
+    if (tmp == NULL)
+    {
+        return ENOMEM;
+    }
+
+    *fields = tmp;
 
     return 0;
 }

@@ -42,7 +42,7 @@ static int test_smap(void)
         expect_p_ne(tiny_smap, NULL);
     }
 
-    tiny_smap = capy_smap_set(tiny_smap, &fields[max - 1].key);
+    tiny_smap = capy_smap_set(tiny_smap, &fields[arrlen(fields) - 1].key);
     expect_p_eq(tiny_smap, NULL);
 
     capy_arena *arena = capy_arena_init(MiB(1));
@@ -99,7 +99,8 @@ static int test_smap(void)
         size_t written = (size_t)(snprintf(buffer, 31, "%d", (int)(i)));
         capy_string number = capy_string_bytes(buffer, written);
 
-        number = capy_string_copy(arena, number);
+        int err = capy_string_copy(arena, number, &number);
+        expect_s_eq(err, 0);
 
         smap = capy_smap_set(smap, &(string_pair){number, number}.key);
         expect_p_ne(smap, NULL);

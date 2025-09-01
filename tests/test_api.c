@@ -23,7 +23,11 @@ static int http_handler(capy_arena *arena, capy_http_request *request, capy_http
     // printf("%s\n", buffer);
 
     response->status = CAPY_HTTP_OK;
-    response->content = capy_string_copy(arena, capy_string_bytes(buffer, s));
+
+    if (capy_string_copy(arena, capy_string_bytes(buffer, (size_t)(s)), &response->content))
+    {
+        return ENOMEM;
+    }
 
     return 0;
 }

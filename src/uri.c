@@ -188,6 +188,9 @@ static capy_string uri_parse_dec_octet(capy_string input)
             return input;
         }
         break;
+
+        default:
+            break;
     }
 
     input.size = 0;
@@ -197,7 +200,7 @@ static capy_string uri_parse_dec_octet(capy_string input)
 
 static capy_string uri_token_advance(capy_string input)
 {
-    capy_assert(input.size);  // GCOVR_EXCL_LINE
+    capy_assert(input.size);
 
     if (input.data[0] == '%')
     {
@@ -211,7 +214,7 @@ static capy_string uri_token_advance(capy_string input)
 
 static int uri_token_categories(capy_string input)
 {
-    capy_assert(input.size);  // GCOVR_EXCL_LINE
+    capy_assert(input.size);
 
     if (input.data[0] != '%')
     {

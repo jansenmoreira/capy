@@ -1,11 +1,12 @@
 #include <capy/capy.h>
 
-static inline capy_smap *capy_smap_head(void *data)
-{
-    capy_assert(data != NULL);  // GCOVR_EXCL_LINE
-
-    return (capy_smap *)(data)-1;
-}
+extern inline capy_smap *capy_smap_head(void *data);
+extern inline size_t capy_smap_size(void *data);
+extern inline size_t capy_smap_capacity(void *data);
+extern inline capy_string *capy_sset_init(capy_arena *arena, size_t capacity);
+extern inline bool capy_sset_has(capy_string **ptr, capy_string key);
+extern inline capy_string *capy_sset_set(capy_string **ptr, capy_string key);
+extern inline capy_string *capy_sset_delete(capy_string **ptr, capy_string key);
 
 void *capy_smap_init(capy_arena *arena, size_t element_size, size_t capacity)
 {
@@ -29,7 +30,7 @@ void *capy_smap_get(void *data, capy_string key)
 {
     capy_smap *smap = capy_smap_head(data);
 
-    capy_assert(smap != NULL);  // GCOVR_EXCL_LINE
+    capy_assert(smap != NULL);
 
     size_t capacity = smap->capacity;
     size_t k = capy_hash(key.data, key.size) % capacity;
@@ -60,7 +61,15 @@ void *capy_smap_set(void *data, capy_string *pair)
 {
     capy_smap *smap = capy_smap_head(data);
 
-    capy_assert(smap != NULL);  // GCOVR_EXCL_LINE
+    capy_assert(smap != NULL);
+
+    capy_string *dest = capy_smap_get(data, pair[0]);
+
+    if (dest != NULL)
+    {
+        memcpy(dest, pair, smap->element_size);
+        return data;
+    }
 
     if (smap->size >= (smap->capacity * 2) / 3)
     {
@@ -83,8 +92,6 @@ void *capy_smap_set(void *data, capy_string *pair)
 
         smap = capy_smap_head(data);
     }
-
-    capy_string *dest = NULL;
 
     size_t k = capy_hash(pair[0].data, pair[0].size) % smap->capacity;
     size_t j = 1;

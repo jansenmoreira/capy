@@ -12,17 +12,17 @@ typedef struct capy_string
     size_t size;
 } capy_string;
 
-capy_string capy_string_copy(capy_arena *arena, capy_string s);
-capy_string capy_string_tolower(capy_arena *arena, capy_string s);
-capy_string capy_string_toupper(capy_arena *arena, capy_string s);
-capy_string capy_string_join(capy_arena *arena, capy_string delimiter, int n, capy_string *s);
+int capy_string_copy(capy_arena *arena, capy_string src, capy_string *dst);
+int capy_string_tolower(capy_arena *arena, capy_string src, capy_string *dst);
+int capy_string_toupper(capy_arena *arena, capy_string src, capy_string *dst);
+int capy_string_join(capy_arena *arena, capy_string delimiter, int n, capy_string *strs, capy_string *dst);
 size_t capy_string_hex(capy_string input, int64_t *value);
 
-static inline capy_string capy_string_slice(capy_string s, size_t begin, size_t end)
+inline capy_string capy_string_slice(capy_string s, size_t begin, size_t end)
 {
-    capy_assert(begin <= end);     // GCOVR_EXCL_LINE
-    capy_assert(begin <= s.size);  // GCOVR_EXCL_LINE
-    capy_assert(end <= s.size);    // GCOVR_EXCL_LINE
+    capy_assert(begin <= end);
+    capy_assert(begin <= s.size);
+    capy_assert(end <= s.size);
 
     s.data += begin;
     s.size = end - begin;
@@ -30,54 +30,103 @@ static inline capy_string capy_string_slice(capy_string s, size_t begin, size_t 
     return s;
 }
 
-static inline int capy_string_eq(capy_string a, capy_string b)
+inline int capy_string_eq(capy_string a, capy_string b)
 {
     return (a.size == b.size) ? strncmp(a.data, b.data, b.size) == 0 : 0;
 }
 
-static inline int capy_string_sw(capy_string a, capy_string prefix)
+inline int capy_string_sw(capy_string a, capy_string prefix)
 {
     return (a.size >= prefix.size) ? strncmp(a.data, prefix.data, prefix.size) == 0 : 0;
 }
 
-static inline capy_string capy_string_bytes(const char *data, size_t size)
+inline capy_string capy_string_bytes(const char *data, size_t size)
 {
     return (capy_string){.data = data, .size = size};
 }
 
-static inline capy_string capy_string_shl(capy_string s, size_t size)
+inline capy_string capy_string_shl(capy_string s, size_t size)
 {
+    capy_assert(size <= s.size);
     return (capy_string){.data = s.data + size, .size = s.size - size};
 }
 
-static inline capy_string capy_string_shr(capy_string s, size_t size)
+inline capy_string capy_string_shr(capy_string s, size_t size)
 {
+    capy_assert(size <= s.size);
     return (capy_string){.data = s.data, .size = s.size - size};
 }
 
-static inline capy_string capy_string_cstr(const char *data)
+inline capy_string capy_string_cstr(const char *data)
 {
     return (capy_string){.data = data, .size = strlen(data)};
 }
 
-static inline capy_string capy_string_trim(capy_string s)
+static inline int capy_char_in(char c, const char *chars)
 {
-    if (s.size == 0)
+    if (chars == NULL)
     {
-        return s;
+        return false;
     }
 
-    size_t i, j;
-
-    for (i = 0; i < s.size && s.data[i] == ' '; i++)
+    for (const char *it = chars; it[0] != 0; it++)
     {
+        if (c == it[0])
+        {
+            return true;
+        }
     }
 
-    for (j = s.size; j > i && s.data[j - 1] == ' '; j--)
+    return false;
+}
+
+inline int capy_char_is(char c, const char *chars)
+{
+    for (const char *it = chars; it != NULL && it[0] != 0; it++)
     {
+        if (it[0] == c)
+        {
+            return true;
+        }
     }
 
-    return (capy_string){.data = s.data + i, .size = (size_t)(j - i)};
+    return false;
+}
+
+inline capy_string capy_string_ltrim(capy_string s, const char *chars)
+{
+    size_t i;
+
+    for (i = 0; i < s.size; i++)
+    {
+        if (!capy_char_is(s.data[i], chars))
+        {
+            break;
+        }
+    }
+
+    return (capy_string){.data = s.data + i, .size = s.size - i};
+}
+
+inline capy_string capy_string_rtrim(capy_string s, const char *chars)
+{
+    size_t i;
+
+    for (i = s.size; i > 0; i--)
+    {
+        if (!capy_char_is(s.data[i - 1], chars))
+        {
+            break;
+        }
+    }
+
+    return (capy_string){.data = s.data, .size = i};
+}
+
+inline capy_string capy_string_trim(capy_string s, const char *chars)
+{
+    s = capy_string_ltrim(s, chars);
+    return capy_string_rtrim(s, chars);
 }
 
 #define capy_string_literal(s) ((capy_string){.data = (s), .size = sizeof(s) - 1})

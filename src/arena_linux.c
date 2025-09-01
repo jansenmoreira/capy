@@ -23,14 +23,16 @@ capy_arena *capy_arena_init(size_t limit)
 
     if (arena == MAP_FAILED)
     {
-        return MAP_FAILED;
+        capy_log_errno(errno, "mmap failed");
+        abort();
     }
 
     size_t page_size = (size_t)(sysconf(_SC_PAGE_SIZE));
 
-    if (mprotect(arena, page_size, PROT_READ | PROT_WRITE) < 0)
+    if (mprotect(arena, page_size, PROT_READ | PROT_WRITE) == -1)
     {
-        return NULL;  // GCOVR_EXCL_LINE
+        capy_log_errno(errno, "mprotect failed");
+        abort();
     }
 
     arena->size = 40;
@@ -43,9 +45,10 @@ capy_arena *capy_arena_init(size_t limit)
 
 int capy_arena_free(capy_arena *arena)
 {
-    if (munmap(arena, arena->limit) < 0)
+    if (munmap(arena, arena->limit) == -1)
     {
-        return errno;  // GCOVR_EXCL_LINE
+        capy_log_errno(errno, "munmap failed");
+        abort();
     }
 
     return 0;
@@ -53,7 +56,7 @@ int capy_arena_free(capy_arena *arena)
 
 void *capy_arena_grow(capy_arena *arena, size_t size, size_t align)
 {
-    capy_assert(arena != NULL);  // GCOVR_EXCL_LINE
+    capy_assert(arena != NULL);
 
     size_t begin = (align) ? align_to(arena->size, align) : arena->size;
     size_t end = begin + size;
@@ -69,7 +72,8 @@ void *capy_arena_grow(capy_arena *arena, size_t size, size_t align)
 
         if (mprotect(arena, capacity, PROT_READ | PROT_WRITE) < 0)
         {
-            return NULL;  // GCOVR_EXCL_LINE
+            capy_log_errno(errno, "mprotect failed");
+            abort();
         }
 
         arena->capacity = capacity;
@@ -77,11 +81,12 @@ void *capy_arena_grow(capy_arena *arena, size_t size, size_t align)
 
     arena->size = end;
 
-    uint8_t *data = (uint8_t *)(arena);
+    return (uint8_t *)(arena) + begin;
+}
 
-    memset(data + begin, 0, size);
-
-    return data + begin;
+size_t capy_arena_size(capy_arena *arena)
+{
+    return arena->size;
 }
 
 void *capy_arena_top(capy_arena *arena)
@@ -91,21 +96,8 @@ void *capy_arena_top(capy_arena *arena)
 
 int capy_arena_shrink(capy_arena *arena, void *addr)
 {
-    ptrdiff_t diff = (uint8_t *)(addr) - (uint8_t *)(arena);
-
-    if (diff < (ptrdiff_t)(sizeof(capy_arena)))
-    {
-        return EINVAL;
-    }
-
-    size_t size = (size_t)(diff);
-
-    if (size > arena->size)
-    {
-        return EINVAL;
-    }
-
-    arena->size = size;
-
+    capy_assert((size_t)(addr) >= (size_t)(arena) + sizeof(capy_arena));
+    capy_assert((size_t)(addr) <= (size_t)(arena) + arena->size);
+    arena->size = (size_t)(addr) - (size_t)(arena);
     return 0;
 }

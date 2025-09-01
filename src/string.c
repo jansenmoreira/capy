@@ -1,5 +1,18 @@
 #include <capy/capy.h>
 #include <ctype.h>
+#include <errno.h>
+
+extern inline capy_string capy_string_slice(capy_string s, size_t begin, size_t end);
+extern inline int capy_string_eq(capy_string a, capy_string b);
+extern inline int capy_string_sw(capy_string a, capy_string prefix);
+extern inline capy_string capy_string_bytes(const char *data, size_t size);
+extern inline capy_string capy_string_shl(capy_string s, size_t size);
+extern inline capy_string capy_string_shr(capy_string s, size_t size);
+extern inline capy_string capy_string_cstr(const char *data);
+extern inline capy_string capy_string_trim(capy_string s, const char *chars);
+extern inline capy_string capy_string_ltrim(capy_string s, const char *chars);
+extern inline capy_string capy_string_rtrim(capy_string s, const char *chars);
+extern inline int capy_char_is(char c, const char *chars);
 
 size_t capy_string_hex(capy_string input, int64_t *value)
 {
@@ -9,8 +22,9 @@ size_t capy_string_hex(capy_string input, int64_t *value)
 
     if (input.size && input.data[0] == '-')
     {
+        bytes += 1;
         mult = -1;
-        capy_string_shl(input, 1);
+        input = capy_string_shl(input, 1);
     }
 
     while (input.size)
@@ -96,64 +110,92 @@ size_t capy_string_hex(capy_string input, int64_t *value)
     return bytes;
 }
 
-capy_string capy_string_copy(capy_arena *arena, capy_string s)
+int capy_string_copy(capy_arena *arena, capy_string src, capy_string *dst)
 {
-    if (s.size == 0)
+    if (src.size == 0)
     {
-        return (capy_string){NULL};
+        *dst = (capy_string){NULL};
+        return 0;
     }
 
-    char *buffer = capy_arena_make(char, arena, s.size + 1);
-    memcpy(buffer, s.data, s.size);
-    s.data = buffer;
+    char *buffer = capy_arena_make(char, arena, src.size + 1);
 
-    return s;
-}
-
-capy_string capy_string_tolower(capy_arena *arena, capy_string s)
-{
-    char *data = capy_arena_make(char, arena, s.size + 1);
-
-    for (size_t i = 0; i < s.size; i++)
+    if (buffer == NULL)
     {
-        data[i] = (char)(tolower(s.data[i]));
+        return ENOMEM;
     }
 
-    return capy_string_bytes(data, s.size);
+    memcpy(buffer, src.data, src.size);
+    *dst = capy_string_bytes(buffer, src.size);
+
+    return 0;
 }
 
-capy_string capy_string_toupper(capy_arena *arena, capy_string s)
+int capy_string_tolower(capy_arena *arena, capy_string src, capy_string *dst)
 {
-    char *data = capy_arena_make(char, arena, s.size + 1);
+    int err = capy_string_copy(arena, src, dst);
 
-    for (size_t i = 0; i < s.size; i++)
+    if (err)
     {
-        data[i] = (char)(toupper(s.data[i]));
+        return err;
     }
 
-    return capy_string_bytes(data, s.size);
+    char *data = (char *)(dst->data);
+
+    for (size_t i = 0; i < src.size; i++)
+    {
+        data[i] = (char)(tolower(src.data[i]));
+    }
+
+    return 0;
 }
 
-capy_string capy_string_join(capy_arena *arena, capy_string delimiter, int n, capy_string *s)
+int capy_string_toupper(capy_arena *arena, capy_string src, capy_string *dst)
+{
+    int err = capy_string_copy(arena, src, dst);
+
+    if (err)
+    {
+        return err;
+    }
+
+    char *data = (char *)(dst->data);
+
+    for (size_t i = 0; i < src.size; i++)
+    {
+        data[i] = (char)(toupper(src.data[i]));
+    }
+
+    return 0;
+}
+
+int capy_string_join(capy_arena *arena, capy_string delimiter, int n, capy_string *strs, capy_string *dst)
 {
     if (n < 1)
     {
-        return (capy_string){NULL};
+        *dst = (capy_string){NULL};
+        return 0;
     }
 
     size_t size = 0;
 
     for (int i = 0; i < n; i++)
     {
-        if (i == 0)
+        if (i != 0)
         {
             size += delimiter.size;
         }
 
-        size += s[i].size;
+        size += strs[i].size;
     }
 
     char *buffer = capy_arena_make(char, arena, size + 1);
+
+    if (buffer == NULL)
+    {
+        return ENOMEM;
+    }
+
     char *cursor = buffer;
 
     for (int i = 0; i < n; i++)
@@ -164,9 +206,10 @@ capy_string capy_string_join(capy_arena *arena, capy_string delimiter, int n, ca
             cursor += delimiter.size;
         }
 
-        strncpy(cursor, s[i].data, s[i].size);
-        cursor += s[i].size;
+        strncpy(cursor, strs[i].data, strs[i].size);
+        cursor += strs[i].size;
     }
 
-    return capy_string_bytes(buffer, size);
+    *dst = capy_string_bytes(buffer, size);
+    return 0;
 }

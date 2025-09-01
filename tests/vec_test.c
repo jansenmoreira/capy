@@ -7,8 +7,10 @@ static int test_vec(void)
     int16_t *vec = capy_vec_of(int16_t, arena, 8);
     int16_t *vec_tmp;
 
+    expect_u_eq(capy_vec_capacity(vec), 8);
+
     vec_tmp = capy_vec_insert(vec, 0, KiB(2), NULL);
-    expect_s_eq(vec_tmp, NULL);
+    expect_p_eq(vec_tmp, NULL);
 
     for (int16_t i = 1; i <= 10; i++)
     {
@@ -31,7 +33,7 @@ static int test_vec(void)
 
     for (size_t i = 0; i < arrlen(expected); i++)
     {
-        expect_u_eq(vec[i], expected[i]);
+        expect_s_eq(vec[i], expected[i]);
     }
 
     vec = capy_vec_pop(vec);
@@ -48,7 +50,7 @@ static int test_vec(void)
 
     for (int16_t i = 0; i < 10; i++)
     {
-        expect_u_eq(vec[i], i + 1);
+        expect_s_eq(vec[i], i + 1);
     }
 
     vec = capy_vec_delete(vec, 0, 10);

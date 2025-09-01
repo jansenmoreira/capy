@@ -1,0 +1,33 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "tests",
+            "program": "${workspaceFolder}/build/tests",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "build",
+            "postDebugTask": "coverage",
+            "expressions": "native",
+            "initCommands": [
+                "command source lldb/capy.lldb"
+            ],
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "test_api",
+            "program": "${workspaceFolder}/build/test_api",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "terminal": "integrated",
+            "preLaunchTask": "build",
+            "expressions": "native",
+            "initCommands": [
+                "command source lldb/capy.lldb"
+            ],
+        }
+    ]
+}

@@ -1,3 +1,4 @@
+#include "assert.c"
 #include "hash.c"
 #include "smap.c"
 #include "string.c"

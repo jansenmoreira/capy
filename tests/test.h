@@ -33,41 +33,199 @@ typedef struct string_pair
     capy_string value;
 } string_pair;
 
-#define expect(exp, format, file, line, lhs, rhs) \
-    ((exp) ? 0 : (fprintf(stderr, (format), (file), (line), (lhs), (rhs)), abort(), 0))
+static inline void expect_u_eq_(unsigned long long lhs, unsigned long long rhs, const char *file, int line)
+{
+    if (lhs == rhs) return;
+    fprintf(stderr, "%s:%d: condition %llu == %llu failed\n", file, line, lhs, rhs);
+    abort();
+}
 
-#define expect_u_eq(lhs, rhs) expect((unsigned long long)(lhs) == (unsigned long long)(rhs), "%s:%d: condition %llu == %llu failed\n", __FILE__, __LINE__, (unsigned long long)(lhs), (unsigned long long)(rhs))
-#define expect_u_ne(lhs, rhs) expect((unsigned long long)(lhs) != (unsigned long long)(rhs), "%s:%d: condition %llu != %llu failed\n", __FILE__, __LINE__, (unsigned long long)(lhs), (unsigned long long)(rhs))
-#define expect_u_gt(lhs, rhs) expect((unsigned long long)(lhs) > (unsigned long long)(rhs), "%s:%d: condition %llu > %llu failed\n", __FILE__, __LINE__, (unsigned long long)(lhs), (unsigned long long)(rhs))
-#define expect_u_gte(lhs, rhs) expect((unsigned long long)(lhs) >= (unsigned long long)(rhs), "%s:%d: condition %llu >= %llu failed\n", __FILE__, __LINE__, (unsigned long long)(lhs), (unsigned long long)(rhs))
-#define expect_u_lt(lhs, rhs) expect((unsigned long long)(lhs) < (unsigned long long)(rhs), "%s:%d: condition %llu < %llu failed\n", __FILE__, __LINE__, (unsigned long long)(lhs), (unsigned long long)(rhs))
-#define expect_u_lte(lhs, rhs) expect((unsigned long long)(lhs) <= (unsigned long long)(rhs), "%s:%d: condition %llu <= %llu failed\n", __FILE__, __LINE__, (unsigned long long)(lhs), (unsigned long long)(rhs))
+static inline void expect_u_ne_(unsigned long long lhs, unsigned long long rhs, const char *file, int line)
+{
+    if (lhs != rhs) return;
+    fprintf(stderr, "%s:%d: condition %llu != %llu failed\n", file, line, lhs, rhs);
+    abort();
+}
 
-#define expect_s_eq(lhs, rhs) expect((long long)(lhs) == (long long)(rhs), "%s:%d: condition %lld == %lld failed\n", __FILE__, __LINE__, (long long)(lhs), (long long)(rhs))
-#define expect_s_ne(lhs, rhs) expect((long long)(lhs) != (long long)(rhs), "%s:%d: condition %lld != %lld failed\n", __FILE__, __LINE__, (long long)(lhs), (long long)(rhs))
-#define expect_s_gt(lhs, rhs) expect((long long)(lhs) > (long long)(rhs), "%s:%d: condition %lld > %lld failed\n", __FILE__, __LINE__, (long long)(lhs), (long long)(rhs))
-#define expect_s_gte(lhs, rhs) expect((long long)(lhs) >= (long long)(rhs), "%s:%d: condition %lld >= %lld failed\n", __FILE__, __LINE__, (long long)(lhs), (long long)(rhs))
-#define expect_s_lt(lhs, rhs) expect((long long)(lhs) < (long long)(rhs), "%s:%d: condition %lld < %lld failed\n", __FILE__, __LINE__, (long long)(lhs), (long long)(rhs))
-#define expect_s_lte(lhs, rhs) expect((long long)(lhs) <= (long long)(rhs), "%s:%d: condition %lld <= %lld failed\n", __FILE__, __LINE__, (long long)(lhs), (long long)(rhs))
+static inline void expect_u_gt_(unsigned long long lhs, unsigned long long rhs, const char *file, int line)
+{
+    if (lhs > rhs) return;
+    fprintf(stderr, "%s:%d: condition %llu > %llu failed\n", file, line, lhs, rhs);
+    abort();
+}
 
-#define expect_f_eq(lhs, rhs) expect((double)(lhs) == (double)(rhs), "%s:%d: condition %f == %f failed\n", __FILE__, __LINE__, (double)(lhs), (double)(rhs))
-#define expect_f_ne(lhs, rhs) expect((double)(lhs) != (double)(rhs), "%s:%d: condition %f != %f failed\n", __FILE__, __LINE__, (double)(lhs), (double)(rhs))
-#define expect_f_gt(lhs, rhs) expect((double)(lhs) > (double)(rhs), "%s:%d: condition %f > %f failed\n", __FILE__, __LINE__, (double)(lhs), (double)(rhs))
-#define expect_f_gte(lhs, rhs) expect((double)(lhs) >= (double)(rhs), "%s:%d: condition %f >= %f failed\n", __FILE__, __LINE__, (double)(lhs), (double)(rhs))
-#define expect_f_lt(lhs, rhs) expect((double)(lhs) < (double)(rhs), "%s:%d: condition %f < %f failed\n", __FILE__, __LINE__, (double)(lhs), (double)(rhs))
-#define expect_f_lte(lhs, rhs) expect((double)(lhs) <= (double)(rhs), "%s:%d: condition %f <= %f failed\n", __FILE__, __LINE__, (double)(lhs), (double)(rhs))
+static inline void expect_u_gte_(unsigned long long lhs, unsigned long long rhs, const char *file, int line)
+{
+    if (lhs >= rhs) return;
+    fprintf(stderr, "%s:%d: condition %llu >= %llu failed\n", file, line, lhs, rhs);
+    abort();
+}
 
-#define expect_p_eq(lhs, rhs) expect((void *)(lhs) == (void *)(rhs), "%s:%d: condition %p == %p failed\n", __FILE__, __LINE__, (void *)(lhs), (void *)(rhs))
-#define expect_p_ne(lhs, rhs) expect((void *)(lhs) != (void *)(rhs), "%s:%d: condition %p != %p failed\n", __FILE__, __LINE__, (void *)(lhs), (void *)(rhs))
-#define expect_p_gt(lhs, rhs) expect((void *)(lhs) > (void *)(rhs), "%s:%d: condition %p > %p failed\n", __FILE__, __LINE__, (void *)(lhs), (void *)(rhs))
-#define expect_p_gte(lhs, rhs) expect((void *)(lhs) >= (void *)(rhs), "%s:%d: condition %p >= %p failed\n", __FILE__, __LINE__, (void *)(lhs), (void *)(rhs))
-#define expect_p_lt(lhs, rhs) expect((void *)(lhs) < (void *)(rhs), "%s:%d: condition %p < %p failed\n", __FILE__, __LINE__, (void *)(lhs), (void *)(rhs))
-#define expect_p_lte(lhs, rhs) expect((void *)(lhs) <= (void *)(rhs), "%s:%d: condition %p <= %p failed\n", __FILE__, __LINE__, (void *)(lhs), (void *)(rhs))
+static inline void expect_u_lt_(unsigned long long lhs, unsigned long long rhs, const char *file, int line)
+{
+    if (lhs < rhs) return;
+    fprintf(stderr, "%s:%d: condition %llu < %llu failed\n", file, line, lhs, rhs);
+    abort();
+}
 
-#define expect_str_eq(lhs, rhs) \
-    ((capy_string_eq((lhs), (rhs))) ? 0 : (fprintf(stderr, "%s:%d: condition \"%.*s\" == \"%.*s\" failed\n", __FILE__, __LINE__, (int)(lhs).size, (lhs).data, (int)(rhs).size, (rhs).data), abort(), 0))
+static inline void expect_u_lte_(unsigned long long lhs, unsigned long long rhs, const char *file, int line)
+{
+    if (lhs <= rhs) return;
+    fprintf(stderr, "%s:%d: condition %llu <= %llu failed\n", file, line, lhs, rhs);
+    abort();
+}
 
-#define expect_str_ne(lhs, rhs) \
-    ((!capy_string_eq((lhs), (rhs))) ? 0 : (fprintf(stderr, "%s:%d: condition \"%.*s\" != \"%.*s\" failed\n", __FILE__, __LINE__, (int)(lhs).size, (lhs).data, (int)(rhs).size, (rhs).data), abort(), 0))
+static inline void expect_s_eq_(long long lhs, long long rhs, const char *file, int line)
+{
+    if (lhs == rhs) return;
+    fprintf(stderr, "%s:%d: condition %lld == %lld failed\n", file, line, lhs, rhs);
+    abort();
+}
+
+static inline void expect_s_ne_(long long lhs, long long rhs, const char *file, int line)
+{
+    if (lhs != rhs) return;
+    fprintf(stderr, "%s:%d: condition %lld != %lld failed\n", file, line, lhs, rhs);
+    abort();
+}
+
+static inline void expect_s_gt_(long long lhs, long long rhs, const char *file, int line)
+{
+    if (lhs > rhs) return;
+    fprintf(stderr, "%s:%d: condition %lld > %lld failed\n", file, line, lhs, rhs);
+    abort();
+}
+
+static inline void expect_s_gte_(long long lhs, long long rhs, const char *file, int line)
+{
+    if (lhs >= rhs) return;
+    fprintf(stderr, "%s:%d: condition %lld >= %lld failed\n", file, line, lhs, rhs);
+    abort();
+}
+
+static inline void expect_s_lt_(long long lhs, long long rhs, const char *file, int line)
+{
+    if (lhs < rhs) return;
+    fprintf(stderr, "%s:%d: condition %lld < %lld failed\n", file, line, lhs, rhs);
+    abort();
+}
+
+static inline void expect_s_lte_(long long lhs, long long rhs, const char *file, int line)
+{
+    if (lhs <= rhs) return;
+    fprintf(stderr, "%s:%d: condition %lld <= %lld failed\n", file, line, lhs, rhs);
+    abort();
+}
+
+static inline void expect_f_gt_(double lhs, double rhs, const char *file, int line)
+{
+    if (lhs > rhs) return;
+    fprintf(stderr, "%s:%d: condition %lf > %lf failed\n", file, line, lhs, rhs);
+    abort();
+}
+
+static inline void expect_f_gte_(double lhs, double rhs, const char *file, int line)
+{
+    if (lhs >= rhs) return;
+    fprintf(stderr, "%s:%d: condition %lf >= %lf failed\n", file, line, lhs, rhs);
+    abort();
+}
+
+static inline void expect_f_lt_(double lhs, double rhs, const char *file, int line)
+{
+    if (lhs < rhs) return;
+    fprintf(stderr, "%s:%d: condition %lf < %lf failed\n", file, line, lhs, rhs);
+    abort();
+}
+
+static inline void expect_f_lte_(double lhs, double rhs, const char *file, int line)
+{
+    if (lhs <= rhs) return;
+    fprintf(stderr, "%s:%d: condition %lf <= %lf failed\n", file, line, lhs, rhs);
+    abort();
+}
+
+static inline void expect_p_eq_(void *lhs, void *rhs, const char *file, int line)
+{
+    if (lhs == rhs) return;
+    fprintf(stderr, "%s:%d: condition %p == %p failed\n", file, line, lhs, rhs);
+    abort();
+}
+
+static inline void expect_p_ne_(void *lhs, void *rhs, const char *file, int line)
+{
+    if (lhs != rhs) return;
+    fprintf(stderr, "%s:%d: condition %p != %p failed\n", file, line, lhs, rhs);
+    abort();
+}
+
+static inline void expect_p_gt_(void *lhs, void *rhs, const char *file, int line)
+{
+    if (lhs > rhs) return;
+    fprintf(stderr, "%s:%d: condition %p > %p failed\n", file, line, lhs, rhs);
+    abort();
+}
+
+static inline void expect_p_gte_(void *lhs, void *rhs, const char *file, int line)
+{
+    if (lhs >= rhs) return;
+    fprintf(stderr, "%s:%d: condition %p >= %p failed\n", file, line, lhs, rhs);
+    abort();
+}
+
+static inline void expect_p_lt_(void *lhs, void *rhs, const char *file, int line)
+{
+    if (lhs < rhs) return;
+    fprintf(stderr, "%s:%d: condition %p < %p failed\n", file, line, lhs, rhs);
+    abort();
+}
+
+static inline void expect_p_lte_(void *lhs, void *rhs, const char *file, int line)
+{
+    if (lhs <= rhs) return;
+    fprintf(stderr, "%s:%d: condition %p <= %p failed\n", file, line, lhs, rhs);
+    abort();
+}
+
+static inline void expect_str_eq_(capy_string lhs, capy_string rhs, const char *file, int line)
+{
+    if (capy_string_eq(lhs, rhs)) return;
+    fprintf(stderr, "%s:%d: condition %.*s == %.*s failed\n", file, line, (int)lhs.size, lhs.data, (int)rhs.size, rhs.data);
+    abort();
+}
+
+static inline void expect_str_ne_(capy_string lhs, capy_string rhs, const char *file, int line)
+{
+    if (!capy_string_eq(lhs, rhs)) return;
+    fprintf(stderr, "%s:%d: condition %.*s != %.*s failed\n", file, line, (int)lhs.size, lhs.data, (int)rhs.size, rhs.data);
+    abort();
+}
+
+#define expect_u_eq(lhs, rhs) expect_u_eq_((lhs), (rhs), __FILE__, __LINE__)
+#define expect_u_ne(lhs, rhs) expect_u_ne_((lhs), (rhs), __FILE__, __LINE__)
+#define expect_u_gt(lhs, rhs) expect_u_gt_((lhs), (rhs), __FILE__, __LINE__)
+#define expect_u_gte(lhs, rhs) expect_u_gte_((lhs), (rhs), __FILE__, __LINE__)
+#define expect_u_lt(lhs, rhs) expect_u_lt_((lhs), (rhs), __FILE__, __LINE__)
+#define expect_u_lte(lhs, rhs) expect_u_lte_((lhs), (rhs), __FILE__, __LINE__)
+#define expect_s_eq(lhs, rhs) expect_s_eq_((lhs), (rhs), __FILE__, __LINE__)
+#define expect_s_ne(lhs, rhs) expect_s_ne_((lhs), (rhs), __FILE__, __LINE__)
+#define expect_s_gt(lhs, rhs) expect_s_gt_((lhs), (rhs), __FILE__, __LINE__)
+#define expect_s_gte(lhs, rhs) expect_s_gte_((lhs), (rhs), __FILE__, __LINE__)
+#define expect_s_lt(lhs, rhs) expect_s_lt_((lhs), (rhs), __FILE__, __LINE__)
+#define expect_s_lte(lhs, rhs) expect_s_lte_((lhs), (rhs), __FILE__, __LINE__)
+#define expect_f_eq(lhs, rhs) expect_f_eq_((lhs), (rhs), __FILE__, __LINE__)
+#define expect_f_ne(lhs, rhs) expect_f_ne_((lhs), (rhs), __FILE__, __LINE__)
+#define expect_f_gt(lhs, rhs) expect_f_gt_((lhs), (rhs), __FILE__, __LINE__)
+#define expect_f_gte(lhs, rhs) expect_f_gte_((lhs), (rhs), __FILE__, __LINE__)
+#define expect_f_lt(lhs, rhs) expect_f_lt_((lhs), (rhs), __FILE__, __LINE__)
+#define expect_f_lte(lhs, rhs) expect_f_lte_((lhs), (rhs), __FILE__, __LINE__)
+#define expect_p_eq(lhs, rhs) expect_p_eq_((lhs), (rhs), __FILE__, __LINE__)
+#define expect_p_ne(lhs, rhs) expect_p_ne_((lhs), (rhs), __FILE__, __LINE__)
+#define expect_p_gt(lhs, rhs) expect_p_gt_((lhs), (rhs), __FILE__, __LINE__)
+#define expect_p_gte(lhs, rhs) expect_p_gte_((lhs), (rhs), __FILE__, __LINE__)
+#define expect_p_lt(lhs, rhs) expect_p_lt_((lhs), (rhs), __FILE__, __LINE__)
+#define expect_p_lte(lhs, rhs) expect_p_lte_((lhs), (rhs), __FILE__, __LINE__)
+#define expect_str_eq(lhs, rhs) expect_str_eq_((lhs), (rhs), __FILE__, __LINE__)
+#define expect_str_ne(lhs, rhs) expect_str_ne_((lhs), (rhs), __FILE__, __LINE__)
 
 #endif
