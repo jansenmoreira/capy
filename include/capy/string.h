@@ -12,11 +12,23 @@ typedef struct capy_string
     size_t size;
 } capy_string;
 
-int capy_string_copy(capy_arena *arena, capy_string src, capy_string *dst);
-int capy_string_tolower(capy_arena *arena, capy_string src, capy_string *dst);
-int capy_string_toupper(capy_arena *arena, capy_string src, capy_string *dst);
-int capy_string_join(capy_arena *arena, capy_string delimiter, int n, capy_string *strs, capy_string *dst);
+capy_string capy_string_copy(capy_arena *arena, capy_string input);
+void capy_string_ilowercase(capy_string str);
+void capy_string_iuppercase(capy_string str);
+capy_string capy_string_lowercase(capy_arena *arena, capy_string src);
+capy_string capy_string_uppercase(capy_arena *arena, capy_string src);
+capy_string capy_string_join(capy_arena *arena, const char *delimiter, int n, capy_string *list);
 size_t capy_string_hex(capy_string input, int64_t *value);
+
+inline char capy_char_uppercase(char c)
+{
+    return ('a' <= c && c <= 'z') ? c & 0xDF : c;
+}
+
+inline char capy_char_lowercase(char c)
+{
+    return ('A' <= c && c <= 'Z') ? c | 0x20 : c;
+}
 
 inline capy_string capy_string_slice(capy_string s, size_t begin, size_t end)
 {
@@ -32,12 +44,12 @@ inline capy_string capy_string_slice(capy_string s, size_t begin, size_t end)
 
 inline int capy_string_eq(capy_string a, capy_string b)
 {
-    return (a.size == b.size) ? strncmp(a.data, b.data, b.size) == 0 : 0;
+    return (a.size == b.size) ? memcmp(a.data, b.data, b.size) == 0 : 0;
 }
 
 inline int capy_string_sw(capy_string a, capy_string prefix)
 {
-    return (a.size >= prefix.size) ? strncmp(a.data, prefix.data, prefix.size) == 0 : 0;
+    return (a.size >= prefix.size) ? memcmp(a.data, prefix.data, prefix.size) == 0 : 0;
 }
 
 inline capy_string capy_string_bytes(const char *data, size_t size)
@@ -60,24 +72,6 @@ inline capy_string capy_string_shr(capy_string s, size_t size)
 inline capy_string capy_string_cstr(const char *data)
 {
     return (capy_string){.data = data, .size = strlen(data)};
-}
-
-static inline int capy_char_in(char c, const char *chars)
-{
-    if (chars == NULL)
-    {
-        return false;
-    }
-
-    for (const char *it = chars; it[0] != 0; it++)
-    {
-        if (c == it[0])
-        {
-            return true;
-        }
-    }
-
-    return false;
 }
 
 inline int capy_char_is(char c, const char *chars)

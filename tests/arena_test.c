@@ -2,8 +2,6 @@
 
 static int test_arena(void)
 {
-    int err;
-
     size_t limit = GiB(8ULL);
 
     // expect_s_lt(capy_arena_init(TiB(128ULL)), 0);
@@ -55,16 +53,13 @@ static int test_arena(void)
     expect_u_eq((size_t)(a5) % alignof(struct point), 0);
     expect_s_gte((uint8_t *)(capy_arena_top(arena)) - last_top, sizeof(struct point) * 1);
 
-    err = capy_arena_shrink(arena, a3);
-    expect_s_eq(err, 0);
+    capy_arena_shrink(arena, a3);
     expect_p_eq((uint8_t *)(a3), (uint8_t *)(capy_arena_top(arena)));
 
-    err = capy_arena_shrink(arena, top);
-    expect_s_eq(err, 0);
+    capy_arena_shrink(arena, top);
     expect_p_eq((uint8_t *)(top), (uint8_t *)(capy_arena_top(arena)));
 
-    err = capy_arena_free(arena);
-    expect_s_eq(err, 0);
+    capy_arena_free(arena);
 
     return 0;
 }

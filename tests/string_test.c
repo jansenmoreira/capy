@@ -25,8 +25,6 @@ static struct
 
 static int test_string(void)
 {
-    int err;
-
     capy_arena *arena = capy_arena_init(MiB(1));
 
     const char *buffer = "012345";
@@ -37,23 +35,14 @@ static int test_string(void)
     capy_string bytes = capy_string_bytes(buffer, 4);
     expect_str_eq(str("0123"), bytes);
 
-    capy_string lower;
-    err = capy_string_tolower(arena, str("+AZaz12"), &lower);
-    expect_s_eq(err, 0);
+    capy_string lower = capy_string_lowercase(arena, str("+AZaz12{}"));
+    capy_string upper = capy_string_uppercase(arena, str("+AZaz12{}"));
 
-    capy_string upper;
-    err = capy_string_toupper(arena, str("+AZaz12"), &upper);
-    expect_s_eq(err, 0);
+    expect_str_eq(str("+azaz12{}"), lower);
+    expect_str_eq(str("+AZAZ12{}"), upper);
 
-    expect_str_eq(str("+azaz12"), lower);
-    expect_str_eq(str("+AZAZ12"), upper);
-
-    capy_string empty = (capy_string){NULL};
-    capy_string empty2;
-
-    err = capy_string_copy(arena, str(""), &empty2);
-    expect_s_eq(err, 0);
-    expect_str_eq(empty, empty2);
+    capy_string empty = (capy_string){.size = 0};
+    expect_str_eq(capy_string_copy(arena, str("")), empty);
 
     for (size_t i = 0; i < arrlen(slices); i++)
     {
@@ -71,13 +60,12 @@ static int test_string(void)
     expect_s_eq(capy_string_sw(str("+"), lower), 0);
 
     capy_string joined;
-    err = capy_string_join(arena, str(", "), 0, NULL, &joined);
-    expect_s_eq(err, 0);
+
+    joined = capy_string_join(arena, ", ", 0, NULL);
     expect_str_eq(joined, str(""));
 
-    err = capy_string_join(arena, str(", "), 3, (capy_string[3]){lower, empty, upper}, &joined);
-    expect_s_eq(err, 0);
-    expect_str_eq(joined, str("+azaz12, , +AZAZ12"));
+    joined = capy_string_join(arena, ", ", 3, (capy_string[]){lower, empty, upper});
+    expect_str_eq(joined, str("+azaz12{}, , +AZAZ12{}"));
 
     int64_t value;
     size_t bytes_read = capy_string_hex(str("a0b1c2d3e4f5"), &value);
@@ -87,6 +75,21 @@ static int test_string(void)
     bytes_read = capy_string_hex(str("-A9B8C7D6E5F4 "), &value);
     expect_u_eq(bytes_read, 13);
     expect_s_eq(value, -0xA9B8C7D6E5F4);
+
+    bytes_read = capy_string_hex(str(""), &value);
+    expect_u_eq(bytes_read, 0);
+    expect_s_eq(value, -0xA9B8C7D6E5F4);
+
+    bytes_read = capy_string_hex(str("-"), &value);
+    expect_u_eq(bytes_read, 0);
+    expect_s_eq(value, -0xA9B8C7D6E5F4);
+
+    bytes_read = capy_string_hex(str("-G"), &value);
+    expect_u_eq(bytes_read, 0);
+    expect_s_eq(value, -0xA9B8C7D6E5F4);
+
+    capy_arena_free(arena);
+    arena = capy_arena_init(64);
 
     return 0;
 }

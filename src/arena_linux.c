@@ -43,15 +43,13 @@ capy_arena *capy_arena_init(size_t limit)
     return arena;
 }
 
-int capy_arena_free(capy_arena *arena)
+void capy_arena_free(capy_arena *arena)
 {
     if (munmap(arena, arena->limit) == -1)
     {
         capy_log_errno(errno, "munmap failed");
         abort();
     }
-
-    return 0;
 }
 
 void *capy_arena_grow(capy_arena *arena, size_t size, size_t align)
@@ -63,7 +61,8 @@ void *capy_arena_grow(capy_arena *arena, size_t size, size_t align)
 
     if (end > arena->limit)
     {
-        return NULL;
+        capy_log_errno(ENOMEM, "munmap failed");
+        abort();
     }
 
     if (end > arena->capacity)
@@ -81,7 +80,9 @@ void *capy_arena_grow(capy_arena *arena, size_t size, size_t align)
 
     arena->size = end;
 
-    return (uint8_t *)(arena) + begin;
+    void *data = (uint8_t *)(arena) + begin;
+    memset(data, 0, size);
+    return data;
 }
 
 size_t capy_arena_size(capy_arena *arena)
@@ -94,10 +95,9 @@ void *capy_arena_top(capy_arena *arena)
     return (uint8_t *)(arena) + arena->size;
 }
 
-int capy_arena_shrink(capy_arena *arena, void *addr)
+void capy_arena_shrink(capy_arena *arena, void *addr)
 {
     capy_assert((size_t)(addr) >= (size_t)(arena) + sizeof(capy_arena));
     capy_assert((size_t)(addr) <= (size_t)(arena) + arena->size);
     arena->size = (size_t)(addr) - (size_t)(arena);
-    return 0;
 }

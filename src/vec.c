@@ -1,4 +1,5 @@
 #include <capy/capy.h>
+#include <errno.h>
 
 extern inline capy_vec *capy_vec_head(void *data);
 extern inline size_t capy_vec_size(void *data);
@@ -10,11 +11,6 @@ void *capy_vec_init(capy_arena *arena, size_t element_size, size_t capacity)
     size_t total = sizeof(capy_vec) + (element_size * capacity);
 
     capy_vec *vector = capy_arena_grow(arena, total, alignof(capy_vec));
-
-    if (!vector)
-    {
-        return NULL;
-    }
 
     vector->arena = arena;
     vector->capacity = capacity;
@@ -34,30 +30,18 @@ void *capy_vec_reserve(void *data, size_t capacity)
         return data;
     }
 
-    if (vec->arena == NULL)
-    {
-        return NULL;
-    }
+    capy_assert(vec->arena != NULL);
 
     uint8_t *vec_top = vec->data + (vec->element_size * vec->capacity);
     uint8_t *arena_top = capy_arena_top(vec->arena);
 
     if (vec_top == arena_top)
     {
-        if (capy_arena_grow(vec->arena, vec->element_size * (capacity - vec->capacity), 0) == NULL)
-        {
-            return NULL;
-        }
+        capy_arena_grow(vec->arena, vec->element_size * (capacity - vec->capacity), 0);
     }
     else
     {
         data = capy_vec_init(vec->arena, vec->element_size, capacity);
-
-        if (data == NULL)
-        {
-            return NULL;
-        }
-
         memcpy(data, vec->data, vec->size * vec->element_size);
         vec = capy_vec_head(data);
     }
@@ -92,12 +76,6 @@ void *capy_vec_resize(void *data, size_t size)
     if (size > vec->capacity)
     {
         data = capy_vec_reserve(data, 2 * size);
-
-        if (data == NULL)
-        {
-            return NULL;
-        }
-
         vec = capy_vec_head(data);
     }
 
@@ -116,12 +94,6 @@ void *capy_vec_insert(void *data, size_t position, size_t size, void *values)
     size_t tail_size = vec->size - position;
 
     data = capy_vec_resize(data, vec->size + size);
-
-    if (data == NULL)
-    {
-        return NULL;
-    }
-
     vec = capy_vec_head(data);
 
     if (tail_size > 0)

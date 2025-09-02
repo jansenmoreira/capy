@@ -20,21 +20,20 @@ static int http_handler(capy_arena *arena, capy_http_request *request, capy_http
 
     s += sprintf(buffer + s, "size: %lu\n", request->content_length);
 
-    // printf("%s\n", buffer);
-
     response->status = CAPY_HTTP_OK;
-
-    if (capy_string_copy(arena, capy_string_bytes(buffer, (size_t)(s)), &response->content))
-    {
-        return ENOMEM;
-    }
+    response->content = capy_string_copy(arena, capy_string_bytes(buffer, (size_t)(s)));
 
     return 0;
 }
 
-int main(void)
+int main(int argc, const char **argv)
 {
-    capy_http_serve("0.0.0.0", "8080", 8, http_handler);
+    if (argc < 2)
+    {
+        return EINVAL;
+    }
+
+    capy_http_serve("0.0.0.0", "8080", strtoull(argv[1], NULL, 10), http_handler);
 
     return 0;
 }

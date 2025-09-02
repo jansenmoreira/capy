@@ -21,6 +21,7 @@ void *capy_smap_init(capy_arena *arena, size_t element_size, size_t capacity);
 void *capy_smap_get(void *ptr, capy_string key);
 void *capy_smap_set(void *ptr, capy_string *pair);
 void *capy_smap_delete(void *ptr, capy_string key);
+void capy_smap_clear(void *ptr);
 
 #define capy_smap_of(T, arena, capacity) \
     ((T *)(capy_smap_init((arena), sizeof(T), (capacity))))

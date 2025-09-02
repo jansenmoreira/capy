@@ -31,20 +31,6 @@ static string_pair fields[] = {
 
 static int test_smap(void)
 {
-    capy_arena *tiny_arena = capy_arena_init(KiB(1));
-    string_pair *tiny_smap = capy_smap_of(string_pair, tiny_arena, 16);
-
-    size_t max = 16 * 2 / 3;
-
-    for (size_t i = 0; i < max; i++)
-    {
-        tiny_smap = capy_smap_set(tiny_smap, &fields[i].key);
-        expect_p_ne(tiny_smap, NULL);
-    }
-
-    tiny_smap = capy_smap_set(tiny_smap, &fields[arrlen(fields) - 1].key);
-    expect_p_eq(tiny_smap, NULL);
-
     capy_arena *arena = capy_arena_init(MiB(1));
     string_pair *smap = capy_smap_of(string_pair, arena, 32);
 
@@ -99,8 +85,7 @@ static int test_smap(void)
         size_t written = (size_t)(snprintf(buffer, 31, "%d", (int)(i)));
         capy_string number = capy_string_bytes(buffer, written);
 
-        int err = capy_string_copy(arena, number, &number);
-        expect_s_eq(err, 0);
+        number = capy_string_copy(arena, number);
 
         smap = capy_smap_set(smap, &(string_pair){number, number}.key);
         expect_p_ne(smap, NULL);

@@ -190,14 +190,14 @@ static inline void expect_p_lte_(void *lhs, void *rhs, const char *file, int lin
 static inline void expect_str_eq_(capy_string lhs, capy_string rhs, const char *file, int line)
 {
     if (capy_string_eq(lhs, rhs)) return;
-    fprintf(stderr, "%s:%d: condition %.*s == %.*s failed\n", file, line, (int)lhs.size, lhs.data, (int)rhs.size, rhs.data);
+    fprintf(stderr, "%s:%d: condition \"%.*s\" == \"%.*s\" failed\n", file, line, (int)lhs.size, lhs.data, (int)rhs.size, rhs.data);
     abort();
 }
 
 static inline void expect_str_ne_(capy_string lhs, capy_string rhs, const char *file, int line)
 {
     if (!capy_string_eq(lhs, rhs)) return;
-    fprintf(stderr, "%s:%d: condition %.*s != %.*s failed\n", file, line, (int)lhs.size, lhs.data, (int)rhs.size, rhs.data);
+    fprintf(stderr, "%s:%d: condition \"%.*s\" != \"%.*s\" failed\n", file, line, (int)lhs.size, lhs.data, (int)rhs.size, rhs.data);
     abort();
 }
 

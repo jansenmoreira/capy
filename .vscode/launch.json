@@ -20,7 +20,9 @@
             "request": "launch",
             "name": "test_api",
             "program": "${workspaceFolder}/build/test_api",
-            "args": [],
+            "args": [
+                "8"
+            ],
             "cwd": "${workspaceFolder}",
             "terminal": "integrated",
             "preLaunchTask": "build",

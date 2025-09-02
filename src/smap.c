@@ -14,11 +14,6 @@ void *capy_smap_init(capy_arena *arena, size_t element_size, size_t capacity)
 
     capy_smap *smap = capy_arena_grow(arena, total, alignof(capy_smap));
 
-    if (!smap)
-    {
-        return NULL;
-    }
-
     smap->arena = arena;
     smap->capacity = capacity;
     smap->element_size = element_size;
@@ -75,11 +70,6 @@ void *capy_smap_set(void *data, capy_string *pair)
     {
         data = capy_smap_init(smap->arena, smap->element_size, smap->capacity * 2);
 
-        if (data == NULL)
-        {
-            return NULL;
-        }
-
         for (size_t i = 0; i < smap->capacity; i++)
         {
             capy_string *item = (capy_string *)(smap->data + (i * smap->element_size));
@@ -113,12 +103,6 @@ void *capy_smap_set(void *data, capy_string *pair)
 
             break;
         }
-        else if (capy_string_eq(pair[0], item[0]))
-        {
-            dest = item;
-
-            break;
-        }
 
         k = (k + j) % smap->capacity;
         j += 1;
@@ -142,4 +126,11 @@ void *capy_smap_delete(void *data, capy_string key)
     }
 
     return data;
+}
+
+void capy_smap_clear(void *data)
+{
+    capy_smap *smap = capy_smap_head(data);
+    smap->size = 0;
+    memset(smap->data, 0, smap->capacity * smap->element_size);
 }

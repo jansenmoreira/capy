@@ -99,6 +99,7 @@ typedef struct capy_http_field
 {
     capy_string name;
     capy_string value;
+    struct capy_http_field *next;
 } capy_http_field;
 
 typedef struct capy_http_request
@@ -124,9 +125,9 @@ typedef struct capy_http_response
 capy_http_method capy_http_parse_method(capy_string input);
 capy_http_version capy_http_parse_version(capy_string input);
 
-int capy_http_parse_request_line(capy_arena *arena, capy_string input, capy_http_request *request);
-int capy_http_content_attributes(capy_http_request *request);
-int capy_http_parse_field(capy_arena *arena, capy_string input, capy_http_field **fields);
+int capy_http_parse_request_line(capy_arena *arena, capy_http_request *request, capy_string input);
+int capy_http_request_validate(capy_arena *arena, capy_http_request *request);
+int capy_http_parse_field(capy_arena *arena, capy_http_field **fields, capy_string input);
 
 capy_string capy_http_write_response(capy_arena *arena, capy_http_response *response);
 

@@ -5,12 +5,8 @@ static int test_vec(void)
     capy_arena *arena = capy_arena_init(KiB(1));
 
     int16_t *vec = capy_vec_of(int16_t, arena, 8);
-    int16_t *vec_tmp;
 
     expect_u_eq(capy_vec_capacity(vec), 8);
-
-    vec_tmp = capy_vec_insert(vec, 0, KiB(2), NULL);
-    expect_p_eq(vec_tmp, NULL);
 
     for (int16_t i = 1; i <= 10; i++)
     {
@@ -68,22 +64,13 @@ static int test_vec(void)
     vec2 = capy_arena_make(float, arena, 64);
     expect_p_ne(vec2, NULL);
 
-    vec_tmp = capy_vec_resize(vec, KiB(2));
-    expect_p_eq(vec_tmp, NULL);
-
     capy_vec_fixed(vec);
-
-    vec = capy_vec_resize(vec, 128);
-    expect_p_ne(vec, NULL);
 
     vec = capy_vec_resize(vec, 128);
     expect_p_ne(vec, NULL);
 
     vec = capy_vec_reserve(vec, 64);
     expect_p_ne(vec, NULL);
-
-    vec = capy_vec_resize(vec, KiB(2));
-    expect_p_eq(vec, NULL);
 
     return 0;
 }
