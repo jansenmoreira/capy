@@ -22,12 +22,12 @@ size_t capy_string_hex(capy_string input, int64_t *value);
 
 inline char capy_char_uppercase(char c)
 {
-    return ('a' <= c && c <= 'z') ? c & 0xDF : c;
+    return ('a' <= c && c <= 'z') ? c & (char)(0xDF) : c;
 }
 
 inline char capy_char_lowercase(char c)
 {
-    return ('A' <= c && c <= 'Z') ? c | 0x20 : c;
+    return ('A' <= c && c <= 'Z') ? c | (char)(0x20) : c;
 }
 
 inline capy_string capy_string_slice(capy_string s, size_t begin, size_t end)

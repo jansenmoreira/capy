@@ -1,4 +1,4 @@
-#include "test.h"
+#include <capy/test.h>
 
 static int test_http(void)
 {

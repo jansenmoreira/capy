@@ -127,9 +127,9 @@ capy_http_version capy_http_parse_version(capy_string input);
 
 int capy_http_parse_request_line(capy_arena *arena, capy_http_request *request, capy_string input);
 int capy_http_request_validate(capy_arena *arena, capy_http_request *request);
-int capy_http_parse_field(capy_arena *arena, capy_http_field **fields, capy_string input);
+int capy_http_parse_field(capy_arena *arena, capy_http_field **fields, capy_string line);
 
-capy_string capy_http_write_response(capy_arena *arena, capy_http_response *response);
+capy_string capy_http_write_headers(capy_arena *arena, capy_http_response *response);
 
 typedef int(capy_http_handler)(capy_arena *arena, capy_http_request *request, capy_http_response *response);
 

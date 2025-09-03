@@ -1,5 +1,3 @@
-#define _POSIX_C_SOURCE 200112L
-
 #include <arpa/inet.h>
 #include <capy/capy.h>
 #include <errno.h>
@@ -14,8 +12,6 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
-
-#include "http.c"
 
 typedef struct http_worker
 {
@@ -36,7 +32,8 @@ typedef enum
     STATE_PARSE_CHUNK_DATA,
     STATE_PARSE_TRAILERS,
     STATE_PROCESS_REQUEST,
-    STATE_WRITE_RESPONSE,
+    STATE_WRITE_HEADERS,
+    STATE_WRITE_CONTENT,
     STATE_CLOSE_CONNECTION,
     STATE_BLOCKED,
 } http_connection_state;
@@ -63,8 +60,10 @@ static const char *http_connection_state_cstr(http_connection_state state)
             return "STATE_PARSE_TRAILERS";
         case STATE_PROCESS_REQUEST:
             return "STATE_PROCESS_REQUEST";
-        case STATE_WRITE_RESPONSE:
-            return "STATE_WRITE_RESPONSE";
+        case STATE_WRITE_HEADERS:
+            return "STATE_WRITE_HEADERS";
+        case STATE_WRITE_CONTENT:
+            return "STATE_WRITE_CONTENT";
         case STATE_CLOSE_CONNECTION:
             return "STATE_CLOSE_CONNECTION";
         case STATE_BLOCKED:
@@ -82,16 +81,15 @@ typedef struct http_connection
     char *message_buffer;
     http_connection_state state;
     http_connection_state after_read;
-    http_connection_state after_write;
     http_connection_state after_unblock;
     int socket;
-    int blocked;
-    size_t worker_id;
+    http_worker *worker;
     size_t line_cursor;
     char *content_buffer;
     size_t chunk_size;
     capy_http_request *request;
-    capy_string response;
+    capy_string response_headers;
+    capy_string response_content;
     capy_http_handler *handler;
 
     size_t memory_begin;
@@ -99,6 +97,16 @@ typedef struct http_connection
     size_t memory_content;
     size_t memory_trailers;
 } http_connection;
+
+static int connection_epoll(http_connection *connection, int op, uint32_t events)
+{
+    struct epoll_event client_event = {
+        .events = events,
+        .data.ptr = connection,
+    };
+
+    return epoll_ctl(connection->worker->epoll_fd, op, connection->socket, &client_event);
+}
 
 static inline int log_gaierr(int err, const char *file, int line, const char *msg)
 {
@@ -151,36 +159,88 @@ static inline void connection_message_consume_line(http_connection *connection)
     connection_message_buffer_shl(connection, connection->line_cursor);
 }
 
-static inline http_connection_state connection_write_response(http_connection *connection)
+static inline http_connection_state connection_write_headers(http_connection *connection)
 {
-    if (connection->blocked)
-    {
-        connection->after_unblock = STATE_WRITE_RESPONSE;
-        return STATE_BLOCKED;
-    }
-
-    ssize_t bytes_written = send(connection->socket, connection->response.data, connection->response.size, 0);
+    ssize_t bytes_written = send(connection->socket,
+                                 connection->response_headers.data,
+                                 connection->response_headers.size,
+                                 MSG_MORE | MSG_DONTWAIT);
 
     if (bytes_written == 0)
     {
         return STATE_CLOSE_CONNECTION;
     }
-    else if (bytes_written < 0)
+    else if (bytes_written == -1)
     {
-        capy_log_errno(errno, "Failed to write response");
+        int err = errno;
+
+        if (err == EWOULDBLOCK || err == EAGAIN)
+        {
+            connection->after_unblock = STATE_WRITE_HEADERS;
+            return STATE_BLOCKED;
+        }
+
+        if (err != ECONNRESET)
+        {
+            capy_log_errno(errno, "Failed to write message");
+        }
+
         return STATE_CLOSE_CONNECTION;
     }
 
-    connection->response = capy_string_shl(connection->response, (size_t)(bytes_written));
+    connection->response_headers = capy_string_shl(connection->response_headers, (size_t)(bytes_written));
 
-    if (connection->response.size == 0)
+    if (connection->response_headers.size == 0)
     {
+        return STATE_WRITE_CONTENT;
+    }
+
+    return STATE_WRITE_HEADERS;
+}
+
+static inline http_connection_state connection_write_content(http_connection *connection)
+{
+    ssize_t bytes_written = send(connection->socket,
+                                 connection->response_content.data,
+                                 connection->response_content.size,
+                                 MSG_DONTWAIT);
+
+    if (bytes_written == 0)
+    {
+        return STATE_CLOSE_CONNECTION;
+    }
+    else if (bytes_written == -1)
+    {
+        int err = errno;
+
+        if (err == EWOULDBLOCK || err == EAGAIN)
+        {
+            connection->after_unblock = STATE_WRITE_CONTENT;
+            return STATE_BLOCKED;
+        }
+
+        if (err != ECONNRESET)
+        {
+            capy_log_errno(errno, "Failed to write message");
+        }
+
+        return STATE_CLOSE_CONNECTION;
+    }
+
+    connection->response_content = capy_string_shl(connection->response_content, (size_t)(bytes_written));
+
+    if (connection->response_content.size == 0)
+    {
+        if (connection_epoll(connection, EPOLL_CTL_MOD, EPOLLIN) == -1)
+        {
+            capy_log_errno(errno, "Failed to update client epoll");
+            abort();
+        }
+
         return STATE_INIT;
     }
 
-    connection->blocked = true;
-
-    return STATE_WRITE_RESPONSE;
+    return STATE_WRITE_CONTENT;
 }
 
 static inline http_connection_state connection_parse_request_line(http_connection *connection)
@@ -342,7 +402,7 @@ static inline http_connection_state connection_parse_chunk_data(http_connection 
 
     const char *end = buffer.data + connection->chunk_size;
 
-    if (!http_bcmp2(end, '\r', '\n'))
+    if (end[0] != '\r' || end[1] != '\n')
     {
         return STATE_CLOSE_CONNECTION;
     }
@@ -355,39 +415,42 @@ static inline http_connection_state connection_parse_chunk_data(http_connection 
 
 static inline http_connection_state connection_read_socket(http_connection *connection)
 {
-    if (connection->blocked)
-    {
-        connection->after_unblock = STATE_READ_SOCKET;
-        return STATE_BLOCKED;
-    }
-
     size_t message_limit = capy_vec_capacity(connection->message_buffer);
     size_t message_size = capy_vec_size(connection->message_buffer);
-
     size_t bytes_wanted = message_limit - message_size;
 
     if (bytes_wanted == 0)
     {
-        return STATE_WRITE_RESPONSE;
+        return STATE_CLOSE_CONNECTION;
     }
 
     ssize_t bytes_read = recv(connection->socket,
                               connection->message_buffer + message_size,
-                              bytes_wanted, 0);
+                              bytes_wanted, MSG_DONTWAIT);
 
     if (bytes_read == 0)
     {
         return STATE_CLOSE_CONNECTION;
     }
-    else if (bytes_read < 0)
+    else if (bytes_read == -1)
     {
-        capy_log_errno(errno, "Failed to read message headers");
+        int err = errno;
+
+        if (err == EWOULDBLOCK || err == EAGAIN)
+        {
+            connection->after_unblock = STATE_READ_SOCKET;
+            return STATE_BLOCKED;
+        }
+
+        if (err != ECONNRESET)
+        {
+            capy_log_errno(errno, "Failed to read message");
+        }
+
         return STATE_CLOSE_CONNECTION;
     }
 
     capy_vec_resize(connection->message_buffer, message_size + (size_t)(bytes_read));
-
-    connection->blocked = (size_t)(bytes_read) < bytes_wanted;
 
     return connection->after_read;
 }
@@ -433,9 +496,16 @@ static inline http_connection_state connection_process_request(http_connection *
         return STATE_CLOSE_CONNECTION;
     }
 
-    connection->response = capy_http_write_response(connection->arena, &response);
+    connection->response_headers = capy_http_write_headers(connection->arena, &response);
+    connection->response_content = response.content;
 
-    return STATE_WRITE_RESPONSE;
+    if (connection_epoll(connection, EPOLL_CTL_MOD, EPOLLOUT) == -1)
+    {
+        capy_log_errno(errno, "Failed to update client epoll");
+        abort();
+    }
+
+    return STATE_WRITE_HEADERS;
 }
 
 static http_connection_state connection_message_init(http_connection *connection)
@@ -444,11 +514,12 @@ static http_connection_state connection_message_init(http_connection *connection
 
     connection->line_cursor = 0;
     connection->after_read = STATE_UNKNOWN;
-    connection->after_write = STATE_UNKNOWN;
     connection->after_unblock = STATE_UNKNOWN;
     connection->request = NULL;
     connection->content_buffer = NULL;
-    connection->response = capy_string_literal("");
+
+    connection->response_headers = capy_string_literal("");
+    connection->response_content = capy_string_literal("");
 
     return STATE_PARSE_REQUEST_LINE;
 }
@@ -469,28 +540,31 @@ static int connection_close(http_connection *connection)
 
 static inline void connection_print_stats(http_connection *connection)
 {
+    char buffer[128] = {0};
+
+    time_t t = time(NULL);
+    strftime(buffer, 127, "%X", gmtime(&t));
+
     size_t memory_total = capy_arena_size(connection->arena);
 
     printf(
         "%-24s | total = %.2f KiB, headers = %.2f KiB, content = %.2f KiB, trailers = %.2f KiB\n"
-        "%-24s | worker = %lu, socket = %d, blocked = %d, message_buffer = %lu\n",
-        "",
+        "%-24s | worker = %lu, socket = %d, message_buffer = %lu, to_write = %lu\n",
+        buffer,
         (float)(memory_total) / 1024.0f,
         (float)(connection->memory_headers - connection->memory_begin) / 1024.0f,
         (float)(connection->memory_content - connection->memory_headers) / 1024.0f,
         (float)(connection->memory_trailers - connection->memory_content) / 1024.0f,
         http_connection_state_cstr(connection->state),
-        connection->worker_id,
+        connection->worker->id,
         connection->socket,
-        connection->blocked,
-        capy_vec_size(connection->message_buffer));
+        capy_vec_size(connection->message_buffer),
+        connection->response_content.size + connection->response_headers.size);
 }
 
 static inline int connection_state_machine(http_connection *connection)
 {
     capy_assert(connection != NULL);
-
-    connection->blocked = false;
 
     for (;;)
     {
@@ -549,8 +623,12 @@ static inline int connection_state_machine(http_connection *connection)
                 connection->state = connection_process_request(connection);
                 break;
 
-            case STATE_WRITE_RESPONSE:
-                connection->state = connection_write_response(connection);
+            case STATE_WRITE_HEADERS:
+                connection->state = connection_write_headers(connection);
+                break;
+
+            case STATE_WRITE_CONTENT:
+                connection->state = connection_write_content(connection);
                 break;
 
             case STATE_CLOSE_CONNECTION:
@@ -729,33 +807,28 @@ int capy_http_serve(const char *host, const char *port, size_t workers_count, ca
                 return capy_log_errno(errno, "Failed to accept connection");
             }
 
-            capy_arena *arena = capy_arena_init(512 * 1024 * 1024);
+            capy_arena *arena = capy_arena_init(2 * 1024 * 1024);
 
             if (arena == NULL)
             {
                 return capy_log_errno(errno, "Failed to create connection arena");
             }
 
+            http_worker *worker = &workers[target];
+
             http_connection *connection = capy_arena_make(http_connection, arena, 1);
             connection->arena = arena;
             connection->socket = connection_fd;
             connection->handler = handler;
             connection->state = STATE_INIT;
-            connection->worker_id = target;
+            connection->worker = worker;
 
             connection->message_buffer = capy_vec_of(char, arena, 32 * 1024);
             capy_vec_fixed(connection->message_buffer);
 
             connection->arena_marker = capy_arena_top(arena);
 
-            struct epoll_event client_event = {
-                .events = EPOLLIN | EPOLLOUT,
-                .data.ptr = connection,
-            };
-
-            printf("new connection assigned epoll from thread %lu\n", target);
-
-            if (epoll_ctl(workers[target].epoll_fd, EPOLL_CTL_ADD, connection_fd, &client_event) == -1)
+            if (connection_epoll(connection, EPOLL_CTL_ADD, EPOLLIN) == -1)
             {
                 return capy_log_errno(errno, "Failed to add client to epoll");
             }

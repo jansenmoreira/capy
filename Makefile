@@ -1,29 +1,34 @@
-.PHONY: debug tests-debug
+.PHONY: linux/debug linux/release rapidhash coverage
 
-CLANG_FLAGS := -Iinclude -std=c11 -fprofile-arcs -ftest-coverage -Werror -Wall -Wextra -Wconversion -Wpedantic -Wmissing-prototypes -Wmissing-variable-declarations -Wno-missing-field-initializers -Wno-extra-semi
-LINUX_FLAGS := -DCAPY_LINUX -D_POSIX_C_SOURCE=200112L
+CC_FLAGS := -Iinclude -std=c11 -Werror -Wall -Wextra -Wconversion -Wpedantic -Wmissing-prototypes -Wmissing-variable-declarations -Wno-missing-field-initializers
+
+LINUX_FLAGS := -DCAPY_LINUX -D_GNU_SOURCE -D_POSIX_C_SOURCE=200112L
+
+LINUX_DEBUG_FLAGS := ${CC_FLAGS} ${LINUX_FLAGS} -g -fprofile-arcs -ftest-coverage
+
+LINUX_RELEASE_FLAGS := ${CC_FLAGS} ${LINUX_FLAGS} -O3
+
+CC := gcc
+
+linux/debug:
+	rm -rf build/
+	mkdir -p build/
+	${CC} ${LINUX_DEBUG_FLAGS} -c src/capy.c -o build/capy.o
+	ar rcs build/libcapy.a build/capy.o
+	${CC} ${LINUX_DEBUG_FLAGS} -Lbuild tests/test.c -lcapy -o build/tests
+	${CC} ${LINUX_DEBUG_FLAGS} -Lbuild tests/test_api.c -lcapy -o build/test_api
+
+linux/release:
+	rm -rf build/release/
+	mkdir -p build/release/
+	${CC} ${LINUX_RELEASE_FLAGS} -c src/capy.c -o build/release/capy.o
+	ar rcs build/release/libcapy.a build/release/capy.o
+	${CC} ${LINUX_RELEASE_FLAGS} -Lbuild/release tests/test.c -lcapy -o build/release/tests
+	${CC} ${LINUX_RELEASE_FLAGS} -Lbuild/release tests/test_api.c -lcapy -o build/release/test_api
 
 rapidhash:
 	cd src/ && \
 	curl -fsSLO https://github.com/Nicoshev/rapidhash/raw/refs/heads/master/rapidhash.h
-
-debug:
-	rm -rf build/
-	mkdir -p build/
-	clang -g ${CLANG_FLAGS} ${LINUX_FLAGS} -c src/capy.c -o build/capy.o
-	ar rcs build/libcapy.a build/capy.o
-
-tests: debug
-	clang -g ${CLANG_FLAGS} -Lbuild tests/test.c -lcapy -o build/tests
-	clang -g ${CLANG_FLAGS} ${LINUX_FLAGS} -Lbuild tests/test_api.c -lcapy -o build/test_api
-
-release:
-	rm -rf build/release/
-	mkdir -p build/release/
-	clang -g ${CLANG_FLAGS} ${LINUX_FLAGS} -c src/capy.c -o build/release/capy.o
-	ar rcs build/release/libcapy.a build/capy.o
-	clang -g ${CLANG_FLAGS} ${LINUX_FLAGS} -O3 -Lbuild/release tests/test_api.c -lcapy -o build/release/test_api
-
 
 coverage:
 	gcovr \

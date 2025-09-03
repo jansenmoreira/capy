@@ -1,27 +1,4 @@
-#include "test.h"
-
-static struct
-{
-    capy_string input;
-    size_t begin;
-    size_t end;
-    capy_string expected;
-} slices[] = {
-    {str("+AZaz12"), 0, 7, str("+AZaz12")},
-    {str("+AZaz12"), 1, 5, str("AZaz")},
-    {str("+AZaz12"), 0, 0, str("")},
-};
-
-static struct
-{
-    capy_string input;
-    capy_string expected;
-} trims[] = {
-    {str(""), str("")},
-    {str("  "), str("")},
-    {str("  a "), str("a")},
-    {str("a   "), str("a")},
-};
+#include <capy/test.h>
 
 static int test_string(void)
 {
@@ -44,17 +21,14 @@ static int test_string(void)
     capy_string empty = (capy_string){.size = 0};
     expect_str_eq(capy_string_copy(arena, str("")), empty);
 
-    for (size_t i = 0; i < arrlen(slices); i++)
-    {
-        capy_string result = capy_string_slice(slices[i].input, slices[i].begin, slices[i].end);
-        expect_str_eq(result, slices[i].expected);
-    }
+    expect_str_eq(capy_string_slice(str("+AZaz12"), 0, 7), str("+AZaz12"));
+    expect_str_eq(capy_string_slice(str("+AZaz12"), 1, 5), str("AZaz"));
+    expect_str_eq(capy_string_slice(str("+AZaz12"), 0, 0), str(""));
 
-    for (size_t i = 0; i < arrlen(trims); i++)
-    {
-        capy_string result = capy_string_trim(trims[i].input, " ");
-        expect_str_eq(result, trims[i].expected);
-    }
+    expect_str_eq(capy_string_trim(str(""), " "), str(""));
+    expect_str_eq(capy_string_trim(str("  "), " "), str(""));
+    expect_str_eq(capy_string_trim(str("  a "), " "), str("a"));
+    expect_str_eq(capy_string_trim(str("a   "), " "), str("a"));
 
     expect_s_eq(capy_string_sw(lower, str("+")), 1);
     expect_s_eq(capy_string_sw(str("+"), lower), 0);

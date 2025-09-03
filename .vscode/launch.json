@@ -12,7 +12,7 @@
             "postDebugTask": "coverage",
             "expressions": "native",
             "initCommands": [
-                "command source lldb/capy.lldb"
+                "command source extra/lldb/capy.lldb"
             ],
         },
         {
@@ -28,7 +28,7 @@
             "preLaunchTask": "build",
             "expressions": "native",
             "initCommands": [
-                "command source lldb/capy.lldb"
+                "command source extra/lldb/capy.lldb"
             ],
         }
     ]

@@ -1,4 +1,6 @@
 #include <capy/assert.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 int capy_log_errno_(int err, const char *file, int line, const char *msg)
 {

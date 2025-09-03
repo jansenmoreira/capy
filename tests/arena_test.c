@@ -1,10 +1,15 @@
-#include "test.h"
+#include <capy/test.h>
 
 static int test_arena(void)
 {
-    size_t limit = GiB(8ULL);
+    typedef struct point
+    {
+        float x;
+        float y;
+        float z;
+    } point;
 
-    // expect_s_lt(capy_arena_init(TiB(128ULL)), 0);
+    size_t limit = GiB(8ULL);
 
     capy_arena *arena = capy_arena_init(limit);
     expect_p_ne(arena, NULL);
@@ -46,12 +51,12 @@ static int test_arena(void)
     expect_s_gte((uint8_t *)(capy_arena_top(arena)) - last_top, 1);
 
     last_top = capy_arena_top(arena);
-    struct point *a5 = capy_arena_make(struct point, arena, 1);
+    point *a5 = capy_arena_make(point, arena, 1);
 
     expect_p_ne(a5, NULL);
     expect_p_eq(arena, addr);
-    expect_u_eq((size_t)(a5) % alignof(struct point), 0);
-    expect_s_gte((uint8_t *)(capy_arena_top(arena)) - last_top, sizeof(struct point) * 1);
+    expect_u_eq((size_t)(a5) % alignof(point), 0);
+    expect_s_gte((uint8_t *)(capy_arena_top(arena)) - last_top, sizeof(point) * 1);
 
     capy_arena_shrink(arena, a3);
     expect_p_eq((uint8_t *)(a3), (uint8_t *)(capy_arena_top(arena)));

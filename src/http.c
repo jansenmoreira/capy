@@ -1,5 +1,7 @@
 #include <capy/capy.h>
 #include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #define HTTP_VCHAR 0x1
 #define HTTP_TOKEN 0x2
@@ -299,27 +301,25 @@ capy_http_version capy_http_parse_version(capy_string input)
     return CAPY_HTTP_VERSION_UNK;
 }
 
-capy_string capy_http_write_response(capy_arena *arena, capy_http_response *response)
+capy_string capy_http_write_headers(capy_arena *arena, capy_http_response *response)
 {
-    size_t response_size = 8 * 1024;
-    char *response_buffer = capy_arena_make(char, arena, 8 * 1024);
+    size_t message_size = 8 * 1024;
+
+    char *message_buffer = capy_arena_make(char, arena, message_size);
 
     const char *format =
         "HTTP/1.1 %d\r\n"
         "Content-Length: %llu\r\n"
         "Content-Type: text/plain\r\n"
-        "\r\n"
-        "%.*s";
+        "\r\n";
 
-    response_size = (size_t)(snprintf(response_buffer,
-                                      response_size,
-                                      format,
-                                      response->status,
-                                      response->content.size,
-                                      (int)response->content.size,
-                                      response->content.data));
+    message_size = (size_t)(snprintf(message_buffer,
+                                     message_size,
+                                     format,
+                                     response->status,
+                                     response->content.size));
 
-    return capy_string_bytes(response_buffer, response_size);
+    return capy_string_bytes(message_buffer, message_size);
 }
 
 int capy_http_parse_request_line(capy_arena *arena, capy_http_request *request, capy_string line)

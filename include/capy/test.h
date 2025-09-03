@@ -3,9 +3,6 @@
 
 #include <capy/capy.h>
 #include <errno.h>
-#include <stdalign.h>
-#include <stdbool.h>
-#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -17,21 +14,6 @@
 #define TiB(v) (GiB(v) * 1024)
 
 #define str(s) capy_string_literal(s)
-
-#define Ref(T, v) (&(T[]){(v)})
-
-struct point
-{
-    float x;
-    float y;
-    float z;
-};
-
-typedef struct string_pair
-{
-    capy_string key;
-    capy_string value;
-} string_pair;
 
 static inline void expect_u_eq_(unsigned long long lhs, unsigned long long rhs, const char *file, int line)
 {

@@ -10,7 +10,7 @@ void *capy_vec_init(capy_arena *arena, size_t element_size, size_t capacity)
 {
     size_t total = sizeof(capy_vec) + (element_size * capacity);
 
-    capy_vec *vector = capy_arena_grow(arena, total, alignof(capy_vec));
+    capy_vec *vector = capy_arena_grow(arena, total, 8);
 
     vector->arena = arena;
     vector->capacity = capacity;

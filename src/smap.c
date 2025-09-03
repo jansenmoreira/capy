@@ -12,7 +12,7 @@ void *capy_smap_init(capy_arena *arena, size_t element_size, size_t capacity)
 {
     size_t total = sizeof(capy_smap) + (element_size * capacity);
 
-    capy_smap *smap = capy_arena_grow(arena, total, alignof(capy_smap));
+    capy_smap *smap = capy_arena_grow(arena, total, 8);
 
     smap->arena = arena;
     smap->capacity = capacity;

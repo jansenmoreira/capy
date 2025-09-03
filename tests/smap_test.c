@@ -1,36 +1,42 @@
-#include "test.h"
-
-static string_pair fields[] = {
-    {.key = str("a"), .value = str("A")},
-    {.key = str("b"), .value = str("B")},
-    {.key = str("c"), .value = str("C")},
-    {.key = str("d"), .value = str("D")},
-    {.key = str("e"), .value = str("E")},
-    {.key = str("f"), .value = str("F")},
-    {.key = str("g"), .value = str("G")},
-    {.key = str("h"), .value = str("H")},
-    {.key = str("i"), .value = str("I")},
-    {.key = str("j"), .value = str("J")},
-    {.key = str("k"), .value = str("K")},
-    {.key = str("l"), .value = str("L")},
-    {.key = str("m"), .value = str("M")},
-    {.key = str("n"), .value = str("N")},
-    {.key = str("o"), .value = str("O")},
-    {.key = str("p"), .value = str("P")},
-    {.key = str("q"), .value = str("Q")},
-    {.key = str("r"), .value = str("R")},
-    {.key = str("s"), .value = str("S")},
-    {.key = str("t"), .value = str("T")},
-    {.key = str("u"), .value = str("U")},
-    {.key = str("v"), .value = str("V")},
-    {.key = str("w"), .value = str("W")},
-    {.key = str("x"), .value = str("X")},
-    {.key = str("y"), .value = str("Y")},
-    {.key = str("z"), .value = str("Z")},
-};
+#include <capy/test.h>
 
 static int test_smap(void)
 {
+    typedef struct string_pair
+    {
+        capy_string key;
+        capy_string value;
+    } string_pair;
+
+    string_pair fields[] = {
+        {.key = str("a"), .value = str("A")},
+        {.key = str("b"), .value = str("B")},
+        {.key = str("c"), .value = str("C")},
+        {.key = str("d"), .value = str("D")},
+        {.key = str("e"), .value = str("E")},
+        {.key = str("f"), .value = str("F")},
+        {.key = str("g"), .value = str("G")},
+        {.key = str("h"), .value = str("H")},
+        {.key = str("i"), .value = str("I")},
+        {.key = str("j"), .value = str("J")},
+        {.key = str("k"), .value = str("K")},
+        {.key = str("l"), .value = str("L")},
+        {.key = str("m"), .value = str("M")},
+        {.key = str("n"), .value = str("N")},
+        {.key = str("o"), .value = str("O")},
+        {.key = str("p"), .value = str("P")},
+        {.key = str("q"), .value = str("Q")},
+        {.key = str("r"), .value = str("R")},
+        {.key = str("s"), .value = str("S")},
+        {.key = str("t"), .value = str("T")},
+        {.key = str("u"), .value = str("U")},
+        {.key = str("v"), .value = str("V")},
+        {.key = str("w"), .value = str("W")},
+        {.key = str("x"), .value = str("X")},
+        {.key = str("y"), .value = str("Y")},
+        {.key = str("z"), .value = str("Z")},
+    };
+
     capy_arena *arena = capy_arena_init(MiB(1));
     string_pair *smap = capy_smap_of(string_pair, arena, 32);
 
