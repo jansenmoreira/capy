@@ -14,54 +14,16 @@ typedef struct capy_smap
     size_t capacity;
     size_t element_size;
     capy_arena *arena;
-    uint8_t data[];
+    uint8_t *data;
 } capy_smap;
 
-void *capy_smap_init(capy_arena *arena, size_t element_size, size_t capacity);
-void *capy_smap_get(void *ptr, capy_string key);
-void *capy_smap_set(void *ptr, capy_string *pair);
-void *capy_smap_delete(void *ptr, capy_string key);
-void capy_smap_clear(void *ptr);
+capy_smap *capy_smap_init(capy_arena *arena, size_t element_size, size_t capacity);
+void *capy_smap_get(capy_smap *smap, capy_string key);
+void capy_smap_set(capy_smap *smap, capy_string *pair);
+void capy_smap_delete(capy_smap *smap, capy_string key);
+void capy_smap_clear(capy_smap *smap);
 
-#define capy_smap_of(T, arena, capacity) \
-    ((T *)(capy_smap_init((arena), sizeof(T), (capacity))))
-
-inline capy_smap *capy_smap_head(void *data)
-{
-    capy_assert(data != NULL);
-    return (capy_smap *)(data)-1;
-}
-
-inline size_t capy_smap_size(void *data)
-{
-    capy_assert(data != NULL);
-    return ((capy_smap *)(data)-1)->size;
-}
-
-inline size_t capy_smap_capacity(void *data)
-{
-    capy_assert(data != NULL);
-    return ((capy_smap *)(data)-1)->capacity;
-}
-
-inline capy_string *capy_sset_init(capy_arena *arena, size_t capacity)
-{
-    return capy_smap_init(arena, sizeof(capy_string), capacity);
-}
-
-inline bool capy_sset_has(capy_string **ptr, capy_string key)
-{
-    return capy_smap_get(ptr, key) != NULL;
-}
-
-inline capy_string *capy_sset_set(capy_string **ptr, capy_string key)
-{
-    return capy_smap_set(ptr, &key);
-}
-
-inline capy_string *capy_sset_delete(capy_string **ptr, capy_string key)
-{
-    return capy_smap_delete(ptr, key);
-}
+#define capy_smap_of(T, arena, capacity) capy_smap_init((arena), sizeof(T), (capacity))
+#define capy_smap_data(T, smap) ((T *)((smap)->data))
 
 #endif

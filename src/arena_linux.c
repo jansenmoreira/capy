@@ -12,12 +12,6 @@ struct capy_arena
     size_t page_size;
 };
 
-static inline size_t align_to(size_t size, size_t page_size)
-{
-    size_t rem = size % page_size;
-    return (rem == 0) ? size : size + page_size - rem;
-}
-
 capy_arena *capy_arena_init(size_t limit)
 {
     capy_arena *arena = mmap(NULL, limit, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -53,7 +47,7 @@ void capy_arena_free(capy_arena *arena)
     }
 }
 
-void *capy_arena_grow(capy_arena *arena, size_t size, size_t align)
+void *capy_arena_grow(capy_arena *arena, size_t size, size_t align, int zeroinit)
 {
     capy_assert(arena != NULL);
 
@@ -62,7 +56,7 @@ void *capy_arena_grow(capy_arena *arena, size_t size, size_t align)
 
     if (end > arena->limit)
     {
-        capy_log_errno(ENOMEM, "munmap failed");
+        capy_log_errno(ENOMEM, "limit reached");
         abort();
     }
 
@@ -82,7 +76,12 @@ void *capy_arena_grow(capy_arena *arena, size_t size, size_t align)
     arena->size = end;
 
     void *data = (uint8_t *)(arena) + begin;
-    memset(data, 0, size);
+
+    if (zeroinit)
+    {
+        memset(data, 0, size);
+    }
+
     return data;
 }
 

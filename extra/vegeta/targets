@@ -1,4 +1,11 @@
 GET http://127.0.0.1:8080/
 X-User-Id: foo
 
-GET http://127.0.0.1:8080/bar
+POST http://127.0.0.1:8080/foo
+@extra/vegeta/sample1.json
+
+PUT http://127.0.0.1:8080/bar
+@extra/vegeta/sample2.json
+
+PUT http://127.0.0.1:8080/baz
+@extra/vegeta/sample3.json

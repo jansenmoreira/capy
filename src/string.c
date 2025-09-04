@@ -2,13 +2,14 @@
 #include <ctype.h>
 #include <errno.h>
 #include <stdarg.h>
+#include <stdio.h>
 
 extern inline char capy_char_uppercase(char c);
 extern inline char capy_char_lowercase(char c);
 extern inline capy_string capy_string_slice(capy_string s, size_t begin, size_t end);
 extern inline int capy_string_eq(capy_string a, capy_string b);
 extern inline int capy_string_sw(capy_string a, capy_string prefix);
-extern inline capy_string capy_string_bytes(const char *data, size_t size);
+extern inline capy_string capy_string_bytes(size_t size, const char *data);
 extern inline capy_string capy_string_shl(capy_string s, size_t size);
 extern inline capy_string capy_string_shr(capy_string s, size_t size);
 extern inline capy_string capy_string_cstr(const char *data);
@@ -127,41 +128,32 @@ capy_string capy_string_copy(capy_arena *arena, capy_string input)
 
     char *buffer = capy_arena_make(char, arena, input.size + 1);
     memcpy(buffer, input.data, input.size);
-    return capy_string_bytes(buffer, input.size);
+
+    return (capy_string){.data = buffer, .size = input.size};
 }
 
-void capy_string_iuppercase(capy_string s)
+capy_string capy_string_lower(capy_arena *arena, capy_string src)
 {
-    char *data = (char *)(s.data);
+    char *data = capy_arena_make(char, arena, src.size);
 
-    for (size_t i = 0; i < s.size; i++)
+    for (size_t i = 0; i < src.size; i++)
     {
-        data[i] = capy_char_uppercase(data[i]);
+        data[i] = capy_char_lowercase(src.data[i]);
     }
+
+    return capy_string_bytes(src.size, data);
 }
 
-void capy_string_ilowercase(capy_string s)
+capy_string capy_string_upper(capy_arena *arena, capy_string src)
 {
-    char *data = (char *)(s.data);
+    char *data = capy_arena_make(char, arena, src.size);
 
-    for (size_t i = 0; i < s.size; i++)
+    for (size_t i = 0; i < src.size; i++)
     {
-        data[i] = capy_char_lowercase(data[i]);
+        data[i] = capy_char_uppercase(src.data[i]);
     }
-}
 
-capy_string capy_string_lowercase(capy_arena *arena, capy_string src)
-{
-    capy_string dst = capy_string_copy(arena, src);
-    capy_string_ilowercase(dst);
-    return dst;
-}
-
-capy_string capy_string_uppercase(capy_arena *arena, capy_string src)
-{
-    capy_string dst = capy_string_copy(arena, src);
-    capy_string_iuppercase(dst);
-    return dst;
+    return capy_string_bytes(src.size, data);
 }
 
 capy_string capy_string_join(capy_arena *arena, const char *delimiter, int n, capy_string *list)
@@ -199,5 +191,37 @@ capy_string capy_string_join(capy_arena *arena, const char *delimiter, int n, ca
         cursor += list[i].size;
     }
 
-    return capy_string_bytes(buffer, size);
+    return (capy_string){.data = buffer, .size = size};
+}
+
+extern inline capy_strbuf *capy_strbuf_init(capy_arena *arena, size_t capacity);
+extern inline void capy_strbuf_write(capy_strbuf *strbuf, capy_string input);
+extern inline void capy_strbuf_write_bytes(capy_strbuf *strbuf, size_t size, const char *bytes);
+extern inline void capy_strbuf_write_cstr(capy_strbuf *strbuf, const char *cstr);
+extern inline void capy_strbuf_resize(capy_strbuf *strbuf, size_t size);
+extern inline void capy_strbuf_shl(capy_strbuf *strbuf, size_t size);
+
+int capy_strbuf_snprintf(capy_strbuf *strbuf, size_t max, const char *fmt, ...)
+{
+    if (max == 0)
+    {
+        va_list args;
+        va_start(args, fmt);
+        max = (size_t)vsnprintf(NULL, 0, fmt, args);
+        max++;
+        va_end(args);
+    }
+
+    size_t index = strbuf->size;
+
+    capy_vec_insert((capy_vec *)strbuf, index, max, NULL);
+
+    va_list args;
+    va_start(args, fmt);
+    int n = vsnprintf(strbuf->data + index, max, fmt, args);
+    va_end(args);
+
+    capy_vec_resize((capy_vec *)strbuf, index + (size_t)(n));
+
+    return n;
 }

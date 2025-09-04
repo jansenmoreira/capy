@@ -1,6 +1,7 @@
 #ifndef CAPY_HTTP_H
 #define CAPY_HTTP_H
 
+#include <capy/smap.h>
 #include <capy/std.h>
 #include <capy/uri.h>
 
@@ -75,13 +76,14 @@ typedef enum capy_http_status
 typedef enum capy_http_method
 {
     CAPY_HTTP_METHOD_UNK = 0,
+    CAPY_HTTP_CONNECT,
+    CAPY_HTTP_DELETE,
     CAPY_HTTP_GET,
     CAPY_HTTP_HEAD,
+    CAPY_HTTP_OPTIONS,
+    CAPY_HTTP_PATCH,
     CAPY_HTTP_POST,
     CAPY_HTTP_PUT,
-    CAPY_HTTP_DELETE,
-    CAPY_HTTP_CONNECT,
-    CAPY_HTTP_OPTIONS,
     CAPY_HTTP_TRACE,
 } capy_http_method;
 
@@ -102,13 +104,22 @@ typedef struct capy_http_field
     struct capy_http_field *next;
 } capy_http_field;
 
+typedef struct capy_http_fields
+{
+    size_t size;
+    size_t capacity;
+    size_t _;
+    capy_arena *arena;
+    capy_http_field *data;
+} capy_http_fields;
+
 typedef struct capy_http_request
 {
     capy_http_method method;
     capy_http_version version;
     capy_uri uri;
-    capy_http_field *headers;
-    capy_http_field *trailers;
+    capy_http_fields *headers;
+    capy_http_fields *trailers;
     const char *content;
     size_t content_length;
     int chunked;
@@ -116,23 +127,34 @@ typedef struct capy_http_request
 
 typedef struct capy_http_response
 {
-    capy_http_field *headers;
-    capy_string reason;
-    capy_string content;
+    capy_http_fields *headers;
+    capy_strbuf *content;
     capy_http_status status;
 } capy_http_response;
+
+typedef struct http_server_options
+{
+    size_t workers;
+    int trace;
+} http_server_options;
 
 capy_http_method capy_http_parse_method(capy_string input);
 capy_http_version capy_http_parse_version(capy_string input);
 
 int capy_http_parse_request_line(capy_arena *arena, capy_http_request *request, capy_string input);
 int capy_http_request_validate(capy_arena *arena, capy_http_request *request);
-int capy_http_parse_field(capy_arena *arena, capy_http_field **fields, capy_string line);
+int capy_http_parse_field(capy_arena *arena, capy_http_fields *fields, capy_string line);
 
-capy_string capy_http_write_headers(capy_arena *arena, capy_http_response *response);
+void capy_http_write_headers(capy_strbuf *strbuf, capy_http_response *response);
 
 typedef int(capy_http_handler)(capy_arena *arena, capy_http_request *request, capy_http_response *response);
 
-int capy_http_serve(const char *host, const char *port, size_t workers_count, capy_http_handler handler);
+int capy_http_serve(const char *host, const char *port, capy_http_handler handler, http_server_options *options);
+
+capy_http_fields *capy_http_fields_init(capy_arena *arena, size_t capacity);
+capy_http_field *capy_http_fields_get(capy_http_fields *headers, capy_string key);
+void capy_http_fields_set(capy_http_fields *headers, capy_string name, capy_string value);
+void capy_http_fields_add(capy_http_fields *headers, capy_string name, capy_string value);
+void capy_http_fields_clear(capy_http_fields *headers);
 
 #endif

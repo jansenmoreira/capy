@@ -8,7 +8,7 @@ LINUX_DEBUG_FLAGS := ${CC_FLAGS} ${LINUX_FLAGS} -g -fprofile-arcs -ftest-coverag
 
 LINUX_RELEASE_FLAGS := ${CC_FLAGS} ${LINUX_FLAGS} -O3
 
-CC := gcc
+CC := clang
 
 linux/debug:
 	rm -rf build/
@@ -16,7 +16,7 @@ linux/debug:
 	${CC} ${LINUX_DEBUG_FLAGS} -c src/capy.c -o build/capy.o
 	ar rcs build/libcapy.a build/capy.o
 	${CC} ${LINUX_DEBUG_FLAGS} -Lbuild tests/test.c -lcapy -o build/tests
-	${CC} ${LINUX_DEBUG_FLAGS} -Lbuild tests/test_api.c -lcapy -o build/test_api
+	${CC} ${LINUX_DEBUG_FLAGS} -Lbuild examples/echo.c -lcapy -o build/ex_echo
 
 linux/release:
 	rm -rf build/release/
@@ -24,7 +24,7 @@ linux/release:
 	${CC} ${LINUX_RELEASE_FLAGS} -c src/capy.c -o build/release/capy.o
 	ar rcs build/release/libcapy.a build/release/capy.o
 	${CC} ${LINUX_RELEASE_FLAGS} -Lbuild/release tests/test.c -lcapy -o build/release/tests
-	${CC} ${LINUX_RELEASE_FLAGS} -Lbuild/release tests/test_api.c -lcapy -o build/release/test_api
+	${CC} ${LINUX_RELEASE_FLAGS} -Lbuild/release examples/echo.c -lcapy -o build/release/ex_echo
 
 rapidhash:
 	cd src/ && \
@@ -35,5 +35,8 @@ coverage:
 		--html-theme green \
 		--html-details build/coverage.html \
 		--exclude tests/ \
+		--exclude examples/ \
+		--exclude include/capy/test.h \
+		--exclude src/assert.c \
 		--gcov-executable "llvm-cov gcov"
 	echo file://$$(readlink -f build/coverage.html)

@@ -210,6 +210,10 @@ capy_http_method capy_http_parse_method(capy_string input)
             {
                 return CAPY_HTTP_TRACE;
             }
+            else if (http_bcmp5(input.data, 'P', 'A', 'T', 'C', 'H'))
+            {
+                return CAPY_HTTP_PATCH;
+            }
         }
         break;
 
@@ -301,25 +305,31 @@ capy_http_version capy_http_parse_version(capy_string input)
     return CAPY_HTTP_VERSION_UNK;
 }
 
-capy_string capy_http_write_headers(capy_arena *arena, capy_http_response *response)
+void capy_http_write_headers(capy_strbuf *strbuf, capy_http_response *response)
 {
-    size_t message_size = 8 * 1024;
+    capy_strbuf_snprintf(strbuf, 0,
+                         "HTTP/1.1 %d\r\nContent-Length: %llu\r\n",
+                         response->status,
+                         response->content[0].size);
 
-    char *message_buffer = capy_arena_make(char, arena, message_size);
+    for (size_t i = 0; i < response->headers->capacity; i++)
+    {
+        capy_http_field *header = &response->headers->data[i];
 
-    const char *format =
-        "HTTP/1.1 %d\r\n"
-        "Content-Length: %llu\r\n"
-        "Content-Type: text/plain\r\n"
-        "\r\n";
+        while (header != NULL)
+        {
+            if (header->name.size != 0)
+            {
+                capy_strbuf_snprintf(strbuf, 0,
+                                     "%s: %s\r\n",
+                                     header->name.data, header->value.data);
+            }
 
-    message_size = (size_t)(snprintf(message_buffer,
-                                     message_size,
-                                     format,
-                                     response->status,
-                                     response->content.size));
+            header = header->next;
+        }
+    }
 
-    return capy_string_bytes(message_buffer, message_size);
+    capy_strbuf_write_cstr(strbuf, "\r\n");
 }
 
 int capy_http_parse_request_line(capy_arena *arena, capy_http_request *request, capy_string line)
@@ -397,7 +407,7 @@ int capy_http_request_validate(capy_arena *arena, capy_http_request *request)
     request->content_length = 0;
     request->chunked = 0;
 
-    capy_http_field *host = capy_smap_get(request->headers, capy_string_literal("Host"));
+    capy_http_field *host = capy_http_fields_get(request->headers, capy_string_literal("Host"));
 
     if (host == NULL || host->next != NULL)
     {
@@ -427,7 +437,7 @@ int capy_http_request_validate(capy_arena *arena, capy_http_request *request)
 
     host->value = capy_string_join(arena, ":", 2, (capy_string[]){request->uri.host, request->uri.port});
 
-    capy_http_field *transfer_encoding = capy_smap_get(request->headers, capy_string_literal("Transfer-Encoding"));
+    capy_http_field *transfer_encoding = capy_http_fields_get(request->headers, capy_string_literal("Transfer-Encoding"));
 
     if (transfer_encoding != NULL)
     {
@@ -440,7 +450,7 @@ int capy_http_request_validate(capy_arena *arena, capy_http_request *request)
         request->content_length = 0;
     }
 
-    capy_http_field *content_length = capy_smap_get(request->headers, capy_string_literal("Content-Length"));
+    capy_http_field *content_length = capy_http_fields_get(request->headers, capy_string_literal("Content-Length"));
 
     if (content_length != NULL)
     {
@@ -456,11 +466,11 @@ int capy_http_request_validate(capy_arena *arena, capy_http_request *request)
     return 0;
 }
 
-static void http_canonical_field_name(capy_string header)
+static capy_string http_canonical_field_name(capy_arena *arena, capy_string header)
 {
     int upper = 1;
 
-    char *data = (char *)(header.data);
+    char *data = capy_arena_make(char, arena, header.size + 1);
 
     for (size_t i = 0; i < header.size; i++)
     {
@@ -481,9 +491,11 @@ static void http_canonical_field_name(capy_string header)
             data[i] = capy_char_lowercase(c);
         }
     }
+
+    return capy_string_bytes(header.size, data);
 }
 
-int capy_http_parse_field(capy_arena *arena, capy_http_field **fields, capy_string line)
+int capy_http_parse_field(capy_arena *arena, capy_http_fields *fields, capy_string line)
 {
     capy_http_field field = {.next = NULL};
 
@@ -506,27 +518,59 @@ int capy_http_parse_field(capy_arena *arena, capy_http_field **fields, capy_stri
         return EINVAL;
     }
 
+    field.name = http_canonical_field_name(arena, field.name);
     field.value = capy_string_copy(arena, field.value);
-    field.name = capy_string_copy(arena, field.name);
 
-    http_canonical_field_name(field.name);
-
-    capy_http_field *other = capy_smap_get(*fields, field.name);
-
-    if (other)
-    {
-        while (other->next != NULL)
-        {
-            other = other->next;
-        }
-
-        other->next = capy_arena_make(capy_http_field, arena, 1);
-        *other->next = field;
-    }
-    else
-    {
-        *fields = capy_smap_set(*fields, &field.name);
-    }
+    capy_http_fields_add(fields, field.name, field.value);
 
     return 0;
+}
+
+capy_http_fields *capy_http_fields_init(capy_arena *arena, size_t capacity)
+{
+    return (capy_http_fields *)capy_smap_init(arena, sizeof(capy_http_field), capacity);
+}
+
+capy_http_field *capy_http_fields_get(capy_http_fields *headers, capy_string key)
+{
+    return capy_smap_get((capy_smap *)headers, key);
+}
+
+void capy_http_fields_set(capy_http_fields *headers, capy_string name, capy_string value)
+{
+    capy_http_field field = {
+        .name = http_canonical_field_name(headers->arena, name),
+        .value = capy_string_copy(headers->arena, value),
+    };
+
+    capy_smap_set((capy_smap *)headers, &field.name);
+}
+
+void capy_http_fields_add(capy_http_fields *headers, capy_string name, capy_string value)
+{
+    capy_http_field field = {
+        .name = http_canonical_field_name(headers->arena, name),
+        .value = capy_string_copy(headers->arena, value),
+    };
+
+    capy_http_field *another = capy_smap_get((capy_smap *)headers, name);
+
+    if (another == NULL)
+    {
+        capy_smap_set((capy_smap *)headers, &field.name);
+        return;
+    }
+
+    while (another->next)
+    {
+        another = another->next;
+    }
+
+    another->next = capy_arena_make(capy_http_field, headers->arena, 1);
+    *another->next = field;
+}
+
+void capy_http_fields_clear(capy_http_fields *headers)
+{
+    capy_smap_clear((capy_smap *)headers);
 }

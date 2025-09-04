@@ -4,6 +4,7 @@
 #include <capy/arena.h>
 #include <capy/assert.h>
 #include <capy/std.h>
+#include <capy/vec.h>
 #include <stddef.h>
 
 typedef struct capy_string
@@ -13,10 +14,8 @@ typedef struct capy_string
 } capy_string;
 
 capy_string capy_string_copy(capy_arena *arena, capy_string input);
-void capy_string_ilowercase(capy_string str);
-void capy_string_iuppercase(capy_string str);
-capy_string capy_string_lowercase(capy_arena *arena, capy_string src);
-capy_string capy_string_uppercase(capy_arena *arena, capy_string src);
+capy_string capy_string_lower(capy_arena *arena, capy_string src);
+capy_string capy_string_upper(capy_arena *arena, capy_string src);
 capy_string capy_string_join(capy_arena *arena, const char *delimiter, int n, capy_string *list);
 size_t capy_string_hex(capy_string input, int64_t *value);
 
@@ -52,7 +51,7 @@ inline int capy_string_sw(capy_string a, capy_string prefix)
     return (a.size >= prefix.size) ? memcmp(a.data, prefix.data, prefix.size) == 0 : 0;
 }
 
-inline capy_string capy_string_bytes(const char *data, size_t size)
+inline capy_string capy_string_bytes(size_t size, const char *data)
 {
     return (capy_string){.data = data, .size = size};
 }
@@ -124,5 +123,47 @@ inline capy_string capy_string_trim(capy_string s, const char *chars)
 }
 
 #define capy_string_literal(s) ((capy_string){.data = (s), .size = sizeof(s) - 1})
+
+typedef struct capy_strbuf
+{
+    size_t size;
+    size_t capacity;
+    size_t _;
+    capy_arena *arena;
+    char *data;
+} capy_strbuf;
+
+int capy_strbuf_snprintf(capy_strbuf *strbuf, size_t max, const char *fmt, ...);
+
+inline capy_strbuf *capy_strbuf_init(capy_arena *arena, size_t capacity)
+{
+    return (capy_strbuf *)capy_vec_init(arena, sizeof(char), capacity);
+}
+
+inline void capy_strbuf_write(capy_strbuf *strbuf, capy_string input)
+{
+    capy_vec_insert((capy_vec *)strbuf, strbuf->size, input.size, input.data);
+}
+
+inline void capy_strbuf_write_bytes(capy_strbuf *strbuf, size_t size, const char *bytes)
+{
+    capy_vec_insert((capy_vec *)strbuf, strbuf->size, size, bytes);
+}
+
+inline void capy_strbuf_write_cstr(capy_strbuf *strbuf, const char *cstr)
+{
+    size_t size = strlen(cstr);
+    capy_vec_insert((capy_vec *)strbuf, strbuf->size, size, cstr);
+}
+
+inline void capy_strbuf_resize(capy_strbuf *strbuf, size_t size)
+{
+    capy_vec_resize((capy_vec *)strbuf, size);
+}
+
+inline void capy_strbuf_shl(capy_strbuf *strbuf, size_t size)
+{
+    capy_vec_delete((capy_vec *)strbuf, 0, size);
+}
 
 #endif

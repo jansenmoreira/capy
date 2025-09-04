@@ -1,6 +1,8 @@
 #include "assert.c"
+#include "base64.c"
 #include "hash.c"
 #include "http.c"
+#include "math.c"
 #include "smap.c"
 #include "string.c"
 #include "uri.c"

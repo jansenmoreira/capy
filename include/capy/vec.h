@@ -11,42 +11,18 @@ typedef struct capy_vec
     size_t capacity;
     size_t element_size;
     capy_arena *arena;
-    uint8_t data[];
+    uint8_t *data;
 } capy_vec;
 
-void *capy_vec_init(capy_arena *arena, size_t element_size, size_t capacity);
-void *capy_vec_reserve(void *data, size_t capacity);
-void *capy_vec_resize(void *data, size_t size);
-void *capy_vec_insert(void *data, size_t position, size_t size, void *values);
-void *capy_vec_delete(void *data, size_t position, size_t size);
-void *capy_vec_pop(void *data);
-void *capy_vec_push(void *data, void *value);
+capy_vec *capy_vec_init(capy_arena *arena, size_t element_size, size_t capacity);
+void capy_vec_reserve(capy_vec *vec, size_t capacity);
+void capy_vec_resize(capy_vec *vec, size_t size);
+void capy_vec_insert(capy_vec *vec, size_t position, size_t size, const void *values);
+void capy_vec_delete(capy_vec *vec, size_t position, size_t size);
+void capy_vec_push(capy_vec *vec, void *value);
+void capy_vec_pop(capy_vec *vec);
 
-#define capy_vec_of(T, arena, capacity) \
-    ((T *)(capy_vec_init((arena), sizeof(T), (capacity))))
-
-inline capy_vec *capy_vec_head(void *data)
-{
-    capy_assert(data != NULL);
-    return (capy_vec *)(data)-1;
-}
-
-inline size_t capy_vec_size(void *data)
-{
-    capy_assert(data != NULL);
-    return ((capy_vec *)(data)-1)->size;
-}
-
-inline size_t capy_vec_capacity(void *data)
-{
-    capy_assert(data != NULL);
-    return ((capy_vec *)(data)-1)->capacity;
-}
-
-inline void capy_vec_fixed(void *data)
-{
-    capy_assert(data != NULL);
-    ((capy_vec *)(data)-1)->arena = NULL;
-}
+#define capy_vec_of(T, arena, capacity) capy_vec_init((arena), sizeof(T), (capacity))
+#define capy_vec_data(T, vec) ((T *)((vec)->data))
 
 #endif

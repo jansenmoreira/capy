@@ -8,23 +8,21 @@ extern inline bool capy_sset_has(capy_string **ptr, capy_string key);
 extern inline capy_string *capy_sset_set(capy_string **ptr, capy_string key);
 extern inline capy_string *capy_sset_delete(capy_string **ptr, capy_string key);
 
-void *capy_smap_init(capy_arena *arena, size_t element_size, size_t capacity)
+capy_smap *capy_smap_init(capy_arena *arena, size_t element_size, size_t capacity)
 {
     size_t total = sizeof(capy_smap) + (element_size * capacity);
-
-    capy_smap *smap = capy_arena_grow(arena, total, 8);
+    capy_smap *smap = capy_arena_grow(arena, total, 8, true);
 
     smap->arena = arena;
     smap->capacity = capacity;
     smap->element_size = element_size;
+    smap->data = (uint8_t *)(&smap[1]);
 
-    return smap->data;
+    return smap;
 }
 
-void *capy_smap_get(void *data, capy_string key)
+void *capy_smap_get(capy_smap *smap, capy_string key)
 {
-    capy_smap *smap = capy_smap_head(data);
-
     capy_assert(smap != NULL);
 
     size_t capacity = smap->capacity;
@@ -52,23 +50,27 @@ void *capy_smap_get(void *data, capy_string key)
     }
 }
 
-void *capy_smap_set(void *data, capy_string *pair)
+void capy_smap_set(capy_smap *smap, capy_string *pair)
 {
-    capy_smap *smap = capy_smap_head(data);
-
     capy_assert(smap != NULL);
 
-    capy_string *dest = capy_smap_get(data, pair[0]);
+    capy_string *dest = capy_smap_get(smap, pair[0]);
 
     if (dest != NULL)
     {
         memcpy(dest, pair, smap->element_size);
-        return data;
+        return;
     }
 
     if (smap->size >= (smap->capacity * 2) / 3)
     {
-        data = capy_smap_init(smap->arena, smap->element_size, smap->capacity * 2);
+        capy_smap tmp = {
+            .capacity = smap->capacity * 2,
+            .element_size = smap->element_size,
+            .size = 0,
+        };
+
+        tmp.data = capy_arena_grow(smap->arena, tmp.capacity * tmp.element_size, 8, true);
 
         for (size_t i = 0; i < smap->capacity; i++)
         {
@@ -76,11 +78,12 @@ void *capy_smap_set(void *data, capy_string *pair)
 
             if (item->data != TOMBSTONE && item->size != 0)
             {
-                capy_smap_set(data, item);
+                capy_smap_set(&tmp, item);
             }
         }
 
-        smap = capy_smap_head(data);
+        smap->capacity = tmp.capacity;
+        smap->data = tmp.data;
     }
 
     size_t k = capy_hash(pair[0].data, pair[0].size) % smap->capacity;
@@ -110,27 +113,22 @@ void *capy_smap_set(void *data, capy_string *pair)
 
     memcpy(dest, pair, smap->element_size);
     smap->size += 1;
-
-    return data;
 }
 
-void *capy_smap_delete(void *data, capy_string key)
+void capy_smap_delete(capy_smap *smap, capy_string key)
 {
-    capy_string *pair = capy_smap_get(data, key);
+    capy_string *pair = capy_smap_get(smap, key);
 
     if (pair != NULL)
     {
         pair[0].data = TOMBSTONE;
         pair[0].size = 0;
-        capy_smap_head(data)->size -= 1;
+        smap->size -= 1;
     }
-
-    return data;
 }
 
-void capy_smap_clear(void *data)
+void capy_smap_clear(capy_smap *smap)
 {
-    capy_smap *smap = capy_smap_head(data);
     smap->size = 0;
     memset(smap->data, 0, smap->capacity * smap->element_size);
 }

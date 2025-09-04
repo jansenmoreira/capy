@@ -9,8 +9,7 @@
             "command": "make linux/debug",
             "presentation": {
                 "echo": true,
-                "reveal": "always",
-                "focus": true,
+                "reveal": "silent",
                 "panel": "shared",
                 "showReuseMessage": false,
                 "clear": true
@@ -26,8 +25,7 @@
             "command": "make -s coverage",
             "presentation": {
                 "echo": true,
-                "reveal": "always",
-                "focus": true,
+                "reveal": "silent",
                 "panel": "shared",
                 "showReuseMessage": false,
                 "clear": true

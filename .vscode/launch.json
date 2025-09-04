@@ -11,6 +11,7 @@
             "preLaunchTask": "build",
             "postDebugTask": "coverage",
             "expressions": "native",
+            "terminal": "integrated",
             "initCommands": [
                 "command source extra/lldb/capy.lldb"
             ],
@@ -18,10 +19,12 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "test_api",
-            "program": "${workspaceFolder}/build/test_api",
+            "name": "ex_echo",
+            "program": "${workspaceFolder}/build/ex_echo",
             "args": [
-                "8"
+                "-v",
+                "-w",
+                "1"
             ],
             "cwd": "${workspaceFolder}",
             "terminal": "integrated",
