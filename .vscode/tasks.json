@@ -6,7 +6,7 @@
         {
             "label": "build",
             "type": "shell",
-            "command": "make linux/debug",
+            "command": "make -s linux/debug",
             "presentation": {
                 "echo": true,
                 "reveal": "silent",

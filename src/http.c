@@ -307,10 +307,10 @@ capy_http_version capy_http_parse_version(capy_string input)
 
 void capy_http_write_headers(capy_strbuf *strbuf, capy_http_response *response)
 {
-    capy_strbuf_snprintf(strbuf, 0,
-                         "HTTP/1.1 %d\r\nContent-Length: %llu\r\n",
-                         response->status,
-                         response->content[0].size);
+    capy_strbuf_format(strbuf, 0,
+                       "HTTP/1.1 %d\r\nContent-Length: %llu\r\n",
+                       response->status,
+                       response->content[0].size);
 
     for (size_t i = 0; i < response->headers->capacity; i++)
     {
@@ -320,9 +320,9 @@ void capy_http_write_headers(capy_strbuf *strbuf, capy_http_response *response)
         {
             if (header->name.size != 0)
             {
-                capy_strbuf_snprintf(strbuf, 0,
-                                     "%s: %s\r\n",
-                                     header->name.data, header->value.data);
+                capy_strbuf_format(strbuf, 0,
+                                   "%s: %s\r\n",
+                                   header->name.data, header->value.data);
             }
 
             header = header->next;

@@ -201,7 +201,7 @@ extern inline void capy_strbuf_write_cstr(capy_strbuf *strbuf, const char *cstr)
 extern inline void capy_strbuf_resize(capy_strbuf *strbuf, size_t size);
 extern inline void capy_strbuf_shl(capy_strbuf *strbuf, size_t size);
 
-int capy_strbuf_snprintf(capy_strbuf *strbuf, size_t max, const char *fmt, ...)
+int capy_strbuf_format(capy_strbuf *strbuf, size_t max, const char *fmt, ...)
 {
     if (max == 0)
     {
@@ -218,10 +218,13 @@ int capy_strbuf_snprintf(capy_strbuf *strbuf, size_t max, const char *fmt, ...)
 
     va_list args;
     va_start(args, fmt);
-    int n = vsnprintf(strbuf->data + index, max, fmt, args);
+    int n = vsnprintf(strbuf->data + index, max + 1, fmt, args);
     va_end(args);
 
-    capy_vec_resize((capy_vec *)strbuf, index + (size_t)(n));
+    if ((size_t)n < max)
+    {
+        capy_vec_resize((capy_vec *)strbuf, index + (size_t)(n));
+    }
 
     return n;
 }

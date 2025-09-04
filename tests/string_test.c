@@ -67,12 +67,17 @@ static int test_string(void)
     capy_strbuf_write(strbuf, str("foobar\n"));
     capy_strbuf_write_cstr(strbuf, "baz");
     capy_strbuf_write_bytes(strbuf, 2, "baz");
-    capy_strbuf_snprintf(strbuf, 50, " %d %.1f", 5, 1.3f);
+    capy_strbuf_format(strbuf, 50, " %d %.1f", 5, 1.3f);
     expect_s_eq(memcmp(strbuf->data, "foobar\nbazba 5 1.3", strbuf->size), 0);
     capy_strbuf_shl(strbuf, 7);
     expect_s_eq(memcmp(strbuf->data, "bazba 5 1.3", strbuf->size), 0);
     capy_strbuf_resize(strbuf, 5);
     expect_s_eq(memcmp(strbuf->data, "bazba", strbuf->size), 0);
+
+    capy_strbuf_resize(strbuf, 0);
+    int s = capy_strbuf_format(strbuf, 4, "%d", 123456);
+    expect_s_eq(s, 6);
+    expect_s_eq(memcmp(strbuf->data, "1234", strbuf->size), 0);
 
     capy_arena_free(arena);
 

@@ -133,7 +133,7 @@ typedef struct capy_strbuf
     char *data;
 } capy_strbuf;
 
-int capy_strbuf_snprintf(capy_strbuf *strbuf, size_t max, const char *fmt, ...);
+int capy_strbuf_format(capy_strbuf *strbuf, size_t max, const char *fmt, ...);
 
 inline capy_strbuf *capy_strbuf_init(capy_arena *arena, size_t capacity)
 {

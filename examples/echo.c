@@ -8,7 +8,7 @@ static int http_handler(capy_arena *arena, capy_http_request *request, capy_http
 {
     capy_string uri = capy_uri_string(arena, request->uri);
 
-    capy_strbuf_snprintf(response->content, 0, "uri: %s\n", uri.data);
+    capy_strbuf_format(response->content, 0, "uri: %s\n", uri.data);
 
     for (size_t i = 0; i < request->headers->capacity; i++)
     {
@@ -16,11 +16,11 @@ static int http_handler(capy_arena *arena, capy_http_request *request, capy_http
 
         if (header.name.size > 0)
         {
-            capy_strbuf_snprintf(response->content, 0, "%s: %s\n", header.name.data, header.value.data);
+            capy_strbuf_format(response->content, 0, "%s: %s\n", header.name.data, header.value.data);
         }
     }
 
-    capy_strbuf_snprintf(response->content, 0, "size: %lu\n", request->content_length);
+    capy_strbuf_format(response->content, 0, "size: %lu\n", request->content_length);
     capy_strbuf_base64_url(response->content, request->content_length, request->content, true);
     capy_strbuf_write_cstr(response->content, "\n");
 
@@ -37,7 +37,7 @@ int main(int argc, char *argv[])
 {
     setvbuf(stdout, NULL, _IOLBF, 0);
 
-    http_server_options options = {
+    capy_http_server_options options = {
         .trace = 0,
         .workers = 0,
     };

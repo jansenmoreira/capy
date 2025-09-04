@@ -132,11 +132,11 @@ typedef struct capy_http_response
     capy_http_status status;
 } capy_http_response;
 
-typedef struct http_server_options
+typedef struct capy_http_server_options
 {
     size_t workers;
     int trace;
-} http_server_options;
+} capy_http_server_options;
 
 capy_http_method capy_http_parse_method(capy_string input);
 capy_http_version capy_http_parse_version(capy_string input);
@@ -149,7 +149,7 @@ void capy_http_write_headers(capy_strbuf *strbuf, capy_http_response *response);
 
 typedef int(capy_http_handler)(capy_arena *arena, capy_http_request *request, capy_http_response *response);
 
-int capy_http_serve(const char *host, const char *port, capy_http_handler handler, http_server_options *options);
+int capy_http_serve(const char *host, const char *port, capy_http_handler handler, capy_http_server_options *options);
 
 capy_http_fields *capy_http_fields_init(capy_arena *arena, size_t capacity);
 capy_http_field *capy_http_fields_get(capy_http_fields *headers, capy_string key);

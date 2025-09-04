@@ -1,6 +1,6 @@
 -Iinclude
 -Itests
--std=c11
+-std=c99
 -fprofile-arcs
 -ftest-coverage
 -Werror

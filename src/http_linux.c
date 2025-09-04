@@ -19,7 +19,6 @@ typedef struct http_worker
     size_t id;
     pthread_t thread_id;
     int epoll_fd;
-    int trace;
 } http_worker;
 
 typedef enum
@@ -82,7 +81,12 @@ typedef struct http_conn
     http_worker *worker;
 
     capy_arena *arena;
-    void *arena_marker;
+    uint8_t *marker_init;
+
+    ssize_t mem_req_headers;
+    ssize_t mem_req_content;
+    ssize_t mem_req_trailers;
+    ssize_t mem_response;
 
     http_conn_state state;
     http_conn_state after_read;
@@ -99,10 +103,9 @@ typedef struct http_conn
     capy_http_request *request;
     capy_http_handler *handler;
 
-    size_t mem_begin;
-    size_t mem_headers;
-    size_t mem_content;
-    size_t mem_trailers;
+    capy_http_server_options *options;
+
+    struct timespec time;
 } http_conn;
 
 static int conn_epoll(http_conn *conn, int op, uint32_t events)
@@ -250,17 +253,17 @@ static inline http_conn_state conn_write_content(http_conn *conn)
 
 static inline http_conn_state conn_parse_request_line(http_conn *conn)
 {
-    if (conn->request == NULL)
-    {
-        conn->request = capy_arena_make(capy_http_request, conn->arena, 1);
-    }
-
     capy_string line;
 
     if (conn_msg_get_line(conn, &line))
     {
         conn->after_read = STATE_PARSE_REQUEST_LINE;
         return STATE_READ_SOCKET;
+    }
+
+    if (conn->request == NULL)
+    {
+        conn->request = capy_arena_make(capy_http_request, conn->arena, 1);
     }
 
     if (capy_http_parse_request_line(conn->arena, conn->request, line))
@@ -293,7 +296,7 @@ static inline http_conn_state conn_parse_headers(http_conn *conn)
 
         if (conn->request->headers == NULL)
         {
-            conn->request->headers = capy_http_fields_init(conn->arena, 32);
+            conn->request->headers = capy_http_fields_init(conn->arena, 16);
         }
 
         if (capy_http_parse_field(conn->arena, conn->request->headers, line))
@@ -342,7 +345,7 @@ static inline http_conn_state conn_parse_trailers(http_conn *conn)
 
         if (conn->request->trailers == NULL)
         {
-            conn->request->trailers = capy_http_fields_init(conn->arena, 32);
+            conn->request->trailers = capy_http_fields_init(conn->arena, 8);
         }
 
         if (capy_http_parse_field(conn->arena, conn->request->trailers, line))
@@ -464,7 +467,7 @@ static inline http_conn_state conn_parse_content(http_conn *conn)
 {
     if (conn->req_body == NULL)
     {
-        conn->req_body = capy_strbuf_init(conn->arena, 1024);
+        conn->req_body = capy_strbuf_init(conn->arena, conn->chunk_size);
     }
 
     size_t message_size = conn->msg_buffer->size;
@@ -495,7 +498,7 @@ static inline http_conn_state conn_process_request(http_conn *conn)
     }
 
     capy_http_response response = {
-        .content = capy_strbuf_init(conn->arena, 1024),
+        .content = capy_strbuf_init(conn->arena, 256),
         .headers = capy_http_fields_init(conn->arena, 8),
     };
 
@@ -504,7 +507,7 @@ static inline http_conn_state conn_process_request(http_conn *conn)
         return STATE_CLOSE_CONNECTION;
     }
 
-    conn->resp_head = capy_strbuf_init(conn->arena, 1024);
+    conn->resp_head = capy_strbuf_init(conn->arena, 128);
 
     capy_http_write_headers(conn->resp_head, &response);
 
@@ -521,7 +524,7 @@ static inline http_conn_state conn_process_request(http_conn *conn)
 
 static http_conn_state conn_message_init(http_conn *conn)
 {
-    capy_arena_shrink(conn->arena, conn->arena_marker);
+    capy_arena_shrink(conn->arena, conn->marker_init);
 
     conn->line_cursor = 0;
     conn->after_read = STATE_UNKNOWN;
@@ -531,6 +534,11 @@ static http_conn_state conn_message_init(http_conn *conn)
     conn->req_body = NULL;
     conn->resp_head = NULL;
     conn->resp_body = NULL;
+
+    conn->mem_req_headers = 0;
+    conn->mem_req_content = 0;
+    conn->mem_req_trailers = 0;
+    conn->mem_response = 0;
 
     return STATE_PARSE_REQUEST_LINE;
 }
@@ -549,52 +557,58 @@ static int conn_close(http_conn *conn)
     return 0;
 }
 
+static int64_t difftimespec_us(struct timespec a, struct timespec b)
+{
+    return ((a.tv_sec - b.tv_sec) * (int64_t)(1000000000) + a.tv_nsec - b.tv_nsec) / 1000;
+}
+
 static inline void conn_trace(http_conn *conn)
 {
-    char buffer[128] = {0};
+    struct timespec end, begin = conn->time;
+    timespec_get(&end, TIME_UTC);
+    conn->time = end;
 
-    time_t t = time(NULL);
-    strftime(buffer, 127, "%X", gmtime(&t));
+    int64_t elapsed = difftimespec_us(end, begin);
 
-    size_t arena_size = capy_arena_size(conn->arena);
+    char time[10];
+    char time_info[32];
 
-    float mem_total = (float)(arena_size) / 1024.0f;
-    float mem_headers = (float)(conn->mem_headers - conn->mem_begin) / 1024.0f;
-    float mem_content = (float)(conn->mem_content - conn->mem_headers) / 1024.0f;
-    float mem_trailers = (float)(conn->mem_trailers - conn->mem_content) / 1024.0f;
-    float mem_response = (float)(arena_size - conn->mem_trailers) / 1024.0f;
+    strftime(time, 10, "%X", gmtime(&end.tv_sec));
+    snprintf(time_info, 32, "%s.%03ld %9ldµs", time, end.tv_nsec / 1000000, elapsed);
+
+    size_t mem_total = capy_arena_size(conn->arena);
+
     size_t to_read = (conn->msg_buffer) ? conn->msg_buffer->size : 0;
-    size_t to_write_headers = (conn->resp_head) ? conn->resp_head->size : 0;
-    size_t to_write_content = (conn->resp_body) ? conn->resp_body->size : 0;
+
+    size_t to_write = (conn->resp_head) ? conn->resp_head->size : 0;
+    to_write += (conn->resp_body) ? conn->resp_body->size : 0;
 
     printf(
-        "%-24s | mem_total = %.2f KiB, mem_headers = %.2f KiB, mem_content = %.2f KiB, mem_trailers = %.2f KiB\n"
-        "%-24s | mem_response = %.2f KiB, worker = %lu, socket = %d, to_read = %lu, to_write = %lu\n",
-        buffer, mem_total, mem_headers, mem_content, mem_trailers,
-        http_conn_state_cstr(conn->state), mem_response,
-        conn->worker->id, conn->socket,
-        to_read, to_write_content + to_write_headers);
+        "%-24s | worker | socket | mem_req_headers  | mem_req_content  | mem_req_trailers | mem_response     | mem_total        | to_read  | to_write\n"
+        "%-24s | %-6lu | %-6d | %-16ld | %-16ld | %-16ld | %-16ld | %-16lu | %-8lu | %-8lu\n",
+        time_info, http_conn_state_cstr(conn->state), conn->worker->id, conn->socket,
+        conn->mem_req_headers, conn->mem_req_content, conn->mem_req_trailers, conn->mem_response, mem_total, to_read, to_write);
 }
 
 static inline int conn_state_machine(http_conn *conn)
 {
     capy_assert(conn != NULL);
 
+    timespec_get(&conn->time, TIME_UTC);
+
     for (;;)
     {
-        if (conn->worker->trace)
+        if (conn->options->trace)
         {
             conn_trace(conn);
         }
+
+        ssize_t begin = (ssize_t)capy_arena_size(conn->arena);
 
         switch (conn->state)
         {
             case STATE_INIT:
                 conn->state = conn_message_init(conn);
-                conn->mem_begin = capy_arena_size(conn->arena);
-                conn->mem_headers = conn->mem_begin;
-                conn->mem_content = conn->mem_begin;
-                conn->mem_trailers = conn->mem_begin;
                 break;
 
             case STATE_READ_SOCKET:
@@ -603,38 +617,37 @@ static inline int conn_state_machine(http_conn *conn)
 
             case STATE_PARSE_REQUEST_LINE:
                 conn->state = conn_parse_request_line(conn);
-                conn->mem_headers = capy_arena_size(conn->arena);
-                conn->mem_content = conn->mem_headers;
-                conn->mem_trailers = conn->mem_content;
+                conn->mem_req_headers += (ssize_t)capy_arena_size(conn->arena) - begin;
                 break;
 
             case STATE_PARSE_HEADERS:
                 conn->state = conn_parse_headers(conn);
-                conn->mem_headers = capy_arena_size(conn->arena);
-                conn->mem_content = conn->mem_headers;
-                conn->mem_trailers = conn->mem_content;
+                conn->mem_req_headers += (ssize_t)capy_arena_size(conn->arena) - begin;
                 break;
 
             case STATE_PARSE_CONTENT:
                 conn->state = conn_parse_content(conn);
-                conn->mem_content = capy_arena_size(conn->arena);
-                conn->mem_trailers = conn->mem_content;
+                conn->mem_req_content += (ssize_t)capy_arena_size(conn->arena) - begin;
                 break;
 
             case STATE_PARSE_CHUNK_SIZE:
                 conn->state = conn_parse_chunk_size(conn);
+                conn->mem_req_content += (ssize_t)capy_arena_size(conn->arena) - begin;
                 break;
 
             case STATE_PARSE_CHUNK_DATA:
                 conn->state = conn_parse_chunk_data(conn);
+                conn->mem_req_content += (ssize_t)capy_arena_size(conn->arena) - begin;
                 break;
 
             case STATE_PARSE_TRAILERS:
                 conn->state = conn_parse_trailers(conn);
+                conn->mem_req_trailers += (ssize_t)capy_arena_size(conn->arena) - begin;
                 break;
 
             case STATE_PROCESS_REQUEST:
                 conn->state = conn_process_request(conn);
+                conn->mem_response += (ssize_t)capy_arena_size(conn->arena) - begin;
                 break;
 
             case STATE_WRITE_HEADERS:
@@ -693,12 +706,12 @@ static void *conn_worker(void *data)
     }
 }
 
-static http_server_options options_default = {
+static capy_http_server_options options_default = {
     .trace = false,
     .workers = 0,
 };
 
-int capy_http_serve(const char *host, const char *port, capy_http_handler handler, http_server_options *options)
+int capy_http_serve(const char *host, const char *port, capy_http_handler handler, capy_http_server_options *options)
 {
     capy_assert(host || port);
     capy_assert(handler != NULL);
@@ -792,7 +805,6 @@ int capy_http_serve(const char *host, const char *port, capy_http_handler handle
     {
         workers[i].id = i;
         workers[i].epoll_fd = epoll_create1(0);
-        workers[i].trace = options->trace;
 
         if (workers[i].epoll_fd == -1)
         {
@@ -852,11 +864,12 @@ int capy_http_serve(const char *host, const char *port, capy_http_handler handle
             conn->handler = handler;
             conn->state = STATE_INIT;
             conn->worker = worker;
+            conn->options = options;
 
             conn->msg_buffer = capy_strbuf_init(arena, 8 * 1024);
             conn->msg_buffer->arena = NULL;
 
-            conn->arena_marker = capy_arena_top(arena);
+            conn->marker_init = capy_arena_top(arena);
 
             if (conn_epoll(conn, EPOLL_CTL_ADD, EPOLLIN) == -1)
             {
