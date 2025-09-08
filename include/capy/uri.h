@@ -23,6 +23,6 @@ capy_uri capy_uri_parse(capy_string input);
 void capy_uri_parse_authority(capy_uri *uri);
 capy_uri capy_uri_resolve_reference(capy_arena *arena, capy_uri base, capy_uri relative);
 capy_string capy_uri_normalize(capy_arena *arena, capy_string input, int lowercase);
-capy_string uri_path_remove_dot_segments(capy_arena *arena, capy_string path);
+capy_string capy_uri_path_remove_dot_segments(capy_arena *arena, capy_string path);
 
 #endif

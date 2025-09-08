@@ -531,7 +531,7 @@ static capy_string uri_path_merge(capy_arena *arena, capy_string base, capy_stri
     return (capy_string){.data = buffer, .size = size};
 }
 
-capy_string uri_path_remove_dot_segments(capy_arena *arena, capy_string path)
+capy_string capy_uri_path_remove_dot_segments(capy_arena *arena, capy_string path)
 {
     capy_string path_self = capy_string_literal("./");
     capy_string path_parent = capy_string_literal("../");
@@ -760,7 +760,7 @@ capy_uri capy_uri_resolve_reference(capy_arena *arena, capy_uri base, capy_uri r
         uri.userinfo = reference.userinfo;
         uri.host = reference.host;
         uri.port = reference.port;
-        uri.path = uri_path_remove_dot_segments(arena, reference.path);
+        uri.path = capy_uri_path_remove_dot_segments(arena, reference.path);
         uri.query = reference.query;
     }
     else
@@ -771,7 +771,7 @@ capy_uri capy_uri_resolve_reference(capy_arena *arena, capy_uri base, capy_uri r
             uri.userinfo = reference.userinfo;
             uri.host = reference.host;
             uri.port = reference.port;
-            uri.path = uri_path_remove_dot_segments(arena, reference.path);
+            uri.path = capy_uri_path_remove_dot_segments(arena, reference.path);
             uri.query = reference.query;
         }
         else
@@ -785,12 +785,12 @@ capy_uri capy_uri_resolve_reference(capy_arena *arena, capy_uri base, capy_uri r
             {
                 if (reference.path.data[0] == '/')
                 {
-                    uri.path = uri_path_remove_dot_segments(arena, reference.path);
+                    uri.path = capy_uri_path_remove_dot_segments(arena, reference.path);
                 }
                 else
                 {
                     uri.path = uri_path_merge(arena, base.path, reference.path);
-                    uri.path = uri_path_remove_dot_segments(arena, uri.path);
+                    uri.path = capy_uri_path_remove_dot_segments(arena, uri.path);
                 }
 
                 uri.query = reference.query;

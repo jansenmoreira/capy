@@ -3,12 +3,12 @@
 char base64_std_enc[65] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 char base64_url_enc[65] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
-extern inline size_t capy_base64_url(char *output, size_t n, const char *input, int padding);
+extern inline size_t capy_base64url(char *output, size_t n, const char *input, int padding);
 extern inline size_t capy_base64(char *output, size_t n, const char *input, int padding);
-extern inline capy_string capy_string_base64_url(capy_arena *arena, capy_string input, int padding);
+extern inline capy_string capy_string_base64url(capy_arena *arena, capy_string input, int padding);
 extern inline capy_string capy_string_base64(capy_arena *arena, capy_string input, int padding);
-extern inline void capy_strbuf_base64_url(capy_strbuf *strbuf, size_t n, const char *input, int padding);
-extern inline void capy_strbuf_base64(capy_strbuf *strbuf, size_t n, const char *input, int padding);
+extern inline void capy_buffer_base64url(capy_buffer *buffer, size_t n, const char *input, int padding);
+extern inline void capy_buffer_base64(capy_buffer *buffer, size_t n, const char *input, int padding);
 
 size_t capy_base64_(char *output, const char *encoding, size_t n, const char *input, int padding)
 {
@@ -78,15 +78,15 @@ capy_string capy_string_base64_(capy_arena *arena, capy_string input, const char
     return capy_string_bytes(n, buffer);
 }
 
-void capy_strbuf_base64_(capy_strbuf *strbuf, size_t n, const char *input, const char *encoding, int padding)
+void capy_buffer_base64_(capy_buffer *buffer, size_t n, const char *input, const char *encoding, int padding)
 {
     size_t s = align_to(n, 3) / 3 * 4;
-    size_t index = strbuf->size;
+    size_t index = buffer->size;
 
-    capy_strbuf_resize(strbuf, index + s + 1);
+    capy_buffer_resize(buffer, index + s + 1);
 
-    n = capy_base64_(strbuf->data + index, encoding, n, input, padding);
-    strbuf->data[index + n] = 0;
+    n = capy_base64_(buffer->data + index, encoding, n, input, padding);
+    buffer->data[index + n] = 0;
 
-    capy_strbuf_resize(strbuf, index + n);
+    capy_buffer_resize(buffer, index + n);
 }

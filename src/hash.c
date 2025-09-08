@@ -143,7 +143,7 @@ static inline uint64_t rapidhash_nano(const void *key, size_t len, uint64_t seed
     return rapidhash_mix(a ^ secret[7], b ^ secret[1] ^ i);
 }
 
-uint64_t capy_hash(const char *key, uint64_t length)
+uint64_t capy_hash(const void *key, uint64_t length)
 {
     return rapidhash_nano(key, length, 0, rapidhash_secret);
 }

@@ -8,6 +8,8 @@
 #define HTTP_DIGIT 0x4
 #define HTTP_HEXDIGIT 0x8
 
+extern inline capy_string capy_http_method_string(capy_http_method method);
+
 static uint8_t http_char_categories[256] = {
     ['!'] = HTTP_VCHAR | HTTP_TOKEN,
     ['"'] = HTTP_VCHAR,
@@ -305,9 +307,9 @@ capy_http_version capy_http_parse_version(capy_string input)
     return CAPY_HTTP_VERSION_UNK;
 }
 
-void capy_http_write_headers(capy_strbuf *strbuf, capy_http_response *response)
+void capy_http_write_headers(capy_buffer *buffer, capy_http_response *response)
 {
-    capy_strbuf_format(strbuf, 0,
+    capy_buffer_format(buffer, 0,
                        "HTTP/1.1 %d\r\nContent-Length: %llu\r\n",
                        response->status,
                        response->content[0].size);
@@ -320,7 +322,7 @@ void capy_http_write_headers(capy_strbuf *strbuf, capy_http_response *response)
         {
             if (header->name.size != 0)
             {
-                capy_strbuf_format(strbuf, 0,
+                capy_buffer_format(buffer, 0,
                                    "%s: %s\r\n",
                                    header->name.data, header->value.data);
             }
@@ -329,7 +331,7 @@ void capy_http_write_headers(capy_strbuf *strbuf, capy_http_response *response)
         }
     }
 
-    capy_strbuf_write_cstr(strbuf, "\r\n");
+    capy_buffer_write_cstr(buffer, "\r\n");
 }
 
 int capy_http_parse_request_line(capy_arena *arena, capy_http_request *request, capy_string line)
@@ -573,4 +575,154 @@ void capy_http_fields_add(capy_http_fields *headers, capy_string name, capy_stri
 void capy_http_fields_clear(capy_http_fields *headers)
 {
     capy_smap_clear((capy_smap *)headers);
+}
+
+static capy_http_router *capy_http_route_add_(capy_arena *arena, capy_http_router *router, capy_string method, capy_string suffix, capy_string path, capy_http_handler *handler)
+{
+    if (router == NULL)
+    {
+        router = capy_arena_make(capy_http_router, arena, 1);
+        router->children = capy_smap_of(capy_http_router_pair, arena, 4);
+        router->handlers = capy_smap_of(capy_http_route, arena, 2);
+    }
+
+    http_consume_chars(&suffix, "/");
+    capy_string segment = http_next_token(&suffix, "/");
+
+    if (segment.size == 0)
+    {
+        capy_http_route route = {.method = method, .path = path, .handler = handler};
+        capy_smap_set(router->handlers, &route.method);
+        return router;
+    }
+
+    if (segment.data[0] == '^')
+    {
+        segment = capy_string_literal("^");
+    }
+
+    capy_http_router *child = NULL;
+
+    capy_http_router_pair *found = capy_smap_get(router->children, segment);
+
+    if (found)
+    {
+        child = found->router;
+    }
+
+    child = capy_http_route_add_(arena, child, method, suffix, path, handler);
+
+    capy_http_router_pair pair = {.segment = segment, .router = child};
+    capy_smap_set(router->children, &pair.segment);
+
+    return router;
+}
+
+capy_http_router *capy_http_route_add(capy_arena *arena, capy_http_router *router, capy_string route, capy_http_handler *handler)
+{
+    capy_string path = route;
+    capy_string method = http_next_token(&path, " ");
+    method = capy_string_upper(arena, method);
+    http_consume_chars(&path, " ");
+
+    return capy_http_route_add_(arena, router, method, path, path, handler);
+}
+
+capy_http_route *capy_http_route_get(capy_http_router *router, capy_http_method method, capy_string path)
+{
+    http_consume_chars(&path, "/");
+    capy_string segment = http_next_token(&path, "/");
+
+    if (segment.size == 0)
+    {
+        return capy_smap_get(router->handlers, capy_http_method_string(method));
+    }
+
+    capy_http_router_pair *pair = capy_smap_get(router->children, segment);
+
+    if (pair == NULL)
+    {
+        pair = capy_smap_get(router->children, capy_string_literal("^"));
+
+        if (pair == NULL)
+        {
+            return NULL;
+        }
+    }
+
+    return capy_http_route_get(pair->router, method, path);
+}
+
+static void capy_http_path_params_set(capy_http_path_params *headers, capy_string name, capy_string value)
+{
+    capy_http_path_param field = {
+        .name = capy_string_copy(headers->arena, name),
+        .value = capy_string_copy(headers->arena, value),
+    };
+
+    capy_smap_set((capy_smap *)headers, &field.name);
+}
+
+capy_http_path_params *capy_http_path_params_init(capy_arena *arena, capy_string path, capy_string handler_path)
+{
+    capy_http_path_params *params = NULL;
+
+    for (;;)
+    {
+        http_consume_chars(&path, "/");
+        capy_string path_segment = http_next_token(&path, "/");
+
+        if (path_segment.size == 0)
+        {
+            break;
+        }
+
+        http_consume_chars(&handler_path, "/");
+        capy_string handler_path_segment = http_next_token(&handler_path, "/");
+
+        if (handler_path_segment.data[0] != '^')
+        {
+            continue;
+        }
+
+        if (params == NULL)
+        {
+            params = (capy_http_path_params *)capy_smap_init(arena, sizeof(capy_http_field), 8);
+        }
+
+        handler_path_segment = capy_string_shl(handler_path_segment, 1);
+
+        capy_http_path_params_set(params, handler_path_segment, path_segment);
+    }
+
+    return params;
+}
+
+capy_http_path_param *capy_http_path_params_get(capy_http_path_params *headers, capy_string key)
+{
+    return capy_smap_get((capy_smap *)headers, key);
+}
+
+static int http_404_handler(capy_arena *arena, capy_http_request *request, capy_http_response *response)
+{
+    (void)request;
+
+    response->content = capy_buffer_init(arena, 128);
+    capy_buffer_write_cstr(response->content, "404 Not Found!\n");
+    response->status = CAPY_HTTP_NOT_FOUND;
+    return 0;
+}
+
+int capy_http_router_handle(capy_arena *arena, capy_http_router *router,
+                            capy_http_request *request, capy_http_response *response)
+{
+    capy_http_route *route = capy_http_route_get(router, request->method, request->uri.path);
+
+    if (route == NULL)
+    {
+        return http_404_handler(arena, request, response);
+    }
+
+    request->params = capy_http_path_params_init(arena, request->uri.path, route->path);
+    return route->handler(arena, request, response);
 }

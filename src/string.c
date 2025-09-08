@@ -9,6 +9,7 @@ extern inline char capy_char_lowercase(char c);
 extern inline capy_string capy_string_slice(capy_string s, size_t begin, size_t end);
 extern inline int capy_string_eq(capy_string a, capy_string b);
 extern inline int capy_string_sw(capy_string a, capy_string prefix);
+extern inline capy_string capy_string_prefix(capy_string a, capy_string b);
 extern inline capy_string capy_string_bytes(size_t size, const char *data);
 extern inline capy_string capy_string_shl(capy_string s, size_t size);
 extern inline capy_string capy_string_shr(capy_string s, size_t size);
@@ -194,14 +195,14 @@ capy_string capy_string_join(capy_arena *arena, const char *delimiter, int n, ca
     return (capy_string){.data = buffer, .size = size};
 }
 
-extern inline capy_strbuf *capy_strbuf_init(capy_arena *arena, size_t capacity);
-extern inline void capy_strbuf_write(capy_strbuf *strbuf, capy_string input);
-extern inline void capy_strbuf_write_bytes(capy_strbuf *strbuf, size_t size, const char *bytes);
-extern inline void capy_strbuf_write_cstr(capy_strbuf *strbuf, const char *cstr);
-extern inline void capy_strbuf_resize(capy_strbuf *strbuf, size_t size);
-extern inline void capy_strbuf_shl(capy_strbuf *strbuf, size_t size);
+extern inline capy_buffer *capy_buffer_init(capy_arena *arena, size_t capacity);
+extern inline void capy_buffer_write(capy_buffer *buffer, capy_string input);
+extern inline void capy_buffer_write_bytes(capy_buffer *buffer, size_t size, const char *bytes);
+extern inline void capy_buffer_write_cstr(capy_buffer *buffer, const char *cstr);
+extern inline void capy_buffer_resize(capy_buffer *buffer, size_t size);
+extern inline void capy_buffer_shl(capy_buffer *buffer, size_t size);
 
-int capy_strbuf_format(capy_strbuf *strbuf, size_t max, const char *fmt, ...)
+int capy_buffer_format(capy_buffer *buffer, size_t max, const char *fmt, ...)
 {
     if (max == 0)
     {
@@ -212,18 +213,18 @@ int capy_strbuf_format(capy_strbuf *strbuf, size_t max, const char *fmt, ...)
         va_end(args);
     }
 
-    size_t index = strbuf->size;
+    size_t index = buffer->size;
 
-    capy_vec_insert((capy_vec *)strbuf, index, max, NULL);
+    capy_vec_insert((capy_vec *)buffer, index, max, NULL);
 
     va_list args;
     va_start(args, fmt);
-    int n = vsnprintf(strbuf->data + index, max + 1, fmt, args);
+    int n = vsnprintf(buffer->data + index, max + 1, fmt, args);
     va_end(args);
 
     if ((size_t)n < max)
     {
-        capy_vec_resize((capy_vec *)strbuf, index + (size_t)(n));
+        capy_vec_resize((capy_vec *)buffer, index + (size_t)(n));
     }
 
     return n;

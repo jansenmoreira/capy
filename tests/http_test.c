@@ -228,14 +228,14 @@ static int test_http(void)
 
     capy_http_response response = {
         .headers = fields,
-        .content = capy_strbuf_init(arena, 1024),
+        .content = capy_buffer_init(arena, 1024),
         .status = 200,
     };
 
-    capy_strbuf_write_cstr(response.content, "foobar");
+    capy_buffer_write_cstr(response.content, "foobar");
 
-    capy_strbuf *strbuf = capy_strbuf_init(arena, 1024);
-    capy_http_write_headers(strbuf, &response);
+    capy_buffer *buffer = capy_buffer_init(arena, 1024);
+    capy_http_write_headers(buffer, &response);
 
     char expected_headers[] =
         "HTTP/1.1 200\r\n"
@@ -246,7 +246,73 @@ static int test_http(void)
         "X-Foo: buz\r\n"
         "\r\n";
 
-    expect_s_eq(memcmp(strbuf->data, expected_headers, strbuf->size), 0);
+    expect_s_eq(memcmp(buffer->data, expected_headers, buffer->size), 0);
+
+    capy_http_router *router = NULL;
+    capy_http_route *route = NULL;
+
+    router = capy_http_route_add(arena, router, str("GET /foo/bar/baz"), (capy_http_handler *)(1));
+    router = capy_http_route_add(arena, router, str("POST /foo/baz"), (capy_http_handler *)(2));
+    router = capy_http_route_add(arena, router, str("POST /foo/baz/bar"), (capy_http_handler *)(3));
+    router = capy_http_route_add(arena, router, str("POST /foo/bar"), (capy_http_handler *)(4));
+    router = capy_http_route_add(arena, router, str("GET /foo/bar"), (capy_http_handler *)(5));
+    router = capy_http_route_add(arena, router, str("GET /foo/bar"), (capy_http_handler *)(6));
+    router = capy_http_route_add(arena, router, str("POST /bar/foo"), (capy_http_handler *)(7));
+    router = capy_http_route_add(arena, router, str("POST foo/bar"), (capy_http_handler *)(8));
+    router = capy_http_route_add(arena, router, str("POST foo/^id/baz"), (capy_http_handler *)(9));
+
+    route = capy_http_route_get(router, CAPY_HTTP_GET, str("foo/bar/baz/"));
+    expect_p_ne(route, NULL);
+    expect_p_eq((void *)route->handler, (void *)(1));
+
+    route = capy_http_route_get(router, CAPY_HTTP_POST, str("foo/baz/"));
+    expect_p_ne(route, NULL);
+    expect_p_eq((void *)route->handler, (void *)(2));
+
+    route = capy_http_route_get(router, CAPY_HTTP_POST, str("foo/baz/bar"));
+    expect_p_ne(route, NULL);
+    expect_p_eq((void *)route->handler, (void *)(3));
+
+    route = capy_http_route_get(router, CAPY_HTTP_POST, str("foo/bar"));
+    expect_p_ne(route, NULL);
+    expect_p_eq((void *)route->handler, (void *)(8));
+
+    route = capy_http_route_get(router, CAPY_HTTP_GET, str("foo/bar"));
+    expect_p_ne(route, NULL);
+    expect_p_eq((void *)route->handler, (void *)(6));
+
+    route = capy_http_route_get(router, CAPY_HTTP_POST, str("bar/foo"));
+    expect_p_ne(route, NULL);
+    expect_p_eq((void *)route->handler, (void *)(7));
+
+    route = capy_http_route_get(router, CAPY_HTTP_POST, str("foo/123412341324/baz"));
+    expect_p_ne(route, NULL);
+    expect_p_eq((void *)route->handler, (void *)(9));
+
+    route = capy_http_route_get(router, CAPY_HTTP_POST, str("bar/baz"));
+    expect_p_eq(route, NULL);
+
+    route = capy_http_route_get(router, CAPY_HTTP_POST, str("baz"));
+    expect_p_eq(route, NULL);
+
+    route = capy_http_route_get(router, CAPY_HTTP_POST, str(""));
+    expect_p_eq(route, NULL);
+
+    capy_http_path_params *params = capy_http_path_params_init(arena, str("foo/^file/bar/^id/baz"), str("foo/test/bar/fe037abd-a9b8-4881-b875-a2f667e2e4ed/baz"));
+    expect_p_ne(params, NULL);
+
+    capy_http_path_param *param = capy_http_path_params_get(params, str("id"));
+    expect_p_ne(param, NULL);
+    expect_str_eq(param->name, str("id"));
+    expect_str_eq(param->value, str("fe037abd-a9b8-4881-b875-a2f667e2e4ed"));
+
+    param = capy_http_path_params_get(params, str("file"));
+    expect_p_ne(param, NULL);
+    expect_str_eq(param->name, str("file"));
+    expect_str_eq(param->value, str("test"));
+
+    param = capy_http_path_params_get(params, str("other"));
+    expect_p_eq(param, NULL);
 
     capy_arena_free(arena);
 

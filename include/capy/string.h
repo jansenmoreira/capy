@@ -62,6 +62,26 @@ inline capy_string capy_string_shl(capy_string s, size_t size)
     return (capy_string){.data = s.data + size, .size = s.size - size};
 }
 
+inline capy_string capy_string_prefix(capy_string a, capy_string b)
+{
+    size_t i;
+
+    if (a.size < b.size)
+    {
+        for (i = 0; i < a.size && a.data[i] == b.data[i]; i++)
+        {
+        }
+    }
+    else
+    {
+        for (i = 0; i < b.size && a.data[i] == b.data[i]; i++)
+        {
+        }
+    }
+
+    return capy_string_slice(a, 0, i);
+}
+
 inline capy_string capy_string_shr(capy_string s, size_t size)
 {
     capy_assert(size <= s.size);
@@ -124,46 +144,46 @@ inline capy_string capy_string_trim(capy_string s, const char *chars)
 
 #define capy_string_literal(s) ((capy_string){.data = (s), .size = sizeof(s) - 1})
 
-typedef struct capy_strbuf
+typedef struct capy_buffer
 {
     size_t size;
     size_t capacity;
     size_t _;
     capy_arena *arena;
     char *data;
-} capy_strbuf;
+} capy_buffer;
 
-int capy_strbuf_format(capy_strbuf *strbuf, size_t max, const char *fmt, ...);
+int capy_buffer_format(capy_buffer *buffer, size_t max, const char *fmt, ...);
 
-inline capy_strbuf *capy_strbuf_init(capy_arena *arena, size_t capacity)
+inline capy_buffer *capy_buffer_init(capy_arena *arena, size_t capacity)
 {
-    return (capy_strbuf *)capy_vec_init(arena, sizeof(char), capacity);
+    return (capy_buffer *)capy_vec_init(arena, sizeof(char), capacity);
 }
 
-inline void capy_strbuf_write(capy_strbuf *strbuf, capy_string input)
+inline void capy_buffer_write(capy_buffer *buffer, capy_string input)
 {
-    capy_vec_insert((capy_vec *)strbuf, strbuf->size, input.size, input.data);
+    capy_vec_insert((capy_vec *)buffer, buffer->size, input.size, input.data);
 }
 
-inline void capy_strbuf_write_bytes(capy_strbuf *strbuf, size_t size, const char *bytes)
+inline void capy_buffer_write_bytes(capy_buffer *buffer, size_t size, const char *bytes)
 {
-    capy_vec_insert((capy_vec *)strbuf, strbuf->size, size, bytes);
+    capy_vec_insert((capy_vec *)buffer, buffer->size, size, bytes);
 }
 
-inline void capy_strbuf_write_cstr(capy_strbuf *strbuf, const char *cstr)
+inline void capy_buffer_write_cstr(capy_buffer *buffer, const char *cstr)
 {
     size_t size = strlen(cstr);
-    capy_vec_insert((capy_vec *)strbuf, strbuf->size, size, cstr);
+    capy_vec_insert((capy_vec *)buffer, buffer->size, size, cstr);
 }
 
-inline void capy_strbuf_resize(capy_strbuf *strbuf, size_t size)
+inline void capy_buffer_resize(capy_buffer *buffer, size_t size)
 {
-    capy_vec_resize((capy_vec *)strbuf, size);
+    capy_vec_resize((capy_vec *)buffer, size);
 }
 
-inline void capy_strbuf_shl(capy_strbuf *strbuf, size_t size)
+inline void capy_buffer_shl(capy_buffer *buffer, size_t size)
 {
-    capy_vec_delete((capy_vec *)strbuf, 0, size);
+    capy_vec_delete((capy_vec *)buffer, 0, size);
 }
 
 #endif
