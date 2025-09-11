@@ -29,6 +29,8 @@
 
 #include <capy/capy.h>
 
+// STATIC
+
 static const uint64_t rapidhash_secret[8] = {
     0x2d358dccaa6c78a5ull,
     0x8bb84b93962eacc9ull,
@@ -39,6 +41,8 @@ static const uint64_t rapidhash_secret[8] = {
     0x90ed1765281c388cull,
     0xaaaaaaaaaaaaaaaaull,
 };
+
+// STATIC DEFINITIONS
 
 static inline void rapidhash_mul128(uint64_t *A, uint64_t *B)
 {
@@ -142,6 +146,8 @@ static inline uint64_t rapidhash_nano(const void *key, size_t len, uint64_t seed
 
     return rapidhash_mix(a ^ secret[7], b ^ secret[1] ^ i);
 }
+
+// DEFINITIONS
 
 uint64_t capy_hash(const void *key, uint64_t length)
 {

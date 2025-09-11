@@ -9,7 +9,7 @@ void capy_assert_(int condition, const char *file, int line, const char *express
 #define capy_log_errno(err, msg) capy_log_errno_((err), __FILE__, __LINE__, (msg));
 
 #ifdef NDEBUG
-#define capy_assert(exp) (0)
+#define capy_assert(exp)
 #else
 #define capy_assert(exp) capy_assert_((exp) ? 1 : 0, __FILE__, __LINE__, #exp)
 #endif

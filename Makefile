@@ -1,12 +1,12 @@
 .PHONY: linux/debug linux/release rapidhash coverage
 
-CC_FLAGS := -Iinclude -std=c99 -Werror -Wall -Wextra -Wconversion -Wpedantic -Wmissing-prototypes -Wmissing-variable-declarations -Wno-missing-field-initializers
+CC_FLAGS := -Iinclude -std=c11 -Wall -Wextra -Wconversion -Wpedantic -Wmissing-prototypes -Wmissing-variable-declarations -Wno-missing-field-initializers -Wno-unused-function
 
 LINUX_FLAGS := -DCAPY_LINUX -D_GNU_SOURCE -D_POSIX_C_SOURCE=200112L
 
 LINUX_DEBUG_FLAGS := ${CC_FLAGS} ${LINUX_FLAGS} -g -fprofile-arcs -ftest-coverage
 
-LINUX_RELEASE_FLAGS := ${CC_FLAGS} ${LINUX_FLAGS} -O3
+LINUX_RELEASE_FLAGS := ${CC_FLAGS} ${LINUX_FLAGS} -DNDEBUG -O3
 
 CC := clang
 
@@ -22,6 +22,7 @@ linux/release:
 	rm -rf build/release/
 	mkdir -p build/release/
 	${CC} ${LINUX_RELEASE_FLAGS} -c src/capy.c -o build/release/capy.o
+	${CC} ${LINUX_RELEASE_FLAGS} -S src/capy.c -o build/release/capy.s
 	ar rcs build/release/libcapy.a build/release/capy.o
 	${CC} ${LINUX_RELEASE_FLAGS} -Lbuild/release tests/test.c -lcapy -o build/release/tests
 	${CC} ${LINUX_RELEASE_FLAGS} -Lbuild/release examples/echo.c -lcapy -o build/release/ex_echo

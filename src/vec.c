@@ -1,114 +1,102 @@
 #include <capy/capy.h>
 #include <errno.h>
 
-extern inline capy_vec *capy_vec_head(void *data);
-extern inline size_t capy_vec_size(void *data);
-extern inline size_t capy_vec_capacity(void *data);
-extern inline void capy_vec_fixed(void *data);
+// DEFINITIONS
 
-capy_vec *capy_vec_init(capy_arena *arena, size_t element_size, size_t capacity)
+void *capy_vec_reserve(capy_arena *arena, void *items, size_t element_size, size_t *capacity, size_t size)
 {
-    size_t total = sizeof(capy_vec) + (element_size * capacity);
+    capy_assert(items != NULL);
+    capy_assert(capacity != NULL);
+    capy_assert(*capacity > 0);
 
-    capy_vec *vector = capy_arena_grow(arena, total, 8, true);
+    char *data = cast(char *, items);
 
-    vector->arena = arena;
-    vector->capacity = capacity;
-    vector->element_size = element_size;
-    vector->data = (uint8_t *)(&vector[1]);
-
-    return vector;
-}
-
-void capy_vec_reserve(capy_vec *vec, size_t capacity)
-{
-    capy_assert(vec != NULL);
-
-    if (capacity <= vec->capacity)
+    if (size > *capacity)
     {
-        return;
+        if (arena == NULL)
+        {
+            return NULL;
+        }
+
+        size = next_pow2(size);
+
+        data = capy_arena_realloc(arena, data, element_size * (*capacity), element_size * size, false);
+
+        if (data != NULL)
+        {
+            *capacity = size;
+        }
     }
 
-    capy_assert(vec->arena != NULL);
-
-    uint8_t *vec_top = vec->data + (vec->element_size * vec->capacity);
-    uint8_t *arena_top = capy_arena_top(vec->arena);
-
-    if (vec_top == arena_top)
-    {
-        capy_arena_grow(vec->arena, vec->element_size * (capacity - vec->capacity), 0, true);
-    }
-    else
-    {
-        uint8_t *data = capy_arena_grow(vec->arena, vec->element_size * capacity, 8, true);
-        memcpy(data, vec->data, vec->size * vec->element_size);
-        vec->data = data;
-    }
-
-    vec->capacity = capacity;
+    return data;
 }
 
-void capy_vec_push(capy_vec *vec, void *value)
+void *capy_vec_insert(capy_arena *arena, void *restrict items,
+                      size_t element_size, size_t *restrict capacity, size_t *restrict size,
+                      size_t position, size_t count, const void *restrict values)
 {
-    capy_vec_insert(vec, vec->size, 1, value);
-}
+    capy_assert(items != NULL);
+    capy_assert(size != NULL);
 
-void capy_vec_pop(capy_vec *vec)
-{
-    capy_assert(vec != NULL);
-    capy_assert(vec->size > 0);
-    capy_vec_resize(vec, vec->size - 1);
-}
-
-void capy_vec_resize(capy_vec *vec, size_t size)
-{
-    capy_assert(vec != NULL);
-
-    if (size > vec->capacity)
+    if (position > *size)
     {
-        capy_vec_reserve(vec, 2 * size);
+        return NULL;
     }
 
-    vec->size = size;
+    size_t old_size = (*size);
+    size_t new_size = old_size + count;
+    size_t tail_size = old_size - position;
+
+    items = capy_vec_reserve(arena, items, element_size, capacity, new_size);
+
+    if (items != NULL)
+    {
+        char *data = cast(char *, items);
+
+        if (tail_size > 0)
+        {
+            memmove(data + (element_size * (position + count)),
+                    data + (element_size * (position)),
+                    element_size * tail_size);
+        }
+
+        if (values != NULL)
+        {
+            memcpy(data + (element_size * position),
+                   values,
+                   element_size * count);
+        }
+
+        *size = new_size;
+    }
+
+    return items;
 }
 
-void capy_vec_insert(capy_vec *vec, size_t position, size_t size, const void *values)
+int capy_vec_delete(void *items, size_t element_size, size_t *size, size_t position, size_t count)
 {
-    capy_assert(vec != NULL);
-    capy_assert(position <= vec->size);
+    capy_assert(items != NULL);
+    capy_assert(size != NULL);
 
-    size_t tail_size = vec->size - position;
+    if (position + count > *size)
+    {
+        return EINVAL;
+    }
 
-    capy_vec_resize(vec, vec->size + size);
+    size_t old_size = *size;
+    size_t new_size = old_size - count;
+    size_t tail_size = old_size - (position + count);
+
+    char *data = cast(char *, items);
 
     if (tail_size > 0)
     {
-        memmove(vec->data + (vec->element_size * (position + size)),
-                vec->data + (vec->element_size * (position)),
-                vec->element_size * tail_size);
+        memmove(data + (element_size * (position)),
+                data + (element_size * (position + count)),
+                element_size * tail_size);
     }
 
-    if (values != NULL)
-    {
-        memcpy(vec->data + (vec->element_size * position),
-               values,
-               vec->element_size * size);
-    }
-}
+    *size = new_size;
 
-void capy_vec_delete(capy_vec *vec, size_t position, size_t size)
-{
-    capy_assert(vec != NULL);
-    capy_assert(position + size <= vec->size);
-
-    size_t tail_size = vec->size - (position + size);
-
-    if (tail_size > 0)
-    {
-        memmove(vec->data + (vec->element_size * (position)),
-                vec->data + (vec->element_size * (position + size)),
-                vec->element_size * tail_size);
-    }
-
-    capy_vec_resize(vec, vec->size - size);
+    return 0;
 }

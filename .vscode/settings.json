@@ -3,8 +3,8 @@
         "*.h": "c",
         "*.c": "c"
     },
-    "lldb.displayFormat": "auto",
     "lldb.showDisassembly": "never",
     "lldb.dereferencePointers": true,
-    "lldb.consoleMode": "evaluate"
+    "lldb.consoleMode": "commands",
+    "lldb.displayFormat": "auto"
 }

@@ -1,23 +1,22 @@
 #include <capy/capy.h>
 #include <ctype.h>
 #include <errno.h>
-#include <stdarg.h>
-#include <stdio.h>
+
+// EXTERN INLINES
 
 extern inline char capy_char_uppercase(char c);
 extern inline char capy_char_lowercase(char c);
 extern inline capy_string capy_string_slice(capy_string s, size_t begin, size_t end);
 extern inline int capy_string_eq(capy_string a, capy_string b);
 extern inline int capy_string_sw(capy_string a, capy_string prefix);
-extern inline capy_string capy_string_prefix(capy_string a, capy_string b);
 extern inline capy_string capy_string_bytes(size_t size, const char *data);
+extern inline capy_string capy_string_cstr(const char *data);
 extern inline capy_string capy_string_shl(capy_string s, size_t size);
 extern inline capy_string capy_string_shr(capy_string s, size_t size);
-extern inline capy_string capy_string_cstr(const char *data);
 extern inline capy_string capy_string_trim(capy_string s, const char *chars);
-extern inline capy_string capy_string_ltrim(capy_string s, const char *chars);
-extern inline capy_string capy_string_rtrim(capy_string s, const char *chars);
 extern inline int capy_char_is(char c, const char *chars);
+
+// DEFINITIONS
 
 size_t capy_string_hex(capy_string input, int64_t *value)
 {
@@ -120,44 +119,67 @@ size_t capy_string_hex(capy_string input, int64_t *value)
     return bytes;
 }
 
-capy_string capy_string_copy(capy_arena *arena, capy_string input)
+int capy_string_copy(capy_arena *arena, capy_string *output, capy_string input)
 {
+    capy_assert(output != NULL);
+
     if (input.size == 0)
     {
-        return (capy_string){.size = 0};
+        *output = capy_string_empty;
     }
 
-    char *buffer = capy_arena_make(char, arena, input.size + 1);
+    char *buffer = capy_arena_make(arena, char, input.size + 1);
+
+    if (buffer == NULL)
+    {
+        return ENOMEM;
+    }
+
     memcpy(buffer, input.data, input.size);
+    *output = capy_string_bytes(input.size, buffer);
 
-    return (capy_string){.data = buffer, .size = input.size};
+    return 0;
 }
 
-capy_string capy_string_lower(capy_arena *arena, capy_string src)
+int capy_string_lower(capy_arena *arena, capy_string *output, capy_string input)
 {
-    char *data = capy_arena_make(char, arena, src.size);
+    char *data = capy_arena_make(arena, char, input.size);
 
-    for (size_t i = 0; i < src.size; i++)
+    if (data == NULL)
     {
-        data[i] = capy_char_lowercase(src.data[i]);
+        return ENOMEM;
     }
 
-    return capy_string_bytes(src.size, data);
-}
-
-capy_string capy_string_upper(capy_arena *arena, capy_string src)
-{
-    char *data = capy_arena_make(char, arena, src.size);
-
-    for (size_t i = 0; i < src.size; i++)
+    for (size_t i = 0; i < input.size; i++)
     {
-        data[i] = capy_char_uppercase(src.data[i]);
+        data[i] = capy_char_lowercase(input.data[i]);
     }
 
-    return capy_string_bytes(src.size, data);
+    *output = capy_string_bytes(input.size, data);
+
+    return 0;
 }
 
-capy_string capy_string_join(capy_arena *arena, const char *delimiter, int n, capy_string *list)
+int capy_string_upper(capy_arena *arena, capy_string *output, capy_string input)
+{
+    char *data = capy_arena_make(arena, char, input.size);
+
+    if (data == NULL)
+    {
+        return ENOMEM;
+    }
+
+    for (size_t i = 0; i < input.size; i++)
+    {
+        data[i] = capy_char_uppercase(input.data[i]);
+    }
+
+    *output = capy_string_bytes(input.size, data);
+
+    return 0;
+}
+
+int capy_string_join(capy_arena *arena, capy_string *output, const char *delimiter, int n, capy_string *list)
 {
     size_t size = 0;
     size_t delimiter_size = strlen(delimiter);
@@ -174,10 +196,16 @@ capy_string capy_string_join(capy_arena *arena, const char *delimiter, int n, ca
 
     if (size == 0)
     {
-        return (capy_string){.size = 0};
+        *output = capy_string_empty;
     }
 
-    char *buffer = capy_arena_make(char, arena, size + 1);
+    char *buffer = capy_arena_make(arena, char, size + 1);
+
+    if (buffer == NULL)
+    {
+        return ENOMEM;
+    }
+
     char *cursor = buffer;
 
     for (int i = 0; i < n; i++)
@@ -192,40 +220,70 @@ capy_string capy_string_join(capy_arena *arena, const char *delimiter, int n, ca
         cursor += list[i].size;
     }
 
-    return (capy_string){.data = buffer, .size = size};
+    *output = capy_string_bytes(size, buffer);
+
+    return 0;
 }
 
-extern inline capy_buffer *capy_buffer_init(capy_arena *arena, size_t capacity);
-extern inline void capy_buffer_write(capy_buffer *buffer, capy_string input);
-extern inline void capy_buffer_write_bytes(capy_buffer *buffer, size_t size, const char *bytes);
-extern inline void capy_buffer_write_cstr(capy_buffer *buffer, const char *cstr);
-extern inline void capy_buffer_resize(capy_buffer *buffer, size_t size);
-extern inline void capy_buffer_shl(capy_buffer *buffer, size_t size);
-
-int capy_buffer_format(capy_buffer *buffer, size_t max, const char *fmt, ...)
+capy_string capy_string_prefix(capy_string a, capy_string b)
 {
-    if (max == 0)
+    size_t i;
+
+    if (a.size < b.size)
     {
-        va_list args;
-        va_start(args, fmt);
-        max = (size_t)vsnprintf(NULL, 0, fmt, args);
-        max++;
-        va_end(args);
+        for (i = 0; i < a.size && a.data[i] == b.data[i]; i++)
+        {
+        }
+    }
+    else
+    {
+        for (i = 0; i < b.size && a.data[i] == b.data[i]; i++)
+        {
+        }
     }
 
-    size_t index = buffer->size;
+    return capy_string_slice(a, 0, i);
+}
 
-    capy_vec_insert((capy_vec *)buffer, index, max, NULL);
-
-    va_list args;
-    va_start(args, fmt);
-    int n = vsnprintf(buffer->data + index, max + 1, fmt, args);
-    va_end(args);
-
-    if ((size_t)n < max)
+int capy_char_is(char c, const char *chars)
+{
+    for (const char *it = chars; it != NULL && it[0] != 0; it++)
     {
-        capy_vec_resize((capy_vec *)buffer, index + (size_t)(n));
+        if (it[0] == c)
+        {
+            return true;
+        }
     }
 
-    return n;
+    return false;
+}
+
+capy_string capy_string_ltrim(capy_string s, const char *chars)
+{
+    size_t i;
+
+    for (i = 0; i < s.size; i++)
+    {
+        if (!capy_char_is(s.data[i], chars))
+        {
+            break;
+        }
+    }
+
+    return (capy_string){.data = s.data + i, .size = s.size - i};
+}
+
+capy_string capy_string_rtrim(capy_string s, const char *chars)
+{
+    size_t i;
+
+    for (i = s.size; i > 0; i--)
+    {
+        if (!capy_char_is(s.data[i - 1], chars))
+        {
+            break;
+        }
+    }
+
+    return (capy_string){.data = s.data, .size = i};
 }

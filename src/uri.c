@@ -176,7 +176,7 @@ capy_string capy_uri_normalize(capy_arena *arena, capy_string input, int lowerca
         return (capy_string){.size = 0};
     }
 
-    char *buffer = capy_arena_make(char, arena, input.size + 1);
+    char *buffer = capy_arena_make(arena, char, input.size + 1);
     size_t size = 0;
 
     while (input.size)
@@ -522,7 +522,7 @@ static capy_string uri_path_merge(capy_arena *arena, capy_string base, capy_stri
     }
 
     size_t size = base.size + 1 + reference.size;
-    char *buffer = capy_arena_make(char, arena, size + 1);
+    char *buffer = capy_arena_make(arena, char, size + 1);
 
     strncpy(buffer, base.data, base.size);
     buffer[base.size] = '/';
@@ -531,7 +531,7 @@ static capy_string uri_path_merge(capy_arena *arena, capy_string base, capy_stri
     return (capy_string){.data = buffer, .size = size};
 }
 
-capy_string capy_uri_path_remove_dot_segments(capy_arena *arena, capy_string path)
+capy_string capy_uri_path_removedots(capy_arena *arena, capy_string path)
 {
     capy_string path_self = capy_string_literal("./");
     capy_string path_parent = capy_string_literal("../");
@@ -545,7 +545,7 @@ capy_string capy_uri_path_remove_dot_segments(capy_arena *arena, capy_string pat
 
     capy_string input = path;
 
-    char *output = capy_arena_make(char, arena, path.size + 1);
+    char *output = capy_arena_make(arena, char, path.size + 1);
     size_t output_size = 0;
 
     while (input.size)
@@ -760,7 +760,7 @@ capy_uri capy_uri_resolve_reference(capy_arena *arena, capy_uri base, capy_uri r
         uri.userinfo = reference.userinfo;
         uri.host = reference.host;
         uri.port = reference.port;
-        uri.path = capy_uri_path_remove_dot_segments(arena, reference.path);
+        uri.path = capy_uri_path_removedots(arena, reference.path);
         uri.query = reference.query;
     }
     else
@@ -771,7 +771,7 @@ capy_uri capy_uri_resolve_reference(capy_arena *arena, capy_uri base, capy_uri r
             uri.userinfo = reference.userinfo;
             uri.host = reference.host;
             uri.port = reference.port;
-            uri.path = capy_uri_path_remove_dot_segments(arena, reference.path);
+            uri.path = capy_uri_path_removedots(arena, reference.path);
             uri.query = reference.query;
         }
         else
@@ -785,12 +785,12 @@ capy_uri capy_uri_resolve_reference(capy_arena *arena, capy_uri base, capy_uri r
             {
                 if (reference.path.data[0] == '/')
                 {
-                    uri.path = capy_uri_path_remove_dot_segments(arena, reference.path);
+                    uri.path = capy_uri_path_removedots(arena, reference.path);
                 }
                 else
                 {
                     uri.path = uri_path_merge(arena, base.path, reference.path);
-                    uri.path = capy_uri_path_remove_dot_segments(arena, uri.path);
+                    uri.path = capy_uri_path_removedots(arena, uri.path);
                 }
 
                 uri.query = reference.query;
@@ -819,7 +819,7 @@ capy_string capy_uri_string(capy_arena *arena, capy_uri uri)
                         uri.fragment.size +
                         6;
 
-    char *buffer = capy_arena_make(char, arena, buffer_max);
+    char *buffer = capy_arena_make(arena, char, buffer_max);
     size_t buffer_size = 0;
 
     if (uri.scheme.size)

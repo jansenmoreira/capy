@@ -2,75 +2,63 @@
 
 static int test_vec(void)
 {
-    capy_arena *arena = capy_arena_init(KiB(1));
+    capy_arena *arena = capy_arena_init(KiB(4));
 
-    capy_vec *vec = capy_vec_of(int16_t, arena, 8);
+    size_t size = 0;
+    size_t capacity = 4;
 
-    expect_u_eq(vec->capacity, 8);
+    int *data, *tmp;
 
-    for (int16_t i = 1; i <= 10; i++)
+    data = capy_arena_make(arena, int, capacity);
+
+    data = capy_vec_reserve(arena, data, sizeof(int), &capacity, 2);
+    expect_p_ne(data, NULL);
+    expect_u_eq(capacity, 4);
+
+    data = capy_vec_reserve(arena, data, sizeof(int), &capacity, 8);
+    expect_p_ne(data, NULL);
+    expect_u_gte(capacity, 8);
+
+    tmp = capy_vec_reserve(arena, data, sizeof(int), &capacity, MiB(1));
+    expect_p_eq(tmp, NULL);
+
+    // should fail when insert is too big
+
+    tmp = capy_vec_insert(arena, data, sizeof(int), &capacity, &size, 0, MiB(1), NULL);
+    expect_p_eq(tmp, NULL);
+
+    tmp = capy_vec_insert(arena, data, sizeof(int), &capacity, &size, 10, 10, NULL);
+    expect_p_eq(tmp, NULL);
+
+    data = capy_vec_insert(arena, data, sizeof(int), &capacity, &size, 0, 5, arr(int, 6, 7, 8, 9, 10));
+    expect_p_ne(data, NULL);
+    expect_u_eq(size, 5);
+
+    data = capy_vec_insert(arena, data, sizeof(int), &capacity, &size, 0, 5, arr(int, 1, 2, 3, 4, 5));
+    expect_p_ne(data, NULL);
+    expect_u_eq(size, 10);
+
+    data = capy_vec_insert(arena, data, sizeof(int), &capacity, &size, 0, 1, NULL);
+    expect_p_ne(data, NULL);
+    expect_u_eq(size, 11);
+
+    data[0] = 0;
+
+    for (int i = 0; i < 11; i++)
     {
-        capy_vec_push(vec, &i);
-        expect_p_ne(vec, NULL);
+        expect_s_eq(data[i], i);
     }
 
-    int16_t buffer1[] = {-1, -2, -3, -4, -5, -6, -7, -8, -9, -10};
-    int16_t expected[] = {1, 2, 3, 4, 5, -1, -2, -3, -4, -5, 6, 7, 8, 9, 10, -6, -7, -8, -9, -10, 0};
+    expect_s_eq(capy_vec_delete(data, sizeof(int), &size, 11, 1), EINVAL);
 
-    capy_vec_insert(vec, 5, 5, buffer1);
-    expect_p_ne(vec, NULL);
+    expect_s_eq(capy_vec_delete(data, sizeof(int), &size, 11, 0), 0);
+    expect_u_eq(size, 11);
 
-    capy_vec_insert(vec, vec->size, 5, buffer1 + 5);
-    expect_p_ne(vec, NULL);
+    expect_s_eq(capy_vec_delete(data, sizeof(int), &size, 0, 5), 0);
+    expect_u_eq(size, 6);
 
-    capy_vec_insert(vec, vec->size, 1, NULL);
-    expect_p_ne(vec, NULL);
-    expect_u_eq(vec->size, 21);
-
-    for (size_t i = 0; i < arrlen(expected); i++)
-    {
-        expect_s_eq(capy_vec_data(int16_t, vec)[i], expected[i]);
-    }
-
-    capy_vec_pop(vec);
-    expect_p_ne(vec, NULL);
-    expect_u_eq(vec->size, 20);
-
-    capy_vec_delete(vec, 5, 5);
-    expect_p_ne(vec, NULL);
-    expect_u_eq(vec->size, 15);
-
-    capy_vec_delete(vec, 10, 5);
-    expect_p_ne(vec, NULL);
-    expect_u_eq(vec->size, 10);
-
-    for (int16_t i = 0; i < 10; i++)
-    {
-        expect_s_eq(capy_vec_data(int16_t, vec)[i], i + 1);
-    }
-
-    capy_vec_delete(vec, 0, 10);
-    expect_p_ne(vec, NULL);
-    expect_u_eq(vec->size, 0);
-
-    float *vec2 = capy_arena_make(float, arena, 64);
-    expect_p_ne(vec2, NULL);
-
-    void *last_vec1 = vec->data;
-    capy_vec_resize(vec, 64);
-    expect_p_ne(vec, NULL);
-    expect_p_ne(vec->data, last_vec1);
-
-    vec2 = capy_arena_make(float, arena, 64);
-    expect_p_ne(vec2, NULL);
-
-    vec->arena = NULL;
-
-    capy_vec_resize(vec, 128);
-    expect_p_ne(vec, NULL);
-
-    capy_vec_reserve(vec, 64);
-    expect_p_ne(vec, NULL);
+    expect_s_eq(capy_vec_delete(data, sizeof(int), &size, 0, 6), 0);
+    expect_u_eq(size, 0);
 
     return 0;
 }

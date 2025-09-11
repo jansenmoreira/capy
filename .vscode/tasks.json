@@ -20,6 +20,22 @@
             }
         },
         {
+            "label": "build/release",
+            "type": "shell",
+            "command": "make -s linux/release",
+            "presentation": {
+                "echo": true,
+                "reveal": "silent",
+                "panel": "shared",
+                "showReuseMessage": false,
+                "clear": true
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
             "label": "coverage",
             "type": "shell",
             "command": "make -s coverage",

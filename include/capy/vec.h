@@ -5,24 +5,15 @@
 #include <capy/assert.h>
 #include <capy/std.h>
 
-typedef struct capy_vec
-{
-    size_t size;
-    size_t capacity;
-    size_t element_size;
-    capy_arena *arena;
-    uint8_t *data;
-} capy_vec;
+must_check void *capy_vec_reserve(capy_arena *arena, void *items,
+                                  size_t element_size, size_t *capacity, size_t size);
 
-capy_vec *capy_vec_init(capy_arena *arena, size_t element_size, size_t capacity);
-void capy_vec_reserve(capy_vec *vec, size_t capacity);
-void capy_vec_resize(capy_vec *vec, size_t size);
-void capy_vec_insert(capy_vec *vec, size_t position, size_t size, const void *values);
-void capy_vec_delete(capy_vec *vec, size_t position, size_t size);
-void capy_vec_push(capy_vec *vec, void *value);
-void capy_vec_pop(capy_vec *vec);
+must_check void *capy_vec_insert(capy_arena *arena, void *items,
+                                 size_t element_size, size_t *capacity, size_t *size,
+                                 size_t position, size_t count, const void *values);
 
-#define capy_vec_of(T, arena, capacity) capy_vec_init((arena), sizeof(T), (capacity))
-#define capy_vec_data(T, vec) ((T *)((vec)->data))
+int capy_vec_delete(void *items, size_t element_size, size_t *size, size_t position, size_t count);
+
+// MACROS
 
 #endif

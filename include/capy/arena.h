@@ -3,20 +3,26 @@
 
 #include <capy/std.h>
 
+// TYPES
+
 typedef struct capy_arena capy_arena;
 
-capy_arena *capy_arena_init(size_t limit);
-void capy_arena_free(capy_arena *arena);
+// DECLARATIONS
 
-void *capy_arena_grow(capy_arena *arena, size_t size, size_t align, int zeroinit);
-void capy_arena_shrink(capy_arena *arena, void *addr);
-
-void *capy_arena_top(capy_arena *arena);
+must_check capy_arena *capy_arena_init(size_t limit);
+void capy_arena_destroy(capy_arena *arena);
+must_check void *capy_arena_realloc(capy_arena *arena, void *data, size_t size, size_t new_size, int zeroinit);
+must_check void *capy_arena_alloc(capy_arena *arena, size_t size, size_t align, int zeroinit);
+must_check int capy_arena_free(capy_arena *arena, void *addr);
+void *capy_arena_end(capy_arena *arena);
 size_t capy_arena_size(capy_arena *arena);
 
-#define capy_arena_make(T, arena, size) ((T *)(capy_arena_grow((arena), sizeof(T) * (size), alignof(T), true)))
+// MACROS
 
-#define capy_arena_umake(T, arena, size) \
-    ((T *)(capy_arena_grow((arena), sizeof(T) * (size), alignof(T), false)))
+#define capy_arena_make(arena, T, size) \
+    (capy_arena_alloc((arena), sizeof(T) * (size), alignof(T), true))
+
+#define capy_arena_umake(arena, T, size) \
+    (capy_arena_alloc((arena), sizeof(T) * (size), alignof(T), false))
 
 #endif

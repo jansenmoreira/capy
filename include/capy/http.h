@@ -1,9 +1,12 @@
 #ifndef CAPY_HTTP_H
 #define CAPY_HTTP_H
 
-#include <capy/smap.h>
+#include <capy/buffer.h>
 #include <capy/std.h>
+#include <capy/strmap.h>
 #include <capy/uri.h>
+
+// TYPES
 
 typedef enum capy_http_status
 {
@@ -87,6 +90,98 @@ typedef enum capy_http_method
     CAPY_HTTP_TRACE,
 } capy_http_method;
 
+typedef enum capy_http_version
+{
+    CAPY_HTTP_VERSION_UNK = 0,
+    CAPY_HTTP_09,
+    CAPY_HTTP_10,
+    CAPY_HTTP_11,
+    CAPY_HTTP_20,
+    CAPY_HTTP_30,
+} capy_http_version;
+
+typedef struct capy_http_request
+{
+    capy_http_method method;
+    capy_http_version version;
+    capy_uri uri;
+    capy_strkvmmap *headers;
+    capy_strkvmmap *trailers;
+    capy_strkvmmap *params;
+    const char *content;
+    size_t content_length;
+    int chunked;
+} capy_http_request;
+
+typedef struct capy_http_response
+{
+    capy_strkvmmap *headers;
+    capy_buffer *content;
+    capy_http_status status;
+} capy_http_response;
+
+typedef struct capy_http_server_options
+{
+    size_t workers;
+    size_t workers_conn_max;
+    int trace;
+
+    size_t msg_buffer_size;
+    size_t max_mem_req_headers;
+    size_t max_mem_req_content;
+    size_t max_mem_req_trailers;
+    size_t max_mem_total;
+} capy_http_server_options;
+
+typedef int(capy_http_handler)(capy_arena *arena, capy_http_request *request, capy_http_response *response);
+
+typedef struct capy_http_route
+{
+    capy_string method;
+    capy_string path;
+    capy_http_handler *handler;
+} capy_http_route;
+
+typedef struct capy_http_route_map
+{
+    size_t size;
+    size_t capacity;
+    capy_http_route *items;
+} capy_http_route_map;
+
+typedef struct capy_http_router_map
+{
+    size_t size;
+    size_t capacity;
+    struct capy_http_router *items;
+} capy_http_router_map;
+
+typedef struct capy_http_router
+{
+    capy_string segment;
+    capy_http_router_map *segments;
+    capy_http_route_map *routes;
+} capy_http_router;
+
+// DECLARATIONS
+
+capy_http_method capy_http_parse_method(capy_string input);
+capy_http_version capy_http_parse_version(capy_string input);
+must_check int capy_http_parse_reqline(capy_arena *arena, capy_http_request *request, capy_string input);
+capy_strkvmmap *capy_http_parse_uriparams(capy_arena *arena, capy_string path, capy_string handler_path);
+must_check int capy_http_parse_field(capy_strkvmmap *fields, capy_string line);
+
+must_check int capy_http_write_headers(capy_buffer *buffer, capy_http_response *response);
+must_check int capy_http_request_validate(capy_arena *arena, capy_http_request *request);
+int capy_http_serve(const char *host, const char *port, capy_http_router *router, capy_http_server_options options);
+
+capy_http_router *capy_http_router_init(capy_arena *arena);
+capy_http_router *capy_http_route_add(capy_arena *arena, capy_http_router *router, capy_string route, capy_http_handler *handler);
+capy_http_route *capy_http_route_get(capy_http_router *router, capy_http_method method, capy_string path);
+int capy_http_router_handle(capy_arena *arena, capy_http_router *router, capy_http_request *request, capy_http_response *response);
+
+// INLINE DEFINITIONS
+
 inline capy_string capy_http_method_string(capy_http_method method)
 {
     switch (method)
@@ -113,127 +208,5 @@ inline capy_string capy_http_method_string(capy_http_method method)
             return capy_string_literal("UNK");
     }
 }
-
-typedef enum capy_http_version
-{
-    CAPY_HTTP_VERSION_UNK = 0,
-    CAPY_HTTP_09,
-    CAPY_HTTP_10,
-    CAPY_HTTP_11,
-    CAPY_HTTP_20,
-    CAPY_HTTP_30,
-} capy_http_version;
-
-typedef struct capy_http_field
-{
-    capy_string name;
-    capy_string value;
-    struct capy_http_field *next;
-} capy_http_field;
-
-typedef struct capy_http_fields
-{
-    size_t size;
-    size_t capacity;
-    size_t _;
-    capy_arena *arena;
-    capy_http_field *data;
-} capy_http_fields;
-
-capy_http_fields *capy_http_fields_init(capy_arena *arena, size_t capacity);
-capy_http_field *capy_http_fields_get(capy_http_fields *headers, capy_string key);
-void capy_http_fields_set(capy_http_fields *headers, capy_string name, capy_string value);
-void capy_http_fields_add(capy_http_fields *headers, capy_string name, capy_string value);
-void capy_http_fields_clear(capy_http_fields *headers);
-
-typedef struct capy_http_path_param
-{
-    capy_string name;
-    capy_string value;
-} capy_http_path_param;
-
-typedef struct capy_http_path_params
-{
-    size_t size;
-    size_t capacity;
-    size_t _;
-    capy_arena *arena;
-    capy_http_path_param *data;
-} capy_http_path_params;
-
-capy_http_path_params *capy_http_path_params_init(capy_arena *arena, capy_string path, capy_string handler_path);
-capy_http_path_param *capy_http_path_params_get(capy_http_path_params *headers, capy_string key);
-
-typedef struct capy_http_request
-{
-    capy_http_method method;
-    capy_http_version version;
-    capy_uri uri;
-    capy_http_fields *headers;
-    capy_http_fields *trailers;
-    capy_http_path_params *params;
-    const char *content;
-    size_t content_length;
-    int chunked;
-} capy_http_request;
-
-typedef struct capy_http_response
-{
-    capy_http_fields *headers;
-    capy_buffer *content;
-    capy_http_status status;
-} capy_http_response;
-
-typedef struct capy_http_server_options
-{
-    size_t workers;
-    int trace;
-
-    size_t msg_buffer_size;
-    size_t max_mem_req_headers;
-    size_t max_mem_req_content;
-    size_t max_mem_req_trailers;
-    size_t max_mem_total;
-} capy_http_server_options;
-
-capy_http_method capy_http_parse_method(capy_string input);
-capy_http_version capy_http_parse_version(capy_string input);
-
-int capy_http_parse_request_line(capy_arena *arena, capy_http_request *request, capy_string input);
-int capy_http_request_validate(capy_arena *arena, capy_http_request *request);
-int capy_http_parse_field(capy_arena *arena, capy_http_fields *fields, capy_string line);
-
-void capy_http_write_headers(capy_buffer *buffer, capy_http_response *response);
-
-typedef int(capy_http_handler)(capy_arena *arena, capy_http_request *request, capy_http_response *response);
-
-typedef struct capy_http_route
-{
-    capy_string method;
-    capy_string path;
-    capy_http_handler *handler;
-} capy_http_route;
-
-typedef struct capy_http_router
-{
-    capy_smap *children;
-    capy_smap *handlers;
-} capy_http_router;
-
-typedef struct capy_http_router_pair
-{
-    capy_string segment;
-    capy_http_router *router;
-} capy_http_router_pair;
-
-int capy_http_serve(const char *host, const char *port, capy_http_router *router, capy_http_server_options options);
-
-capy_http_router *capy_http_route_add(capy_arena *arena, capy_http_router *router, capy_string route, capy_http_handler *handler);
-capy_http_route *capy_http_route_get(capy_http_router *router, capy_http_method method, capy_string path);
-
-int capy_http_router_handle(capy_arena *arena, capy_http_router *router,
-                            capy_http_request *request, capy_http_response *response);
-
-void capy_http_router_print(capy_http_router *router);
 
 #endif

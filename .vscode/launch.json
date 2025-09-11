@@ -22,13 +22,28 @@
             "name": "ex_echo",
             "program": "${workspaceFolder}/build/ex_echo",
             "args": [
-                "-v",
                 "-w",
                 "1"
             ],
             "cwd": "${workspaceFolder}",
             "terminal": "integrated",
             "preLaunchTask": "build",
+            "expressions": "native",
+            "initCommands": [
+                "command source extra/lldb/capy.lldb"
+            ],
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "ex_echo - release",
+            "program": "${workspaceFolder}/build/release/ex_echo",
+            "args": [
+                "-v",
+            ],
+            "cwd": "${workspaceFolder}",
+            "terminal": "integrated",
+            "preLaunchTask": "build/release",
             "expressions": "native",
             "initCommands": [
                 "command source extra/lldb/capy.lldb"

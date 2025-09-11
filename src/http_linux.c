@@ -23,12 +23,17 @@ typedef struct http_worker
     size_t id;
     pthread_t thread_id;
     int epoll_fd;
+    pthread_mutex_t mut;
+    struct http_conn **conns;
+    size_t conns_count;
+    size_t conns_max;
 } http_worker;
 
 typedef enum
 {
     STATE_UNKNOWN,
     STATE_INIT,
+    STATE_AGAIN,
     STATE_READ_SOCKET,
     STATE_PARSE_REQUEST_LINE,
     STATE_PARSE_HEADERS,
@@ -37,8 +42,10 @@ typedef enum
     STATE_PARSE_CHUNK_DATA,
     STATE_PARSE_TRAILERS,
     STATE_PROCESS_REQUEST,
-    STATE_WRITE_HEADERS,
-    STATE_WRITE_CONTENT,
+    STATE_WRITE_RESPONSE,
+    STATE_BAD_REQUEST,
+    STATE_HANDLER_FAILURE,
+    STATE_SERVER_FAILURE,
     STATE_CLOSE_CONNECTION,
     STATE_BLOCKED,
 } http_conn_state;
@@ -49,6 +56,8 @@ static const char *http_conn_state_cstr(http_conn_state state)
     {
         case STATE_INIT:
             return "STATE_INIT";
+        case STATE_AGAIN:
+            return "STATE_AGAIN";
         case STATE_READ_SOCKET:
             return "STATE_READ_SOCKET";
         case STATE_PARSE_REQUEST_LINE:
@@ -65,10 +74,14 @@ static const char *http_conn_state_cstr(http_conn_state state)
             return "STATE_PARSE_TRAILERS";
         case STATE_PROCESS_REQUEST:
             return "STATE_PROCESS_REQUEST";
-        case STATE_WRITE_HEADERS:
-            return "STATE_WRITE_HEADERS";
-        case STATE_WRITE_CONTENT:
-            return "STATE_WRITE_CONTENT";
+        case STATE_WRITE_RESPONSE:
+            return "STATE_WRITE_RESPONSE";
+        case STATE_BAD_REQUEST:
+            return "STATE_BAD_REQUEST";
+        case STATE_HANDLER_FAILURE:
+            return "STATE_HANDLER_FAILURE";
+        case STATE_SERVER_FAILURE:
+            return "STATE_SERVER_FAILURE";
         case STATE_CLOSE_CONNECTION:
             return "STATE_CLOSE_CONNECTION";
         case STATE_BLOCKED:
@@ -83,23 +96,23 @@ typedef struct http_conn
 {
     int socket;
     http_worker *worker;
+    size_t conn_id;
 
     capy_arena *arena;
-    uint8_t *marker_init;
+    void *marker_init;
 
-    ssize_t mem_req_headers;
-    ssize_t mem_req_content;
-    ssize_t mem_req_trailers;
+    ssize_t mem_headers;
+    ssize_t mem_content;
+    ssize_t mem_trailers;
     ssize_t mem_response;
 
     http_conn_state state;
     http_conn_state after_read;
     http_conn_state after_unblock;
 
-    capy_buffer *msg_buffer;
-    capy_buffer *req_body;
-    capy_buffer *resp_head;
-    capy_buffer *resp_body;
+    capy_buffer *message_line;
+    capy_buffer *content_buf;
+    capy_buffer *response_buf;
 
     size_t line_cursor;
     size_t chunk_size;
@@ -130,11 +143,11 @@ static inline int log_gaierr(int err, const char *file, int line, const char *ms
 
 static inline int conn_msg_get_line(http_conn *conn, capy_string *line)
 {
-    while (conn->line_cursor <= conn->msg_buffer->size)
+    while (conn->line_cursor <= conn->message_line->size)
     {
         if (conn->line_cursor >= 2 &&
-            conn->msg_buffer->data[conn->line_cursor - 2] == '\r' &&
-            conn->msg_buffer->data[conn->line_cursor - 1] == '\n')
+            conn->message_line->data[conn->line_cursor - 2] == '\r' &&
+            conn->message_line->data[conn->line_cursor - 1] == '\n')
         {
             break;
         }
@@ -142,19 +155,19 @@ static inline int conn_msg_get_line(http_conn *conn, capy_string *line)
         conn->line_cursor += 1;
     }
 
-    if (conn->line_cursor > conn->msg_buffer->size)
+    if (conn->line_cursor > conn->message_line->size)
     {
         return -1;
     }
 
-    *line = capy_string_bytes(conn->line_cursor - 2, conn->msg_buffer->data);
+    *line = capy_string_bytes(conn->line_cursor - 2, conn->message_line->data);
 
     return 0;
 }
 
 static inline void conn_msg_shl(http_conn *conn, size_t size)
 {
-    capy_buffer_shl(conn->msg_buffer, size);
+    capy_buffer_shl(conn->message_line, size);
 
     if (size >= conn->line_cursor)
     {
@@ -171,61 +184,11 @@ static inline void conn_msg_consume_line(http_conn *conn)
     conn_msg_shl(conn, conn->line_cursor);
 }
 
-static inline http_conn_state conn_write_headers(http_conn *conn)
+static inline http_conn_state conn_write_response(http_conn *conn)
 {
     ssize_t bytes_written = send(conn->socket,
-                                 conn->resp_head->data,
-                                 conn->resp_head->size,
-                                 MSG_MORE);
-
-    if (bytes_written == 0)
-    {
-        return STATE_CLOSE_CONNECTION;
-    }
-    else if (bytes_written == -1)
-    {
-        int err = errno;
-
-        if (err == EWOULDBLOCK || err == EAGAIN)
-        {
-            conn->after_unblock = STATE_WRITE_HEADERS;
-            return STATE_BLOCKED;
-        }
-
-        if (err != ECONNRESET)
-        {
-            capy_log_errno(errno, "Failed to write message");
-        }
-
-        return STATE_CLOSE_CONNECTION;
-    }
-
-    capy_buffer_shl(conn->resp_head, (size_t)(bytes_written));
-
-    if (conn->resp_head->size == 0)
-    {
-        return STATE_WRITE_CONTENT;
-    }
-
-    return STATE_WRITE_HEADERS;
-}
-
-static inline http_conn_state conn_write_content(http_conn *conn)
-{
-    if (conn->resp_body == NULL)
-    {
-        if (conn_epoll(conn, EPOLL_CTL_MOD, EPOLLIN) == -1)
-        {
-            capy_log_errno(errno, "Failed to update client epoll");
-            abort();
-        }
-
-        return STATE_INIT;
-    }
-
-    ssize_t bytes_written = send(conn->socket,
-                                 conn->resp_body->data,
-                                 conn->resp_body->size,
+                                 conn->response_buf->data,
+                                 conn->response_buf->size,
                                  0);
 
     if (bytes_written == 0)
@@ -238,7 +201,7 @@ static inline http_conn_state conn_write_content(http_conn *conn)
 
         if (err == EWOULDBLOCK || err == EAGAIN)
         {
-            conn->after_unblock = STATE_WRITE_CONTENT;
+            conn->after_unblock = STATE_WRITE_RESPONSE;
             return STATE_BLOCKED;
         }
 
@@ -250,20 +213,14 @@ static inline http_conn_state conn_write_content(http_conn *conn)
         return STATE_CLOSE_CONNECTION;
     }
 
-    capy_buffer_shl(conn->resp_body, (size_t)(bytes_written));
+    capy_buffer_shl(conn->response_buf, (size_t)(bytes_written));
 
-    if (conn->resp_body->size == 0)
+    if (conn->response_buf->size == 0)
     {
-        if (conn_epoll(conn, EPOLL_CTL_MOD, EPOLLIN) == -1)
-        {
-            capy_log_errno(errno, "Failed to update client epoll");
-            abort();
-        }
-
-        return STATE_INIT;
+        return STATE_AGAIN;
     }
 
-    return STATE_WRITE_CONTENT;
+    return STATE_WRITE_RESPONSE;
 }
 
 static inline http_conn_state conn_parse_request_line(http_conn *conn)
@@ -278,12 +235,20 @@ static inline http_conn_state conn_parse_request_line(http_conn *conn)
 
     if (conn->request == NULL)
     {
-        conn->request = capy_arena_make(capy_http_request, conn->arena, 1);
+        conn->request = capy_arena_make(conn->arena, capy_http_request, 1);
     }
 
-    if (capy_http_parse_request_line(conn->arena, conn->request, line))
+    int err = capy_http_parse_reqline(conn->arena, conn->request, line);
+
+    if (err)
     {
-        return STATE_CLOSE_CONNECTION;
+        switch (err)
+        {
+            case ENOMEM:
+                return STATE_SERVER_FAILURE;
+            case EINVAL:
+                return STATE_BAD_REQUEST;
+        }
     }
 
     conn_msg_consume_line(conn);
@@ -293,6 +258,8 @@ static inline http_conn_state conn_parse_request_line(http_conn *conn)
 
 static inline http_conn_state conn_parse_headers(http_conn *conn)
 {
+    int err;
+
     for (;;)
     {
         capy_string line;
@@ -311,20 +278,36 @@ static inline http_conn_state conn_parse_headers(http_conn *conn)
 
         if (conn->request->headers == NULL)
         {
-            conn->request->headers = capy_http_fields_init(conn->arena, 16);
+            conn->request->headers = capy_strkvmmap_init(conn->arena, 16);
         }
 
-        if (capy_http_parse_field(conn->arena, conn->request->headers, line))
+        err = capy_http_parse_field(conn->request->headers, line);
+
+        if (err)
         {
-            return STATE_CLOSE_CONNECTION;
+            switch (err)
+            {
+                case EINVAL:
+                    return STATE_BAD_REQUEST;
+                default:
+                    return STATE_SERVER_FAILURE;
+            }
         }
 
         conn_msg_consume_line(conn);
     }
 
-    if (capy_http_request_validate(conn->arena, conn->request))
+    err = capy_http_request_validate(conn->arena, conn->request);
+
+    if (err)
     {
-        return STATE_CLOSE_CONNECTION;
+        switch (err)
+        {
+            case EINVAL:
+                return STATE_BAD_REQUEST;
+            default:
+                return STATE_SERVER_FAILURE;
+        }
     }
 
     if (conn->request->content_length)
@@ -360,12 +343,20 @@ static inline http_conn_state conn_parse_trailers(http_conn *conn)
 
         if (conn->request->trailers == NULL)
         {
-            conn->request->trailers = capy_http_fields_init(conn->arena, 8);
+            conn->request->trailers = capy_strkvmmap_init(conn->arena, 8);
         }
 
-        if (capy_http_parse_field(conn->arena, conn->request->trailers, line))
+        int err = capy_http_parse_field(conn->request->trailers, line);
+
+        if (err)
         {
-            return STATE_CLOSE_CONNECTION;
+            switch (err)
+            {
+                case EINVAL:
+                    return STATE_BAD_REQUEST;
+                default:
+                    return STATE_SERVER_FAILURE;
+            }
         }
 
         conn_msg_consume_line(conn);
@@ -388,7 +379,7 @@ static inline http_conn_state conn_parse_chunk_size(http_conn *conn)
 
     if (capy_string_hex(line, &value) == 0)
     {
-        return STATE_CLOSE_CONNECTION;
+        return STATE_BAD_REQUEST;
     }
 
     conn->chunk_size = (size_t)(value);
@@ -405,16 +396,20 @@ static inline http_conn_state conn_parse_chunk_size(http_conn *conn)
 
 static inline http_conn_state conn_parse_chunk_data(http_conn *conn)
 {
-    if (conn->req_body == NULL)
+    if (conn->content_buf == NULL)
     {
-        conn->req_body = capy_buffer_init(conn->arena, 1024);
+        conn->content_buf = capy_buffer_init(conn->arena, 1024);
     }
 
-    size_t msg_size = conn->msg_buffer->size;
+    size_t msg_size = conn->message_line->size;
 
     if (conn->chunk_size + 2 > msg_size)
     {
-        capy_buffer_write_bytes(conn->req_body, msg_size, conn->msg_buffer->data);
+        if (capy_buffer_wbytes(conn->content_buf, msg_size, conn->message_line->data))
+        {
+            return STATE_SERVER_FAILURE;
+        }
+
         conn_msg_shl(conn, msg_size);
 
         conn->chunk_size -= msg_size;
@@ -423,14 +418,18 @@ static inline http_conn_state conn_parse_chunk_data(http_conn *conn)
         return STATE_READ_SOCKET;
     }
 
-    const char *end = conn->msg_buffer->data + conn->chunk_size;
+    const char *end = conn->message_line->data + conn->chunk_size;
 
     if (end[0] != '\r' || end[1] != '\n')
     {
-        return STATE_CLOSE_CONNECTION;
+        return STATE_BAD_REQUEST;
     }
 
-    capy_buffer_write_bytes(conn->req_body, conn->chunk_size, conn->msg_buffer->data);
+    if (capy_buffer_wbytes(conn->content_buf, conn->chunk_size, conn->message_line->data))
+    {
+        return STATE_SERVER_FAILURE;
+    }
+
     conn_msg_shl(conn, conn->chunk_size + 2);
 
     return STATE_PARSE_CHUNK_SIZE;
@@ -438,18 +437,19 @@ static inline http_conn_state conn_parse_chunk_data(http_conn *conn)
 
 static inline http_conn_state conn_read_socket(http_conn *conn)
 {
-    size_t message_limit = conn->msg_buffer->capacity;
-    size_t message_size = conn->msg_buffer->size;
+    size_t message_limit = conn->message_line->capacity;
+    size_t message_size = conn->message_line->size;
     size_t bytes_wanted = message_limit - message_size;
 
     if (bytes_wanted == 0)
     {
-        return STATE_CLOSE_CONNECTION;
+        return STATE_BAD_REQUEST;
     }
 
     ssize_t bytes_read = recv(conn->socket,
-                              conn->msg_buffer->data + message_size,
-                              bytes_wanted, MSG_DONTWAIT);
+                              conn->message_line->data + message_size,
+                              bytes_wanted,
+                              0);
 
     if (bytes_read == 0)
     {
@@ -473,23 +473,30 @@ static inline http_conn_state conn_read_socket(http_conn *conn)
         return STATE_CLOSE_CONNECTION;
     }
 
-    capy_buffer_resize(conn->msg_buffer, message_size + (size_t)(bytes_read));
+    if (capy_buffer_resize(conn->message_line, message_size + (size_t)(bytes_read)))
+    {
+        return STATE_SERVER_FAILURE;
+    }
 
     return conn->after_read;
 }
 
 static inline http_conn_state conn_parse_content(http_conn *conn)
 {
-    if (conn->req_body == NULL)
+    if (conn->content_buf == NULL)
     {
-        conn->req_body = capy_buffer_init(conn->arena, conn->chunk_size);
+        conn->content_buf = capy_buffer_init(conn->arena, conn->chunk_size);
     }
 
-    size_t message_size = conn->msg_buffer->size;
+    size_t message_size = conn->message_line->size;
 
     if (conn->chunk_size > message_size)
     {
-        capy_buffer_write_bytes(conn->req_body, message_size, conn->msg_buffer->data);
+        if (capy_buffer_wbytes(conn->content_buf, message_size, conn->message_line->data))
+        {
+            return STATE_SERVER_FAILURE;
+        }
+
         conn_msg_shl(conn, message_size);
 
         conn->chunk_size -= message_size;
@@ -498,7 +505,11 @@ static inline http_conn_state conn_parse_content(http_conn *conn)
         return STATE_READ_SOCKET;
     }
 
-    capy_buffer_write_bytes(conn->req_body, conn->chunk_size, conn->msg_buffer->data);
+    if (capy_buffer_wbytes(conn->content_buf, conn->chunk_size, conn->message_line->data))
+    {
+        return STATE_SERVER_FAILURE;
+    }
+
     conn_msg_shl(conn, conn->chunk_size);
 
     return STATE_PROCESS_REQUEST;
@@ -506,27 +517,35 @@ static inline http_conn_state conn_parse_content(http_conn *conn)
 
 static inline http_conn_state conn_process_request(http_conn *conn)
 {
-    if (conn->req_body != NULL)
+    if (conn->content_buf != NULL)
     {
-        conn->request->content = conn->req_body->data;
-        conn->request->content_length = conn->req_body->size;
+        conn->request->content = conn->content_buf->data;
+        conn->request->content_length = conn->content_buf->size;
     }
 
     capy_http_response response = {
-        .headers = capy_http_fields_init(conn->arena, 8),
-        .content = NULL,
+        .headers = capy_strkvmmap_init(conn->arena, 8),
+        .content = capy_buffer_init(conn->arena, 1024),
     };
 
     if (capy_http_router_handle(conn->arena, conn->router, conn->request, &response))
     {
-        return STATE_CLOSE_CONNECTION;
+        return STATE_HANDLER_FAILURE;
     }
 
-    conn->resp_head = capy_buffer_init(conn->arena, 128);
+    response.status = CAPY_HTTP_OK;
 
-    capy_http_write_headers(conn->resp_head, &response);
+    conn->response_buf = capy_buffer_init(conn->arena, 2 * 1024);
 
-    conn->resp_body = response.content;
+    if (capy_http_write_headers(conn->response_buf, &response))
+    {
+        return STATE_SERVER_FAILURE;
+    }
+
+    if (capy_buffer_wbytes(conn->response_buf, response.content->size, response.content->data))
+    {
+        return STATE_SERVER_FAILURE;
+    }
 
     if (conn_epoll(conn, EPOLL_CTL_MOD, EPOLLOUT) == -1)
     {
@@ -534,25 +553,39 @@ static inline http_conn_state conn_process_request(http_conn *conn)
         abort();
     }
 
-    return STATE_WRITE_HEADERS;
+    return STATE_WRITE_RESPONSE;
+}
+
+static http_conn_state conn_message_again(http_conn *conn)
+{
+    if (conn_epoll(conn, EPOLL_CTL_MOD, EPOLLIN) == -1)
+    {
+        capy_log_errno(errno, "Failed to update client epoll");
+        abort();
+    }
+
+    return STATE_INIT;
 }
 
 static http_conn_state conn_message_init(http_conn *conn)
 {
-    capy_arena_shrink(conn->arena, conn->marker_init);
+    if (capy_arena_free(conn->arena, conn->marker_init))
+    {
+        return STATE_SERVER_FAILURE;
+    }
 
-    conn->line_cursor = 0;
+    conn->line_cursor = 2;
     conn->after_read = STATE_UNKNOWN;
     conn->after_unblock = STATE_UNKNOWN;
+
     conn->request = NULL;
 
-    conn->req_body = NULL;
-    conn->resp_head = NULL;
-    conn->resp_body = NULL;
+    conn->content_buf = NULL;
+    conn->response_buf = NULL;
 
-    conn->mem_req_headers = 0;
-    conn->mem_req_content = 0;
-    conn->mem_req_trailers = 0;
+    conn->mem_headers = 0;
+    conn->mem_content = 0;
+    conn->mem_trailers = 0;
     conn->mem_response = 0;
 
     return STATE_PARSE_REQUEST_LINE;
@@ -560,14 +593,14 @@ static http_conn_state conn_message_init(http_conn *conn)
 
 static int conn_close(http_conn *conn)
 {
-    int socket = conn->socket;
-
-    capy_arena_free(conn->arena);
-
-    if (close(socket) == -1)
+    if (close(conn->socket) == -1)
     {
         return capy_log_errno(errno, "Failed to close connection");
     }
+
+    conn->worker->conns[conn->conn_id] = NULL;
+
+    capy_arena_destroy(conn->arena);
 
     return 0;
 }
@@ -579,17 +612,17 @@ static int64_t difftimespec_us(struct timespec a, struct timespec b)
 
 static inline int conn_limits_exceeded(http_conn *conn)
 {
-    if ((size_t)conn->mem_req_headers > conn->options->max_mem_req_headers)
+    if ((size_t)conn->mem_headers > conn->options->max_mem_req_headers)
     {
         return true;
     }
 
-    if ((size_t)conn->mem_req_content > conn->options->max_mem_req_content)
+    if ((size_t)conn->mem_content > conn->options->max_mem_req_content)
     {
         return true;
     }
 
-    if ((size_t)conn->mem_req_trailers > conn->options->max_mem_req_trailers)
+    if ((size_t)conn->mem_trailers > conn->options->max_mem_req_trailers)
     {
         return true;
     }
@@ -606,23 +639,20 @@ static inline void conn_trace(http_conn *conn)
     int64_t elapsed = difftimespec_us(end, begin);
 
     char time[10];
-    char time_info[32];
+    char time_info[64];
 
     strftime(time, 10, "%X", gmtime(&end.tv_sec));
-    snprintf(time_info, 32, "%s.%03ld %9ldµs", time, end.tv_nsec / 1000000, elapsed);
+    snprintf(time_info, 64, "%s.%03ld %9ldµs", time, end.tv_nsec / 1000000, elapsed);
 
     size_t mem_total = capy_arena_size(conn->arena);
-
-    size_t to_read = (conn->msg_buffer) ? conn->msg_buffer->size : 0;
-
-    size_t to_write = (conn->resp_head) ? conn->resp_head->size : 0;
-    to_write += (conn->resp_body) ? conn->resp_body->size : 0;
+    size_t to_read = (conn->message_line) ? conn->message_line->size : 0;
+    size_t to_write = (conn->response_buf) ? conn->response_buf->size : 0;
 
     printf(
         "%-24s | worker | socket | mem_req_headers  | mem_req_content  | mem_req_trailers | mem_response     | mem_total        | to_read  | to_write\n"
         "%-24s | %-6lu | %-6d | %-16ld | %-16ld | %-16ld | %-16ld | %-16lu | %-8lu | %-8lu\n",
         time_info, http_conn_state_cstr(conn->state), conn->worker->id, conn->socket,
-        conn->mem_req_headers, conn->mem_req_content, conn->mem_req_trailers, conn->mem_response, mem_total, to_read, to_write);
+        conn->mem_headers, conn->mem_content, conn->mem_trailers, conn->mem_response, mem_total, to_read, to_write);
 }
 
 static inline int conn_state_machine(http_conn *conn)
@@ -630,6 +660,11 @@ static inline int conn_state_machine(http_conn *conn)
     capy_assert(conn != NULL);
 
     timespec_get(&conn->time, TIME_UTC);
+
+    if (conn->state == STATE_BLOCKED)
+    {
+        conn->state = conn->after_unblock;
+    }
 
     for (;;)
     {
@@ -640,7 +675,7 @@ static inline int conn_state_machine(http_conn *conn)
 
         if (conn_limits_exceeded(conn))
         {
-            conn->state = STATE_CLOSE_CONNECTION;
+            conn->state = STATE_SERVER_FAILURE;
         }
 
         ssize_t begin = (ssize_t)capy_arena_size(conn->arena);
@@ -651,38 +686,42 @@ static inline int conn_state_machine(http_conn *conn)
                 conn->state = conn_message_init(conn);
                 break;
 
+            case STATE_AGAIN:
+                conn->state = conn_message_again(conn);
+                break;
+
             case STATE_READ_SOCKET:
                 conn->state = conn_read_socket(conn);
                 break;
 
             case STATE_PARSE_REQUEST_LINE:
                 conn->state = conn_parse_request_line(conn);
-                conn->mem_req_headers += (ssize_t)capy_arena_size(conn->arena) - begin;
+                conn->mem_headers += (ssize_t)capy_arena_size(conn->arena) - begin;
                 break;
 
             case STATE_PARSE_HEADERS:
                 conn->state = conn_parse_headers(conn);
-                conn->mem_req_headers += (ssize_t)capy_arena_size(conn->arena) - begin;
+                conn->mem_headers += (ssize_t)capy_arena_size(conn->arena) - begin;
                 break;
 
             case STATE_PARSE_CONTENT:
                 conn->state = conn_parse_content(conn);
-                conn->mem_req_content += (ssize_t)capy_arena_size(conn->arena) - begin;
+                conn->mem_content += (ssize_t)capy_arena_size(conn->arena) - begin;
                 break;
 
             case STATE_PARSE_CHUNK_SIZE:
                 conn->state = conn_parse_chunk_size(conn);
-                conn->mem_req_content += (ssize_t)capy_arena_size(conn->arena) - begin;
+                conn->mem_content += (ssize_t)capy_arena_size(conn->arena) - begin;
                 break;
 
             case STATE_PARSE_CHUNK_DATA:
                 conn->state = conn_parse_chunk_data(conn);
-                conn->mem_req_content += (ssize_t)capy_arena_size(conn->arena) - begin;
+                conn->mem_content += (ssize_t)capy_arena_size(conn->arena) - begin;
                 break;
 
             case STATE_PARSE_TRAILERS:
                 conn->state = conn_parse_trailers(conn);
-                conn->mem_req_trailers += (ssize_t)capy_arena_size(conn->arena) - begin;
+                conn->mem_trailers += (ssize_t)capy_arena_size(conn->arena) - begin;
                 break;
 
             case STATE_PROCESS_REQUEST:
@@ -690,26 +729,74 @@ static inline int conn_state_machine(http_conn *conn)
                 conn->mem_response += (ssize_t)capy_arena_size(conn->arena) - begin;
                 break;
 
-            case STATE_WRITE_HEADERS:
-                conn->state = conn_write_headers(conn);
+            case STATE_WRITE_RESPONSE:
+                conn->state = conn_write_response(conn);
                 break;
 
-            case STATE_WRITE_CONTENT:
-                conn->state = conn_write_content(conn);
-                break;
+            case STATE_BLOCKED:
+                return 0;
 
+            case STATE_BAD_REQUEST:
             case STATE_CLOSE_CONNECTION:
                 return conn_close(conn);
 
-            case STATE_BLOCKED:
-                conn->state = conn->after_unblock;
-                return 0;
-
+            case STATE_HANDLER_FAILURE:
+            case STATE_SERVER_FAILURE:
             case STATE_UNKNOWN:
             default:
                 capy_assert(false);
         }
     }
+}
+
+static void conn_worker_cleanup(http_worker *worker)
+{
+    pthread_mutex_lock(&worker->mut);
+
+    printf("TRACE -> thread %lu cleanup (active connections: %lu)\n", worker->id, worker->conns_count);
+
+    struct timespec ts;
+
+    timespec_get(&ts, TIME_UTC);
+
+    size_t conn_count = 0;
+
+    for (size_t i = 0; i < worker->conns_count; i++)
+    {
+        http_conn *conn = worker->conns[i];
+
+        if (conn == NULL)
+        {
+            printf("TRACE -> cleaning NULL conn %lu\n", i);
+            continue;
+        }
+
+        if (conn->state == STATE_BLOCKED)
+        {
+            double diff = difftime(ts.tv_sec, conn->time.tv_sec);
+
+            if (diff > 15)
+            {
+                printf("TRACE -> cleaning TIMEOUT conn %lu\n", i);
+                conn_close(conn);
+                continue;
+            }
+        }
+
+        if (conn_count != i)
+        {
+            printf("TRACE -> moving conn from %lu to %lu\n", i, conn_count);
+        }
+
+        worker->conns[conn_count] = conn;
+        conn->conn_id = conn_count;
+
+        conn_count += 1;
+    }
+
+    worker->conns_count = conn_count;
+
+    pthread_mutex_unlock(&worker->mut);
 }
 
 static void *conn_worker(void *data)
@@ -720,9 +807,9 @@ static void *conn_worker(void *data)
 
     for (;;)
     {
-        int count = epoll_wait(worker->epoll_fd, events, 10, -1);
+        int nevents = epoll_wait(worker->epoll_fd, events, 10, 5 * 1000);
 
-        if (count == -1)
+        if (nevents == -1)
         {
             int err = errno;
 
@@ -731,12 +818,11 @@ static void *conn_worker(void *data)
                 continue;
             }
 
-            capy_log_errno(errno, "Failed to receive events from epoll");
-
+            capy_log_errno(err, "Failed to receive events from epoll");
             return NULL;
         }
 
-        for (int i = 0; i < count; i++)
+        for (int i = 0; i < nevents; i++)
         {
             if (events[i].data.ptr == SIGNAL_EPOLL_EVENT)
             {
@@ -748,6 +834,8 @@ static void *conn_worker(void *data)
                 abort();
             }
         }
+
+        conn_worker_cleanup(worker);
     }
 
     return 0;
@@ -758,6 +846,11 @@ static capy_http_server_options http_get_default_options(capy_http_server_option
     if (!options.workers)
     {
         options.workers = (size_t)(sysconf(_SC_NPROCESSORS_CONF)) * 2;
+    }
+
+    if (!options.workers_conn_max)
+    {
+        options.workers_conn_max = 64;
     }
 
     if (!options.msg_buffer_size)
@@ -889,19 +982,38 @@ int capy_http_serve(const char *host, const char *port, capy_http_router *router
         return capy_log_errno(errno, "Failed to add server socket to server epoll");
     }
 
-    if (listen(server_fd, 50) == -1)
+    if (listen(server_fd, 10) == -1)
     {
         return capy_log_errno(errno, "Failed to listen");
     }
 
     printf("server: listening at '%s' and '%s' using %lu workers\n", host ? host : "localhost", port, options.workers);
 
-    http_worker *workers = calloc(options.workers, sizeof(http_worker));
+    capy_arena *server_arena = capy_arena_init(8 * 1024 * 1024);
+
+    http_worker *workers = capy_arena_make(server_arena, http_worker, options.workers);
+
+    if (workers == NULL)
+    {
+        return capy_log_errno(ENOMEM, "Failed to allocate memory for worker threads")
+    }
 
     for (size_t i = 0; i < options.workers; i++)
     {
+        http_conn **conns = capy_arena_make(server_arena, http_conn *, options.workers_conn_max);
+
+        if (workers == NULL)
+        {
+            return capy_log_errno(ENOMEM, "Failed to allocate memory for worker threads")
+        }
+
         workers[i].id = i;
         workers[i].epoll_fd = epoll_create1(0);
+        workers[i].conns = conns;
+        workers[i].conns_max = options.workers_conn_max;
+        workers[i].conns_count = 0;
+
+        pthread_mutex_init(&workers[i].mut, NULL);
 
         if (workers[i].epoll_fd == -1)
         {
@@ -920,12 +1032,14 @@ int capy_http_serve(const char *host, const char *port, capy_http_router *router
         {
             return capy_log_errno(errno, "Failed to create worker thread");
         }
+
+        memset(workers[i].conns, 0, options.workers_conn_max * sizeof(http_conn *));
     }
 
     void *address_buffer = &(struct sockaddr_storage){0};
     socklen_t address_buffer_size = sizeof(address_buffer);
 
-    struct epoll_event events[10];
+    struct epoll_event events[5];
 
     size_t target = 0;
 
@@ -933,7 +1047,7 @@ int capy_http_serve(const char *host, const char *port, capy_http_router *router
 
     while (!stopped)
     {
-        int count = epoll_wait(epoll_fd, events, 10, -1);
+        int count = epoll_wait(epoll_fd, events, 5, -1);
 
         if (count == -1)
         {
@@ -962,39 +1076,39 @@ int capy_http_serve(const char *host, const char *port, capy_http_router *router
                 return capy_log_errno(errno, "Failed to accept connection");
             }
 
+            int keepcnt = 4;
+            int keepidle = 60;
+            int keepintvl = 15;
+            unsigned int timeout = cast(unsigned int, (keepidle + (keepcnt * keepintvl)) * 1000);
+
             if (setsockopt(conn_fd, SOL_SOCKET, SO_KEEPALIVE, &(int){1}, sizeof(int)) == -1)
             {
                 return capy_log_errno(errno, "Failed to set SO_KEEPALIVE value");
             }
 
-            socklen_t optsize = sizeof(int);
-
-            int keepcnt;
-
-            if (getsockopt(conn_fd, IPPROTO_TCP, TCP_KEEPCNT, &keepcnt, &optsize) == -1)
+            if (setsockopt(conn_fd, IPPROTO_TCP, TCP_KEEPCNT, &keepcnt, sizeof(keepcnt)) == -1)
             {
                 return capy_log_errno(errno, "Failed to get TCP_KEEPCNT value");
             }
 
-            int keepidle;
-
-            if (getsockopt(conn_fd, IPPROTO_TCP, TCP_KEEPIDLE, &keepidle, &optsize) == -1)
+            if (setsockopt(conn_fd, IPPROTO_TCP, TCP_KEEPIDLE, &keepidle, sizeof(keepidle)) == -1)
             {
                 return capy_log_errno(errno, "Failed to get TCP_KEEPIDLE value");
             }
 
-            int keepintvl;
-
-            if (getsockopt(conn_fd, IPPROTO_TCP, TCP_KEEPINTVL, &keepintvl, &optsize) == -1)
+            if (setsockopt(conn_fd, IPPROTO_TCP, TCP_KEEPINTVL, &keepintvl, sizeof(keepintvl)) == -1)
             {
                 return capy_log_errno(errno, "Failed to get TCP_KEEPINTVL value");
             }
 
-            int timeout = (keepidle + (keepcnt * keepintvl)) * 1000;
-
-            if (setsockopt(conn_fd, IPPROTO_TCP, TCP_USER_TIMEOUT, &(int){timeout}, sizeof(int)) == -1)
+            if (setsockopt(conn_fd, IPPROTO_TCP, TCP_USER_TIMEOUT, &timeout, sizeof(timeout)) == -1)
             {
                 return capy_log_errno(errno, "Failed to set TCP_USER_TIMEOUT value");
+            }
+
+            if (setsockopt(conn_fd, IPPROTO_TCP, TCP_NODELAY, &(int){1}, sizeof(int)) == -1)
+            {
+                return capy_log_errno(errno, "Failed to set TCP_NODELAY value");
             }
 
             capy_arena *arena = capy_arena_init(options.max_mem_total);
@@ -1004,27 +1118,44 @@ int capy_http_serve(const char *host, const char *port, capy_http_router *router
                 return capy_log_errno(errno, "Failed to create connection arena");
             }
 
-            http_worker *worker = &workers[target];
+            http_conn *conn = capy_arena_make(arena, http_conn, 1);
 
-            http_conn *conn = capy_arena_make(http_conn, arena, 1);
             conn->arena = arena;
             conn->socket = conn_fd;
             conn->router = router;
             conn->state = STATE_INIT;
-            conn->worker = worker;
             conn->options = &options;
+            conn->worker = NULL;
+            conn->message_line = capy_buffer_init(arena, options.msg_buffer_size);
+            conn->message_line->arena = NULL;
+            conn->marker_init = capy_arena_end(arena);
 
-            conn->msg_buffer = capy_buffer_init(arena, options.msg_buffer_size);
-            conn->msg_buffer->arena = NULL;
-
-            conn->marker_init = capy_arena_top(arena);
-
-            if (conn_epoll(conn, EPOLL_CTL_ADD, EPOLLIN) == -1)
+            for (size_t i = 0; conn->worker == NULL && i < options.workers; i++)
             {
-                return capy_log_errno(errno, "Failed to add client to epoll");
+                http_worker *worker = &workers[target];
+                pthread_mutex_lock(&worker->mut);
+
+                if (worker->conns_count < worker->conns_max)
+                {
+                    conn->worker = worker;
+                    conn->conn_id = worker->conns_count;
+                    worker->conns[conn->conn_id] = conn;
+                    worker->conns_count += 1;
+
+                    if (conn_epoll(conn, EPOLL_CTL_ADD, EPOLLIN) == -1)
+                    {
+                        return capy_log_errno(errno, "Failed to add client to epoll");
+                    }
+                }
+
+                target = (target + 1) % options.workers;
+                pthread_mutex_unlock(&worker->mut);
             }
 
-            target = (target + 1) % options.workers;
+            if (conn->worker == NULL)
+            {
+                close(conn_fd);
+            }
         }
     }
 

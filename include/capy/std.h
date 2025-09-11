@@ -7,11 +7,20 @@
 #endif
 #endif
 
+#ifdef __GNUC__
+#define must_check __attribute__((warn_unused_result))
+#else
+#define must_check
+#endif
+
 #include <inttypes.h>
 #include <stdalign.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+
+#define cast(T, v) ((T)(v))
+#define ptrcast(T, v) ((T)((void *)(v)))
 
 #endif

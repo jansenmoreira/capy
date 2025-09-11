@@ -5,15 +5,9 @@
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/resource.h>
 
-#define arrlen(v) (sizeof(v) / sizeof(v[0]))
-
-#define KiB(v) ((v) * 1024)
-#define MiB(v) (KiB(v) * 1024)
-#define GiB(v) (MiB(v) * 1024)
-#define TiB(v) (GiB(v) * 1024)
-
-#define str(s) capy_string_literal(s)
+// STATIC INLINE DEFINITIONS
 
 static inline void expect_u_eq_(unsigned long long lhs, unsigned long long rhs, const char *file, int line)
 {
@@ -182,6 +176,17 @@ static inline void expect_str_ne_(capy_string lhs, capy_string rhs, const char *
     fprintf(stderr, "%s:%d: condition \"%.*s\" != \"%.*s\" failed\n", file, line, (int)lhs.size, lhs.data, (int)rhs.size, rhs.data);
     abort();
 }
+
+// MACROS
+
+#define arrlen(v) (sizeof(v) / sizeof(v[0]))
+#define arr(T, ...) (&(T[]){__VA_ARGS__})
+#define str(s) capy_string_literal(s)
+
+#define KiB(v) ((v) * 1024)
+#define MiB(v) (KiB(v) * 1024)
+#define GiB(v) (MiB(v) * 1024)
+#define TiB(v) (GiB(v) * 1024)
 
 #define expect_u_eq(lhs, rhs) expect_u_eq_((lhs), (rhs), __FILE__, __LINE__)
 #define expect_u_ne(lhs, rhs) expect_u_ne_((lhs), (rhs), __FILE__, __LINE__)

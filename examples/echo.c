@@ -6,13 +6,13 @@
 
 static int params_handler(capy_arena *arena, capy_http_request *request, capy_http_response *response)
 {
-    response->content = capy_buffer_init(arena, 256);
+    (void)!arena;
 
-    capy_http_path_param *param = capy_http_path_params_get(request->params, capy_string_literal("id"));
+    capy_strkvn *param = capy_strkvmmap_get(request->params, capy_string_literal("id"));
 
-    capy_buffer_format(response->content, 0, "%.*s -> %.*s\n",
-                       (int)param->name.size, param->name.data,
-                       (int)param->value.size, param->value.data);
+    (void)!capy_buffer_format(response->content, 0, "%.*s -> %.*s\n",
+                              (int)param->key.size, param->key.data,
+                              (int)param->value.size, param->value.data);
 
     response->status = CAPY_HTTP_OK;
 
@@ -23,27 +23,31 @@ static int echo_handler(capy_arena *arena, capy_http_request *request, capy_http
 {
     capy_string uri = capy_uri_string(arena, request->uri);
 
-    response->content = capy_buffer_init(arena, 1024);
-
-    capy_buffer_format(response->content, 0, "uri: %s\n", uri.data);
+    (void)!capy_buffer_format(response->content, 0, "uri: %s\n", uri.data);
 
     for (size_t i = 0; i < request->headers->capacity; i++)
     {
-        capy_http_field header = request->headers->data[i];
+        capy_strkvn *header = request->headers->items + i;
 
-        if (header.name.size > 0)
+        if (header->key.size == 0)
         {
-            capy_buffer_format(response->content, 0, "%s: %s\n", header.name.data, header.value.data);
+            continue;
+        }
+
+        while (header != NULL)
+        {
+            (void)!capy_buffer_format(response->content, 0, "%s: %s\n", header->key.data, header->value.data);
+            header = header->next;
         }
     }
 
-    capy_buffer_format(response->content, 0, "size: %lu\n", request->content_length);
-    capy_buffer_base64url(response->content, request->content_length, request->content, true);
-    capy_buffer_write_cstr(response->content, "\n");
+    (void)!capy_buffer_format(response->content, 0, "size: %lu\n", request->content_length);
+    (void)!capy_buffer_wbase64url(response->content, request->content_length, request->content, true);
+    (void)!capy_buffer_wcstr(response->content, "\n");
 
-    capy_http_fields_set(response->headers, capy_string_literal("X-Foo"), capy_string_literal("bar"));
-    capy_http_fields_add(response->headers, capy_string_literal("X-Foo"), capy_string_literal("baz"));
-    capy_http_fields_add(response->headers, capy_string_literal("X-Bar"), capy_string_literal("foo"));
+    (void)!capy_strkvmmap_set(response->headers, capy_string_literal("X-Foo"), capy_string_literal("bar"));
+    (void)!capy_strkvmmap_add(response->headers, capy_string_literal("X-Foo"), capy_string_literal("baz"));
+    (void)!capy_strkvmmap_add(response->headers, capy_string_literal("X-Bar"), capy_string_literal("foo"));
 
     response->status = CAPY_HTTP_OK;
 
