@@ -1,4 +1,5 @@
 #include <capy/capy.h>
+#include <capy/macros.h>
 #include <errno.h>
 
 // STATIC
@@ -76,7 +77,7 @@ int capy_string_base64_(capy_arena *arena, capy_string *output, capy_string inpu
 {
     size_t n = align_to(input.size, 3) / 3 * 4;
 
-    char *buffer = capy_arena_umake(arena, char, n + 1);
+    char *buffer = umake(arena, char, n + 1);
 
     if (buffer == NULL)
     {

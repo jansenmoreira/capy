@@ -20,7 +20,4 @@
 #include <stdint.h>
 #include <string.h>
 
-#define cast(T, v) ((T)(v))
-#define ptrcast(T, v) ((T)((void *)(v)))
-
 #endif

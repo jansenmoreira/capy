@@ -13,7 +13,6 @@ typedef enum capy_http_status
     CAPY_HTTP_STATUS_UNK = 0,
     CAPY_HTTP_CONTINUE = 100,
     CAPY_HTTP_SWITCHING_PROTOCOLS = 101,
-    CAPY_HTTP_PROCESSING = 102,
     CAPY_HTTP_OK = 200,
     CAPY_HTTP_CREATED = 201,
     CAPY_HTTP_ACCEPTED = 202,
@@ -21,9 +20,6 @@ typedef enum capy_http_status
     CAPY_HTTP_NO_CONTENT = 204,
     CAPY_HTTP_RESET_CONTENT = 205,
     CAPY_HTTP_PARTIAL_CONTENT = 206,
-    CAPY_HTTP_MULTI_STATUS = 207,
-    CAPY_HTTP_ALREADY_REPORTED = 208,
-    CAPY_HTTP_IM_USED = 226,
     CAPY_HTTP_MULTIPLE_CHOICES = 300,
     CAPY_HTTP_MOVED_PERMANENTLY = 301,
     CAPY_HTTP_FOUND = 302,
@@ -45,35 +41,21 @@ typedef enum capy_http_status
     CAPY_HTTP_GONE = 410,
     CAPY_HTTP_LENGTH_REQUIRED = 411,
     CAPY_HTTP_PRECONDITION_FAILED = 412,
-    CAPY_HTTP_PAYLOAD_TOO_LARGE = 413,
-    CAPY_HTTP_REQUEST_URI_TOO_LONG = 414,
+    CAPY_HTTP_CONTENT_TOO_LARGE = 413,
+    CAPY_HTTP_URI_TOO_LONG = 414,
     CAPY_HTTP_UNSUPPORTED_MEDIA_TYPE = 415,
-    CAPY_HTTP_REQUESTED_RANGE_NOT_SATISFIABLE = 416,
+    CAPY_HTTP_RANGE_NOT_SATISFIABLE = 416,
     CAPY_HTTP_EXPECTATION_FAILED = 417,
     CAPY_HTTP_IM_A_TEAPOT = 418,
     CAPY_HTTP_MISDIRECTED_REQUEST = 421,
     CAPY_HTTP_UNPROCESSABLE_ENTITY = 422,
-    CAPY_HTTP_LOCKED = 423,
-    CAPY_HTTP_FAILED_DEPENDENCY = 424,
     CAPY_HTTP_UPGRADE_REQUIRED = 426,
-    CAPY_HTTP_PRECONDITION_REQUIRED = 428,
-    CAPY_HTTP_TOO_MANY_REQUESTS = 429,
-    CAPY_HTTP_REQUEST_HEADER_FIELDS_TOO_LARGE = 431,
-    CAPY_HTTP_CONNECTION_CLOSED_WITHOUT_RESPONSE = 444,
-    CAPY_HTTP_UNAVAILABLE_FOR_LEGAL_REASONS = 451,
-    CAPY_HTTP_CLIENT_CLOSED_REQUEST = 499,
     CAPY_HTTP_INTERNAL_SERVER_ERROR = 500,
     CAPY_HTTP_NOT_IMPLEMENTED = 501,
     CAPY_HTTP_BAD_GATEWAY = 502,
     CAPY_HTTP_SERVICE_UNAVAILABLE = 503,
     CAPY_HTTP_GATEWAY_TIMEOUT = 504,
     CAPY_HTTP_HTTP_VERSION_NOT_SUPPORTED = 505,
-    CAPY_HTTP_VARIANT_ALSO_NEGOCIATES = 506,
-    CAPY_HTTP_INSUFFICIENT_STORAGE = 507,
-    CAPY_HTTP_LOOP_DETECTED = 508,
-    CAPY_HTTP_NOT_EXTENDED = 510,
-    CAPY_HTTP_NETWORK_AUTHENTICATION_REQUIRED = 511,
-    CAPY_HTTP_NETWORK_CONNECTION_TIMEOUT_ERROR = 599,
 } capy_http_status;
 
 typedef enum capy_http_method
@@ -111,6 +93,7 @@ typedef struct capy_http_request
     const char *content;
     size_t content_length;
     int chunked;
+    int close;
 } capy_http_request;
 
 typedef struct capy_http_response
@@ -137,17 +120,10 @@ typedef int(capy_http_handler)(capy_arena *arena, capy_http_request *request, ca
 
 typedef struct capy_http_route
 {
-    capy_string method;
+    capy_http_method method;
     capy_string path;
     capy_http_handler *handler;
 } capy_http_route;
-
-typedef struct capy_http_route_map
-{
-    size_t size;
-    size_t capacity;
-    capy_http_route *items;
-} capy_http_route_map;
 
 typedef struct capy_http_router_map
 {
@@ -160,7 +136,7 @@ typedef struct capy_http_router
 {
     capy_string segment;
     capy_http_router_map *segments;
-    capy_http_route_map *routes;
+    capy_http_route routes[10];
 } capy_http_router;
 
 // DECLARATIONS
@@ -171,42 +147,12 @@ must_check int capy_http_parse_reqline(capy_arena *arena, capy_http_request *req
 capy_strkvmmap *capy_http_parse_uriparams(capy_arena *arena, capy_string path, capy_string handler_path);
 must_check int capy_http_parse_field(capy_strkvmmap *fields, capy_string line);
 
-must_check int capy_http_write_headers(capy_buffer *buffer, capy_http_response *response);
+must_check int capy_http_write_response(capy_buffer *buffer, capy_http_response *response);
 must_check int capy_http_request_validate(capy_arena *arena, capy_http_request *request);
 int capy_http_serve(const char *host, const char *port, capy_http_router *router, capy_http_server_options options);
 
-capy_http_router *capy_http_router_init(capy_arena *arena);
-capy_http_router *capy_http_route_add(capy_arena *arena, capy_http_router *router, capy_string route, capy_http_handler *handler);
+capy_http_router *capy_http_router_init(capy_arena *arena, int n, capy_http_route *routes);
 capy_http_route *capy_http_route_get(capy_http_router *router, capy_http_method method, capy_string path);
 int capy_http_router_handle(capy_arena *arena, capy_http_router *router, capy_http_request *request, capy_http_response *response);
-
-// INLINE DEFINITIONS
-
-inline capy_string capy_http_method_string(capy_http_method method)
-{
-    switch (method)
-    {
-        case CAPY_HTTP_CONNECT:
-            return capy_string_literal("CONNECT");
-        case CAPY_HTTP_DELETE:
-            return capy_string_literal("DELETE");
-        case CAPY_HTTP_GET:
-            return capy_string_literal("GET");
-        case CAPY_HTTP_HEAD:
-            return capy_string_literal("HEAD");
-        case CAPY_HTTP_OPTIONS:
-            return capy_string_literal("OPTIONS");
-        case CAPY_HTTP_PATCH:
-            return capy_string_literal("PATCH");
-        case CAPY_HTTP_POST:
-            return capy_string_literal("POST");
-        case CAPY_HTTP_PUT:
-            return capy_string_literal("PUT");
-        case CAPY_HTTP_TRACE:
-            return capy_string_literal("TRACE ");
-        default:
-            return capy_string_literal("UNK");
-    }
-}
 
 #endif

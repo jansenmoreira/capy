@@ -2,7 +2,6 @@
 #include "base64_test.c"
 #include "buffer_test.c"
 #include "http_test.c"
-#include "smap_test.c"
 #include "string_test.c"
 #include "strmap_test.c"
 #include "uri_test.c"
@@ -10,12 +9,25 @@
 
 int main(void)
 {
-    test_arena();
-    test_base64();
-    test_buffer();
-    test_http();
-    test_string();
-    test_strmap();
-    test_uri();
-    test_vec();
+    testbench t = {0, 0};
+
+    printf("Running tests...\n\n");
+
+    test_arena(&t);
+    test_buffer(&t);
+    test_string(&t);
+    test_uri(&t);
+    test_vec(&t);
+    test_http(&t);
+    test_base64(&t);
+    test_strmap(&t);
+
+    printf("\nSummary - %d of %d tests succeeded\n", t.succeded, t.succeded + t.failed);
+
+    if (t.failed)
+    {
+        return 1;
+    }
+
+    return 0;
 }

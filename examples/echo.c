@@ -1,14 +1,24 @@
 #include <capy/capy.h>
+#include <capy/macros.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 
+static int fail_handler(capy_arena *arena, capy_http_request *request, capy_http_response *response)
+{
+    (void)!arena;
+    (void)!request;
+    (void)!response;
+
+    return 1;
+}
+
 static int params_handler(capy_arena *arena, capy_http_request *request, capy_http_response *response)
 {
     (void)!arena;
 
-    capy_strkvn *param = capy_strkvmmap_get(request->params, capy_string_literal("id"));
+    capy_strkvn *param = capy_strkvmmap_get(request->params, strl("id"));
 
     (void)!capy_buffer_format(response->content, 0, "%.*s -> %.*s\n",
                               (int)param->key.size, param->key.data,
@@ -45,9 +55,9 @@ static int echo_handler(capy_arena *arena, capy_http_request *request, capy_http
     (void)!capy_buffer_wbase64url(response->content, request->content_length, request->content, true);
     (void)!capy_buffer_wcstr(response->content, "\n");
 
-    (void)!capy_strkvmmap_set(response->headers, capy_string_literal("X-Foo"), capy_string_literal("bar"));
-    (void)!capy_strkvmmap_add(response->headers, capy_string_literal("X-Foo"), capy_string_literal("baz"));
-    (void)!capy_strkvmmap_add(response->headers, capy_string_literal("X-Bar"), capy_string_literal("foo"));
+    (void)!capy_strkvmmap_set(response->headers, strl("X-Foo"), strl("bar"));
+    (void)!capy_strkvmmap_add(response->headers, strl("X-Foo"), strl("baz"));
+    (void)!capy_strkvmmap_add(response->headers, strl("X-Bar"), strl("foo"));
 
     response->status = CAPY_HTTP_OK;
 
@@ -61,7 +71,6 @@ int main(int argc, char *argv[])
     capy_http_server_options options = {
         .trace = 0,
         .workers = 0,
-        .max_mem_req_content = 50 * 1024,
     };
 
     const char *host = "127.0.0.1";
@@ -88,10 +97,15 @@ int main(int argc, char *argv[])
         }
     }
 
-    capy_arena *arena = capy_arena_init(8 * 1024);
+    capy_arena *arena = capy_arena_init(0, KiB(8));
 
-    capy_http_router *router = capy_http_route_add(arena, NULL, capy_string_literal("POST /"), echo_handler);
-    router = capy_http_route_add(arena, router, capy_string_literal("GET /^id/"), params_handler);
+    capy_http_route routes[] = {
+        {CAPY_HTTP_POST, strl("/"), echo_handler},
+        {CAPY_HTTP_GET, strl("/^id/"), params_handler},
+        {CAPY_HTTP_PUT, strl("/fail/"), fail_handler},
+    };
+
+    capy_http_router *router = capy_http_router_init(arena, arrlen(routes), routes);
 
     capy_http_serve(host, port, router, options);
 

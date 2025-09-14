@@ -1,25 +1,54 @@
 #include <capy/test.h>
 
-static int test_buffer(void)
+static int test_capy_buffer_init(void)
 {
-    capy_arena *arena;
-    capy_buffer *buffer;
-
-    arena = capy_arena_init(KiB(4));
+    capy_arena *arena = capy_arena_init(0, KiB(4));
 
     expect_p_eq(capy_buffer_init(arena, KiB(8)), NULL);
 
-    buffer = capy_buffer_init(arena, 8);
+    capy_buffer *buffer = capy_buffer_init(arena, 8);
     expect_u_eq(buffer->size, 0);
-    expect_u_eq(buffer->capacity, 8);
+    expect_u_gte(buffer->capacity, 8);
     expect_p_eq(buffer->arena, arena);
     expect_p_ne(buffer->data, NULL);
 
-    expect_s_eq(capy_buffer_wbytes(buffer, KiB(8), ""), ENOMEM);
-    expect_s_eq(capy_buffer_resize(buffer, KiB(8)), ENOMEM);
-    expect_s_eq(capy_buffer_format(buffer, 0, "%*s", KiB(8), " "), ENOMEM);
+    capy_arena_destroy(arena);
+    return true;
+}
 
-    expect_s_eq(capy_buffer_wstring(buffer, str("foobar\n")), 0);
+static int test_buffer_wbytes_enomem(void)
+{
+    capy_arena *arena = capy_arena_init(0, KiB(4));
+    capy_buffer *buffer = capy_buffer_init(arena, 8);
+    expect_s_eq(capy_buffer_wbytes(buffer, KiB(8), ""), ENOMEM);
+    capy_arena_destroy(arena);
+    return true;
+}
+
+static int test_buffer_resize_enomem(void)
+{
+    capy_arena *arena = capy_arena_init(0, KiB(4));
+    capy_buffer *buffer = capy_buffer_init(arena, 8);
+    expect_s_eq(capy_buffer_resize(buffer, KiB(8)), ENOMEM);
+    capy_arena_destroy(arena);
+    return true;
+}
+
+static int test_buffer_format_enomem(void)
+{
+    capy_arena *arena = capy_arena_init(0, KiB(4));
+    capy_buffer *buffer = capy_buffer_init(arena, 8);
+    expect_s_eq(capy_buffer_format(buffer, 0, "%*s", KiB(8), " "), ENOMEM);
+    capy_arena_destroy(arena);
+    return true;
+}
+
+static int test_buffer_writes(void)
+{
+    capy_arena *arena = capy_arena_init(0, KiB(4));
+    capy_buffer *buffer = capy_buffer_init(arena, 8);
+
+    expect_s_eq(capy_buffer_wstring(buffer, strl("foobar\n")), 0);
     expect_s_eq(capy_buffer_wcstr(buffer, "baz"), 0);
     expect_s_eq(capy_buffer_wbytes(buffer, 2, "baz"), 0);
     expect_s_eq(capy_buffer_format(buffer, 50, " %d %.1f", 5, 1.3f), 0);
@@ -36,6 +65,22 @@ static int test_buffer(void)
     expect_s_eq(memcmp(buffer->data, "1234", buffer->size), 0);
 
     capy_arena_destroy(arena);
+    return true;
+}
 
-    return 0;
+static void test_buffer(testbench *t)
+{
+    runtest(t, test_capy_buffer_init, "capy_buffer_init");
+
+    runtest(t, test_buffer_wbytes_enomem,
+            "capy_buffer_wbytes: should fail when alloc fails");
+
+    runtest(t, test_buffer_resize_enomem,
+            "capy_buffer_resize: should fail when alloc fails");
+
+    runtest(t, test_buffer_format_enomem,
+            "capy_buffer_format: should fail when alloc fails");
+
+    runtest(t, test_buffer_writes,
+            "capy_buffer_(w*|shl|resize|format): should produce expected text");
 }

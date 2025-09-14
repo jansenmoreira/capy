@@ -24,10 +24,8 @@ typedef struct http_worker
     size_t id;
     pthread_t thread_id;
     int epoll_fd;
-    pthread_mutex_t mut;
-    struct http_conn **conns;
-    size_t conns_count;
-    size_t conns_max;
+    pthread_mutex_t *mut;
+    sigset_t *mask;
 } http_worker;
 
 typedef enum
@@ -93,7 +91,7 @@ static const char *http_conn_state_cstr(http_conn_state state)
 typedef struct http_conn
 {
     int socket;
-    http_worker *worker;
+
     size_t conn_id;
 
     capy_arena *arena;
@@ -125,14 +123,14 @@ typedef struct http_conn
     struct timespec timestamp;
 } http_conn;
 
-static int conn_epoll(http_conn *conn, int op, uint32_t events)
+static int conn_epoll(http_conn *conn, int epoll_fd, int op, uint32_t events)
 {
     struct epoll_event client_event = {
         .events = events,
         .data.ptr = conn,
     };
 
-    return epoll_ctl(conn->worker->epoll_fd, op, conn->socket, &client_event);
+    return epoll_ctl(epoll_fd, op, conn->socket, &client_event);
 }
 
 static inline int log_gaierr(int err, const char *file, int line, const char *msg)
@@ -202,6 +200,7 @@ static inline http_conn_state conn_write_response(http_conn *conn)
         if (err == EWOULDBLOCK || err == EAGAIN)
         {
             conn->after_unblock = STATE_WRITE_RESPONSE;
+
             return STATE_BLOCKED;
         }
 
@@ -494,12 +493,6 @@ static inline http_conn_state conn_handler_failure(http_conn *conn)
         return STATE_SERVER_FAILURE;
     }
 
-    if (conn_epoll(conn, EPOLL_CTL_MOD, EPOLLOUT) == -1)
-    {
-        capy_log_errno(errno, "Failed to update client epoll");
-        abort();
-    }
-
     return STATE_WRITE_RESPONSE;
 }
 
@@ -528,12 +521,6 @@ static inline http_conn_state conn_bad_request(http_conn *conn)
         return STATE_SERVER_FAILURE;
     }
 
-    if (conn_epoll(conn, EPOLL_CTL_MOD, EPOLLOUT) == -1)
-    {
-        capy_log_errno(errno, "Failed to update client epoll");
-        abort();
-    }
-
     return STATE_WRITE_RESPONSE;
 }
 
@@ -560,23 +547,11 @@ static inline http_conn_state conn_process_request(http_conn *conn)
         return STATE_SERVER_FAILURE;
     }
 
-    if (conn_epoll(conn, EPOLL_CTL_MOD, EPOLLOUT) == -1)
-    {
-        capy_log_errno(errno, "Failed to update client epoll");
-        abort();
-    }
-
     return STATE_WRITE_RESPONSE;
 }
 
 static http_conn_state conn_message_init(http_conn *conn)
 {
-    if (conn_epoll(conn, EPOLL_CTL_MOD, EPOLLIN) == -1)
-    {
-        capy_log_errno(errno, "Failed to update client epoll");
-        abort();
-    }
-
     if (capy_arena_free(conn->arena, conn->marker_init))
     {
         return STATE_SERVER_FAILURE;
@@ -607,14 +582,26 @@ static http_conn_state conn_message_init(http_conn *conn)
     return STATE_PARSE_REQUEST_LINE;
 }
 
+static int conn_blocked(http_conn *conn, http_worker *worker)
+{
+    timespec_get(&conn->timestamp, TIME_UTC);
+
+    uint32_t event = (conn->after_unblock == STATE_WRITE_RESPONSE) ? EPOLLOUT : EPOLLIN;
+
+    if (conn_epoll(conn, worker->epoll_fd, EPOLL_CTL_MOD, event | EPOLLET | EPOLLONESHOT) == -1)
+    {
+        return capy_log_errno(errno, "Failed to update client epoll");
+    }
+
+    return 0;
+}
+
 static int conn_close(http_conn *conn)
 {
     if (close(conn->socket) == -1)
     {
         return capy_log_errno(errno, "Failed to close connection");
     }
-
-    conn->worker->conns[conn->conn_id] = NULL;
 
     capy_arena_destroy(conn->arena);
 
@@ -646,7 +633,7 @@ static inline int conn_limits_exceeded(http_conn *conn)
     return false;
 }
 
-static inline void conn_trace(http_conn *conn)
+static inline void conn_trace(http_conn *conn, http_worker *worker)
 {
     struct timespec timestamp;
     timespec_get(&timestamp, TIME_UTC);
@@ -668,11 +655,11 @@ static inline void conn_trace(http_conn *conn)
     printf(
         "%-24s | worker | socket | mem_req_headers  | mem_req_content  | mem_req_trailers | mem_response     | mem_total        | to_read  | to_write\n"
         "%-24s | %-6lu | %-6d | %-16ld | %-16ld | %-16ld | %-16ld | %-16lu | %-8lu | %-8lu\n",
-        time_info, http_conn_state_cstr(conn->state), conn->worker->id, conn->socket,
+        time_info, http_conn_state_cstr(conn->state), worker->id, conn->socket,
         conn->mem_headers, conn->mem_content, conn->mem_trailers, conn->mem_response, mem_total, to_read, to_write);
 }
 
-static inline int conn_state_machine(http_conn *conn)
+static inline int conn_state_machine(http_conn *conn, http_worker *worker)
 {
     capy_assert(conn != NULL);
 
@@ -681,10 +668,13 @@ static inline int conn_state_machine(http_conn *conn)
         conn->state = conn->after_unblock;
     }
 
-    int blocked = false;
-
-    while (!blocked)
+    for (;;)
     {
+        if (conn->options->trace)
+        {
+            conn_trace(conn, worker);
+        }
+
         ssize_t begin = (ssize_t)capy_arena_size(conn->arena);
 
         switch (conn->state)
@@ -747,8 +737,7 @@ static inline int conn_state_machine(http_conn *conn)
                 break;
 
             case STATE_BLOCKED:
-                blocked = true;
-                break;
+                return conn_blocked(conn, worker);
 
             case STATE_CLOSE_CONNECTION:
                 return conn_close(conn);
@@ -759,74 +748,11 @@ static inline int conn_state_machine(http_conn *conn)
                 capy_assert(false);
         }
 
-        if (conn->options->trace)
-        {
-            conn_trace(conn);
-        }
-
         if (conn_limits_exceeded(conn))
         {
             conn->state = STATE_BAD_REQUEST;
         }
     }
-
-    timespec_get(&conn->timestamp, TIME_UTC);
-
-    return 0;
-}
-
-static int conn_cleanup(http_worker *worker)
-{
-    int err;
-
-    if ((err = pthread_mutex_lock(&worker->mut)))
-    {
-        return capy_log_errno(err, "Failed to lock worker mutex at cleanup");
-    }
-
-    struct timespec ts;
-    timespec_get(&ts, TIME_UTC);
-
-    size_t conn_count = 0;
-
-    for (size_t i = 0; i < worker->conns_count; i++)
-    {
-        http_conn *conn = worker->conns[i];
-
-        if (conn == NULL)
-        {
-            continue;
-        }
-
-        if (conn->state == STATE_BLOCKED)
-        {
-            if (difftime(ts.tv_sec, conn->timestamp.tv_sec) > 300)
-            {
-                fprintf(stderr, "closing connection (%d), timeout\n", conn->socket);
-
-                if ((err = conn_close(conn)))
-                {
-                    return err;
-                }
-
-                continue;
-            }
-        }
-
-        worker->conns[conn_count] = conn;
-        conn->conn_id = conn_count;
-
-        conn_count += 1;
-    }
-
-    worker->conns_count = conn_count;
-
-    if ((err = pthread_mutex_unlock(&worker->mut)))
-    {
-        return capy_log_errno(err, "Failed to unlock worker mutex at cleanup");
-    }
-
-    return 0;
 }
 
 static void *conn_worker(void *data)
@@ -837,9 +763,9 @@ static void *conn_worker(void *data)
 
     for (;;)
     {
-        int nevents = epoll_wait(worker->epoll_fd, events, 10, 5 * 1000);
+        int events_count = epoll_pwait(worker->epoll_fd, events, 10, 5000, worker->mask);
 
-        if (nevents == -1)
+        if (events_count == -1)
         {
             int err = errno;
 
@@ -852,20 +778,18 @@ static void *conn_worker(void *data)
             return NULL;
         }
 
-        for (int i = 0; i < nevents; i++)
+        for (int i = 0; i < events_count; i++)
         {
             if (events[i].data.u64 == SIGNAL_EPOLL_EVENT)
             {
                 return 0;
             }
 
-            if (conn_state_machine(events[i].data.ptr))
+            if (conn_state_machine(events[i].data.ptr, worker))
             {
                 abort();
             }
         }
-
-        conn_cleanup(worker);
     }
 
     return 0;
@@ -960,12 +884,11 @@ static int http_bind_server(const char *host, const char *port)
     return server_fd;
 }
 
-static http_worker *http_create_workers(int signal_fd, size_t workers_count, size_t workers_conn_max)
+static http_worker *http_create_workers(int epoll_fd, pthread_mutex_t *mut, sigset_t *mask, size_t workers_count)
 {
     int err;
 
-    size_t reserve = (sizeof(http_worker) * workers_count) +
-                     (sizeof(http_conn *) * workers_count * workers_conn_max);
+    size_t reserve = (sizeof(http_worker) * workers_count);
 
     capy_arena *arena = capy_arena_init(reserve, 8 * 1024 * 1024);
 
@@ -980,38 +903,13 @@ static http_worker *http_create_workers(int signal_fd, size_t workers_count, siz
     for (size_t i = 0; i < workers_count; i++)
     {
         workers[i].id = i;
-        workers[i].conns_max = workers_conn_max;
-        workers[i].conns_count = 0;
-        workers[i].conns = make(arena, http_conn *, workers_conn_max);
+        workers[i].epoll_fd = epoll_fd;
+        workers[i].mut = mut;
+        workers[i].mask = mask;
 
-        workers[i].epoll_fd = epoll_create1(0);
-
-        if (workers[i].epoll_fd == -1)
+        if ((err = pthread_create(&workers[i].thread_id, NULL, conn_worker, &workers[i])))
         {
-            capy_log_errno(errno, "Failed to create epoll");
-            return NULL;
-        }
-
-        if ((err = pthread_mutex_init(&workers[i].mut, NULL)))
-        {
-            capy_log_errno(err, "Failed to create worker mutex");
-            return NULL;
-        }
-
-        struct epoll_event event = {
-            .events = EPOLLIN,
-            .data.u64 = SIGNAL_EPOLL_EVENT,
-        };
-
-        if (epoll_ctl(workers[i].epoll_fd, EPOLL_CTL_ADD, signal_fd, &event) == -1)
-        {
-            capy_log_errno(errno, "Failed to add signal to thread epoll");
-            return NULL;
-        }
-
-        if (pthread_create(&workers[i].thread_id, NULL, conn_worker, &workers[i]) == -1)
-        {
-            capy_log_errno(errno, "Failed to create worker thread");
+            capy_log_errno(err, "Failed to create worker thread");
             return NULL;
         }
     }
@@ -1058,12 +956,24 @@ int capy_http_serve(const char *host, const char *port, capy_http_router *router
         return capy_log_errno(errno, "Failed to create epoll");
     }
 
+    int workers_epoll_fd = epoll_create1(0);
+
+    if (workers_epoll_fd == -1)
+    {
+        return capy_log_errno(errno, "Failed to create workers epoll");
+    }
+
     event = (struct epoll_event){
         .events = EPOLLIN,
         .data.u64 = SIGNAL_EPOLL_EVENT,
     };
 
     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, signal_fd, &event) == -1)
+    {
+        return capy_log_errno(errno, "Failed to add signal to server epoll");
+    }
+
+    if (epoll_ctl(workers_epoll_fd, EPOLL_CTL_ADD, signal_fd, &event) == -1)
     {
         return capy_log_errno(errno, "Failed to add signal to server epoll");
     }
@@ -1083,7 +993,14 @@ int capy_http_serve(const char *host, const char *port, capy_http_router *router
         return capy_log_errno(errno, "Failed to listen");
     }
 
-    http_worker *workers = http_create_workers(signal_fd, options.workers, options.workers_conn_max);
+    pthread_mutex_t mut;
+
+    if ((err = pthread_mutex_init(&mut, NULL)))
+    {
+        return capy_log_errno(err, "Failed to create worker mutex");
+    }
+
+    http_worker *workers = http_create_workers(workers_epoll_fd, &mut, &mask, options.workers);
 
     if (workers == NULL)
     {
@@ -1094,8 +1011,6 @@ int capy_http_serve(const char *host, const char *port, capy_http_router *router
 
     void *address_buffer = &(struct sockaddr_storage){0};
     socklen_t address_buffer_size = sizeof(address_buffer);
-
-    size_t worker_id = 0;
 
     int stopped = false;
 
@@ -1109,7 +1024,7 @@ int capy_http_serve(const char *host, const char *port, capy_http_router *router
 
     while (!stopped)
     {
-        int events_count = epoll_wait(epoll_fd, events, 10, -1);
+        int events_count = epoll_pwait(epoll_fd, events, 10, -1, &mask);
 
         if (events_count == -1)
         {
@@ -1182,52 +1097,15 @@ int capy_http_serve(const char *host, const char *port, capy_http_router *router
             conn->router = router;
             conn->state = STATE_INIT;
             conn->options = &options;
-            conn->worker = NULL;
             conn->line_buffer = capy_buffer_init(arena, options.msg_buffer_size);
             conn->line_buffer->arena = NULL;
             conn->marker_init = capy_arena_end(arena);
 
             timespec_get(&conn->timestamp, TIME_UTC);
 
-            for (size_t i = 0; conn->worker == NULL && i < options.workers; i++)
+            if (conn_epoll(conn, workers_epoll_fd, EPOLL_CTL_ADD, EPOLLIN | EPOLLET | EPOLLONESHOT) == -1)
             {
-                http_worker *worker = workers + worker_id;
-
-                if ((err = pthread_mutex_lock(&worker->mut)))
-                {
-                    return capy_log_errno(err, "Failed to lock worker mutex")
-                }
-
-                if (worker->conns_count < worker->conns_max)
-                {
-                    size_t conn_id = worker->conns_count;
-
-                    conn->worker = worker;
-                    conn->conn_id = conn_id;
-
-                    worker->conns[conn_id] = conn;
-                    worker->conns_count += 1;
-                }
-
-                if ((err = pthread_mutex_unlock(&worker->mut)))
-                {
-                    return capy_log_errno(err, "Failed to unlock worker mutex")
-                }
-
-                worker_id = (worker_id + 1) % options.workers;
-            }
-
-            if (conn->worker != NULL)
-            {
-                if (conn_epoll(conn, EPOLL_CTL_ADD, EPOLLIN) == -1)
-                {
-                    return capy_log_errno(errno, "Failed to add client to epoll");
-                }
-            }
-            else
-            {
-                fprintf(stderr, "closing new connection (%d), limit exceeded\n", conn_fd);
-                close(conn_fd);
+                return capy_log_errno(errno, "Failed to add client to epoll");
             }
         }
     }

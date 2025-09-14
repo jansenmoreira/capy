@@ -11,5 +11,5 @@
 
 #ifdef CAPY_LINUX
 #include "arena_linux.c"
-#include "http_linux.c"
+#include "http_linux_et.c"
 #endif

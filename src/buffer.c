@@ -1,4 +1,5 @@
 #include <capy/capy.h>
+#include <capy/macros.h>
 #include <errno.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -18,7 +19,7 @@ capy_buffer *capy_buffer_init(capy_arena *arena, size_t capacity)
         buf->size = 0;
         buf->capacity = capacity;
         buf->arena = arena;
-        buf->data = ptrcast(char *, buf + 1);
+        buf->data = recast(char *, buf + 1);
     }
 
     return buf;

@@ -1,4 +1,5 @@
 #include <capy/capy.h>
+#include <capy/macros.h>
 #include <errno.h>
 
 #define URI_GEN_DELIM 0x01
@@ -167,50 +168,6 @@ static size_t uri_string_validate(capy_string s, int categories, const char *cha
     }
 
     return s.size;
-}
-
-capy_string capy_uri_normalize(capy_arena *arena, capy_string input, int lowercase)
-{
-    if (input.size == 0)
-    {
-        return (capy_string){.size = 0};
-    }
-
-    char *buffer = capy_arena_make(arena, char, input.size + 1);
-    size_t size = 0;
-
-    while (input.size)
-    {
-        if (input.data[0] == '%')
-        {
-            int64_t value;
-            capy_string_hex(capy_string_slice(input, 1, 3), &value);
-            char c = (char)(value);
-
-            if (uri_char_categories(c) & URI_UNRESERVED)
-            {
-                buffer[size] = c;
-                size += 1;
-            }
-            else
-            {
-                buffer[size] = '%';
-                buffer[size + 1] = capy_char_lowercase(input.data[1]);
-                buffer[size + 2] = capy_char_lowercase(input.data[2]);
-                size += 3;
-            }
-
-            input = capy_string_shl(input, 3);
-        }
-        else
-        {
-            buffer[size] = (lowercase) ? capy_char_lowercase(input.data[0]) : input.data[0];
-            size += 1;
-            input = capy_string_shl(input, 1);
-        }
-    }
-
-    return (capy_string){.data = buffer, .size = size};
 }
 
 static capy_string uri_parse_hex_word(capy_string input)
@@ -522,7 +479,7 @@ static capy_string uri_path_merge(capy_arena *arena, capy_string base, capy_stri
     }
 
     size_t size = base.size + 1 + reference.size;
-    char *buffer = capy_arena_make(arena, char, size + 1);
+    char *buffer = make(arena, char, size + 1);
 
     strncpy(buffer, base.data, base.size);
     buffer[base.size] = '/';
@@ -531,12 +488,56 @@ static capy_string uri_path_merge(capy_arena *arena, capy_string base, capy_stri
     return (capy_string){.data = buffer, .size = size};
 }
 
+capy_string capy_uri_normalize(capy_arena *arena, capy_string input, int lowercase)
+{
+    if (input.size == 0)
+    {
+        return (capy_string){.size = 0};
+    }
+
+    char *buffer = make(arena, char, input.size + 1);
+    size_t size = 0;
+
+    while (input.size)
+    {
+        if (input.data[0] == '%')
+        {
+            int64_t value;
+            capy_string_hex(capy_string_slice(input, 1, 3), &value);
+            char c = (char)(value);
+
+            if (uri_char_categories(c) & URI_UNRESERVED)
+            {
+                buffer[size] = c;
+                size += 1;
+            }
+            else
+            {
+                buffer[size] = '%';
+                buffer[size + 1] = capy_char_lowercase(input.data[1]);
+                buffer[size + 2] = capy_char_lowercase(input.data[2]);
+                size += 3;
+            }
+
+            input = capy_string_shl(input, 3);
+        }
+        else
+        {
+            buffer[size] = (lowercase) ? capy_char_lowercase(input.data[0]) : input.data[0];
+            size += 1;
+            input = capy_string_shl(input, 1);
+        }
+    }
+
+    return (capy_string){.data = buffer, .size = size};
+}
+
 capy_string capy_uri_path_removedots(capy_arena *arena, capy_string path)
 {
-    capy_string path_self = capy_string_literal("./");
-    capy_string path_parent = capy_string_literal("../");
-    capy_string path_dot = capy_string_literal(".");
-    capy_string path_dots = capy_string_literal("..");
+    capy_string path_self = strl("./");
+    capy_string path_parent = strl("../");
+    capy_string path_dot = strl(".");
+    capy_string path_dots = strl("..");
 
     if (path.size == 0)
     {
@@ -545,7 +546,7 @@ capy_string capy_uri_path_removedots(capy_arena *arena, capy_string path)
 
     capy_string input = path;
 
-    char *output = capy_arena_make(arena, char, path.size + 1);
+    char *output = make(arena, char, path.size + 1);
     size_t output_size = 0;
 
     while (input.size)
@@ -819,7 +820,7 @@ capy_string capy_uri_string(capy_arena *arena, capy_uri uri)
                         uri.fragment.size +
                         6;
 
-    char *buffer = capy_arena_make(arena, char, buffer_max);
+    char *buffer = make(arena, char, buffer_max);
     size_t buffer_size = 0;
 
     if (uri.scheme.size)

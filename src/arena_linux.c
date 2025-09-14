@@ -1,5 +1,7 @@
 #include <capy/capy.h>
+#include <capy/macros.h>
 #include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -10,34 +12,37 @@ struct capy_arena
 {
     size_t size;
     size_t capacity;
-    size_t limit;
+    size_t min;
+    size_t max;
     size_t page_size;
 };
 
 // DEFINITIONS
 
-capy_arena *capy_arena_init(size_t limit)
+capy_arena *capy_arena_init(size_t min, size_t max)
 {
     size_t page_size = (size_t)(sysconf(_SC_PAGE_SIZE));
 
-    limit = align_to(limit, page_size);
+    max = align_to(max, page_size);
+    min = align_to(min + sizeof(capy_arena), page_size);
 
-    capy_arena *arena = mmap(NULL, limit, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    capy_arena *arena = mmap(NULL, max, PROT_NONE, MAP_NORESERVE | MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
     if (arena == MAP_FAILED)
     {
         return NULL;
     }
 
-    if (mprotect(arena, page_size, PROT_READ | PROT_WRITE) == -1)
+    if (mprotect(arena, min, PROT_READ | PROT_WRITE) == -1)
     {
         return NULL;
     }
 
     arena->size = 40;
-    arena->capacity = page_size;
+    arena->capacity = min;
     arena->page_size = page_size;
-    arena->limit = limit;
+    arena->min = min;
+    arena->max = max;
 
     return arena;
 }
@@ -45,7 +50,11 @@ capy_arena *capy_arena_init(size_t limit)
 void capy_arena_destroy(capy_arena *arena)
 {
     capy_assert(arena != NULL);
-    munmap(arena, arena->limit);
+
+    if (munmap(arena, arena->max) == -1)
+    {
+        capy_log_errno(errno, "munmap failed")
+    }
 }
 
 void *capy_arena_realloc(capy_arena *arena, void *src, size_t size, size_t new_size, int zeroinit)
@@ -83,14 +92,14 @@ void *capy_arena_alloc(capy_arena *arena, size_t size, size_t align, int zeroini
     size_t begin = (align) ? align_to(arena->size, align) : arena->size;
     size_t end = begin + size;
 
-    if (end > arena->limit)
+    if (end > arena->max)
     {
         return NULL;
     }
 
     if (end > arena->capacity)
     {
-        size_t capacity = arena->capacity << 1;
+        size_t capacity = next_pow2(arena->capacity + size);
 
         if (mprotect(arena, capacity, PROT_READ | PROT_WRITE))
         {
@@ -118,21 +127,30 @@ int capy_arena_free(capy_arena *arena, void *addr)
     capy_assert(cast(size_t, addr) <= cast(size_t, arena) + arena->size);
     arena->size = cast(size_t, addr) - cast(size_t, arena);
 
-    size_t threshold = arena->capacity >> 2;
-    size_t capacity = arena->capacity >> 1;
-
-    if (arena->size <= threshold)
+    if (arena->capacity > arena->min)
     {
-        char *tail = (char *)(arena) + capacity;
+        size_t threshold = arena->capacity >> 2;
 
-        size_t tail_size = arena->capacity - capacity;
-
-        if (mprotect(tail, tail_size, PROT_NONE))
+        if (arena->size <= threshold)
         {
-            return errno;
-        }
+            size_t capacity = arena->capacity >> 1;
 
-        arena->capacity = capacity;
+            if (capacity < arena->min)
+            {
+                capacity = arena->min;
+            }
+
+            char *tail = (char *)(arena) + capacity;
+
+            size_t tail_size = arena->capacity - capacity;
+
+            if (mprotect(tail, tail_size, PROT_NONE))
+            {
+                return errno;
+            }
+
+            arena->capacity = capacity;
+        }
     }
 
     return 0;

@@ -14,6 +14,4 @@ must_check void *capy_vec_insert(capy_arena *arena, void *items,
 
 int capy_vec_delete(void *items, size_t element_size, size_t *size, size_t position, size_t count);
 
-// MACROS
-
 #endif

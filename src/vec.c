@@ -1,4 +1,5 @@
 #include <capy/capy.h>
+#include <capy/macros.h>
 #include <errno.h>
 
 // DEFINITIONS

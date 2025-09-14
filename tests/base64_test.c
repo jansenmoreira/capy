@@ -1,6 +1,6 @@
 #include <capy/test.h>
 
-static int test_base64(void)
+static int test_capy_base64(void)
 {
     char content[256];
     size_t bytes;
@@ -37,33 +37,45 @@ static int test_base64(void)
     expect_u_eq(bytes, 4);
     expect_s_eq(memcmp(content, "AB+/", bytes), 0);
 
+    return true;
+}
+
+static int test_capy_string_base64(void)
+{
     capy_string result;
-    capy_arena *arena = capy_arena_init(8 * 1024);
+    capy_arena *arena = capy_arena_init(0, 8 * 1024);
 
-    expect_s_eq(capy_string_base64url(arena, &result, str("foobar"), false), 0);
-    expect_str_eq(result, str("Zm9vYmFy"));
+    expect_s_eq(capy_string_base64url(arena, &result, strl("foobar"), false), 0);
+    expect_str_eq(result, strl("Zm9vYmFy"));
 
-    expect_s_eq(capy_string_base64url(arena, &result, str("abcdef"), false), 0);
-    expect_str_eq(result, str("YWJjZGVm"));
+    expect_s_eq(capy_string_base64url(arena, &result, strl("abcdef"), false), 0);
+    expect_str_eq(result, strl("YWJjZGVm"));
 
-    expect_s_eq(capy_string_base64url(arena, &result, str("foobarb"), false), 0);
-    expect_str_eq(result, str("Zm9vYmFyYg"));
+    expect_s_eq(capy_string_base64url(arena, &result, strl("foobarb"), false), 0);
+    expect_str_eq(result, strl("Zm9vYmFyYg"));
 
-    expect_s_eq(capy_string_base64url(arena, &result, str("foobarb"), true), 0);
-    expect_str_eq(result, str("Zm9vYmFyYg=="));
+    expect_s_eq(capy_string_base64url(arena, &result, strl("foobarb"), true), 0);
+    expect_str_eq(result, strl("Zm9vYmFyYg=="));
 
-    expect_s_eq(capy_string_base64url(arena, &result, str("foobarbz"), false), 0);
-    expect_str_eq(result, str("Zm9vYmFyYno"));
+    expect_s_eq(capy_string_base64url(arena, &result, strl("foobarbz"), false), 0);
+    expect_str_eq(result, strl("Zm9vYmFyYno"));
 
-    expect_s_eq(capy_string_base64url(arena, &result, str("foobarbz"), true), 0);
-    expect_str_eq(result, str("Zm9vYmFyYno="));
+    expect_s_eq(capy_string_base64url(arena, &result, strl("foobarbz"), true), 0);
+    expect_str_eq(result, strl("Zm9vYmFyYno="));
 
-    expect_s_eq(capy_string_base64url(arena, &result, str("\x00\x1F\xBF"), false), 0);
-    expect_str_eq(result, str("AB-_"));
+    expect_s_eq(capy_string_base64url(arena, &result, strl("\x00\x1F\xBF"), false), 0);
+    expect_str_eq(result, strl("AB-_"));
 
-    expect_s_eq(capy_string_base64(arena, &result, str("\x00\x1F\xBF"), false), 0);
-    expect_str_eq(result, str("AB+/"));
+    expect_s_eq(capy_string_base64(arena, &result, strl("\x00\x1F\xBF"), false), 0);
+    expect_str_eq(result, strl("AB+/"));
 
+    capy_arena_destroy(arena);
+    return true;
+}
+
+static int test_capy_buffer_base64(void)
+{
+    capy_arena *arena = capy_arena_init(0, KiB(8));
     capy_buffer *buffer = capy_buffer_init(arena, 1024);
 
     expect_s_eq(capy_buffer_resize(buffer, 0), 0);
@@ -99,6 +111,12 @@ static int test_base64(void)
     expect_s_eq(memcmp(buffer->data, "AB+/", buffer->size), 0);
 
     capy_arena_destroy(arena);
+    return true;
+}
 
-    return 0;
+static void test_base64(testbench *t)
+{
+    runtest(t, test_capy_base64, "capy_base64");
+    runtest(t, test_capy_string_base64, "capy_string_base64");
+    runtest(t, test_capy_buffer_base64, "capy_buffer_base64");
 }

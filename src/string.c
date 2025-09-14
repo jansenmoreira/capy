@@ -1,6 +1,9 @@
 #include <capy/capy.h>
+#include <capy/macros.h>
 #include <ctype.h>
 #include <errno.h>
+
+#define capy_string_empty ((capy_string){.data = NULL, .size = 0})
 
 // EXTERN INLINES
 
@@ -8,7 +11,6 @@ extern inline char capy_char_uppercase(char c);
 extern inline char capy_char_lowercase(char c);
 extern inline capy_string capy_string_slice(capy_string s, size_t begin, size_t end);
 extern inline int capy_string_eq(capy_string a, capy_string b);
-extern inline int capy_string_sw(capy_string a, capy_string prefix);
 extern inline capy_string capy_string_bytes(size_t size, const char *data);
 extern inline capy_string capy_string_cstr(const char *data);
 extern inline capy_string capy_string_shl(capy_string s, size_t size);
@@ -126,9 +128,10 @@ int capy_string_copy(capy_arena *arena, capy_string *output, capy_string input)
     if (input.size == 0)
     {
         *output = capy_string_empty;
+        return 0;
     }
 
-    char *buffer = capy_arena_make(arena, char, input.size + 1);
+    char *buffer = make(arena, char, input.size + 1);
 
     if (buffer == NULL)
     {
@@ -143,7 +146,13 @@ int capy_string_copy(capy_arena *arena, capy_string *output, capy_string input)
 
 int capy_string_lower(capy_arena *arena, capy_string *output, capy_string input)
 {
-    char *data = capy_arena_make(arena, char, input.size);
+    if (input.size == 0)
+    {
+        *output = capy_string_empty;
+        return 0;
+    }
+
+    char *data = make(arena, char, input.size);
 
     if (data == NULL)
     {
@@ -162,7 +171,13 @@ int capy_string_lower(capy_arena *arena, capy_string *output, capy_string input)
 
 int capy_string_upper(capy_arena *arena, capy_string *output, capy_string input)
 {
-    char *data = capy_arena_make(arena, char, input.size);
+    if (input.size == 0)
+    {
+        *output = capy_string_empty;
+        return 0;
+    }
+
+    char *data = make(arena, char, input.size);
 
     if (data == NULL)
     {
@@ -197,9 +212,10 @@ int capy_string_join(capy_arena *arena, capy_string *output, const char *delimit
     if (size == 0)
     {
         *output = capy_string_empty;
+        return 0;
     }
 
-    char *buffer = capy_arena_make(arena, char, size + 1);
+    char *buffer = make(arena, char, size + 1);
 
     if (buffer == NULL)
     {

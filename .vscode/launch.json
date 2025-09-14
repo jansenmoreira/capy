@@ -23,7 +23,8 @@
             "program": "${workspaceFolder}/build/ex_echo",
             "args": [
                 "-w",
-                "1"
+                "8",
+                "-v"
             ],
             "cwd": "${workspaceFolder}",
             "terminal": "integrated",
@@ -38,9 +39,7 @@
             "request": "launch",
             "name": "ex_echo - release",
             "program": "${workspaceFolder}/build/release/ex_echo",
-            "args": [
-                "-v",
-            ],
+            "args": [],
             "cwd": "${workspaceFolder}",
             "terminal": "integrated",
             "preLaunchTask": "build/release",

@@ -1,137 +1,129 @@
 #include <capy/test.h>
 
-static int test_strmap(void)
+static int test_capy_strset(void)
 {
-    capy_arena *arena = capy_arena_init(KiB(2));
+    capy_arena *arena = capy_arena_init(0, KiB(4));
 
     expect_p_eq(capy_strset_init(arena, KiB(8)), NULL);
 
-    capy_strset *strset = capy_strset_init(arena, 4);
+    capy_strset *strset = capy_strset_init(arena, 2);
 
     expect_p_ne(strset, NULL);
-    expect_u_eq(strset->capacity, 4);
+    expect_u_eq(strset->capacity, 2);
     expect_u_eq(strset->size, 0);
     expect_p_eq(strset->arena, arena);
     expect_p_ne(strset->items, NULL);
 
-    expect_s_eq(capy_strset_has(strset, str("foo")), false);
-    expect_s_eq(capy_strset_add(strset, str("foo")), 0);
-    expect_s_eq(capy_strset_add(strset, str("buz")), 0);
-    expect_s_eq(capy_strset_has(strset, str("foo")), true);
-    expect_s_eq(capy_strset_has(strset, str("buz")), true);
+    expect_s_eq(capy_strset_has(strset, strl("foo")), false);
 
-    capy_strset_delete(strset, str("foo"));
-    capy_strset_delete(strset, str("bar"));
-    capy_strset_delete(strset, str("buz"));
+    expect_s_eq(capy_strset_add(strset, strl("foo")), 0);
+    expect_s_eq(capy_strset_has(strset, strl("foo")), true);
 
-    expect_s_eq(capy_strset_has(strset, str("foo")), false);
-    expect_s_eq(capy_strset_has(strset, str("buz")), false);
+    capy_strset_delete(strset, strl("foo"));
 
-    expect_s_eq(capy_strset_add(strset, str("foo")), 0);
-    expect_s_eq(capy_strset_add(strset, str("boz")), 0);
-    expect_s_eq(capy_strset_add(strset, str("bar")), 0);
+    expect_s_eq(capy_strset_has(strset, strl("foo")), false);
 
-    expect_s_eq(capy_strset_has(strset, str("foo")), true);
-    expect_s_eq(capy_strset_has(strset, str("boz")), true);
-    expect_s_eq(capy_strset_has(strset, str("bar")), true);
+    expect_s_eq(capy_strset_add(strset, strl("foo")), 0);
+    expect_p_ne(make(arena, char, KiB(4) - capy_arena_size(arena)), NULL);
+    expect_s_eq(capy_strset_add(strset, strl("bar")), ENOMEM);
 
-    capy_strkv *pairs = capy_arena_make(arena, capy_strkv, 64);
+    capy_arena_destroy(arena);
+    return true;
+}
 
-    for (size_t i = 0; i < 64; i++)
-    {
-        char *buffer = capy_arena_make(arena, char, 4);
-        snprintf(buffer, 4, "%lu", i);
-        pairs[i].key = capy_string_cstr(buffer);
-        pairs[i].value = pairs[i].key;
-    }
+static int test_capy_strkvmap(void)
+{
+    capy_arena *arena = capy_arena_init(0, KiB(4));
 
-    expect_p_eq(capy_strkvmap_init(arena, 64), NULL);
+    expect_p_eq(capy_strkvmap_init(arena, KiB(8)), NULL);
 
-    capy_strkvmap *strkvmap = capy_strkvmap_init(arena, 32);
+    capy_strkvmap *strkvmap = capy_strkvmap_init(arena, 2);
 
     expect_p_ne(strkvmap, NULL);
-    expect_u_eq(strkvmap->capacity, 32);
+    expect_u_eq(strkvmap->capacity, 2);
     expect_u_eq(strkvmap->size, 0);
     expect_p_eq(strkvmap->arena, arena);
     expect_p_ne(strkvmap->items, NULL);
 
-    capy_strkv *strkv;
+    capy_strkv *kv = capy_strkvmap_get(strkvmap, strl("foo"));
+    expect_p_eq(kv, NULL);
 
-    for (size_t i = 0; i < 21; i++)
-    {
-        expect_s_eq(capy_strkvmap_set(strkvmap, pairs[i].key, pairs[i].value), 0);
-    }
+    expect_s_eq(capy_strkvmap_set(strkvmap, strl("foo"), strl("bar")), 0);
 
-    for (size_t i = 0; i < 21; i++)
-    {
-        capy_strkv *pair = capy_strkvmap_get(strkvmap, pairs[i].key);
-        expect_p_ne(pair, NULL);
-        expect_str_eq(pair->key, pairs[i].key);
-        expect_str_eq(pair->value, pairs[i].value);
-    }
+    kv = capy_strkvmap_get(strkvmap, strl("foo"));
+    expect_p_ne(kv, NULL);
+    expect_str_eq(kv->key, strl("foo"));
+    expect_str_eq(kv->value, strl("bar"));
 
-    expect_s_eq(capy_strkvmap_set(strkvmap, pairs[21].key, pairs[21].value), ENOMEM);
+    capy_strkvmap_delete(strkvmap, strl("foo"));
+    expect_p_eq(capy_strkvmap_get(strkvmap, strl("foo")), NULL);
 
-    expect_s_eq(capy_strkvmap_set(strkvmap, pairs[0].key, str("")), 0);
-    strkv = capy_strkvmap_get(strkvmap, pairs[0].key);
-    expect_p_ne(strkv, NULL);
-    expect_str_eq(strkv->key, pairs[0].key);
-    expect_str_eq(strkv->value, str(""));
+    expect_s_eq(capy_strkvmap_set(strkvmap, strl("foo"), strl("bar")), 0);
 
-    capy_strkvmap_delete(strkvmap, pairs[0].key);
-    strkv = capy_strkvmap_get(strkvmap, pairs[0].key);
-    expect_p_eq(strkv, NULL);
+    expect_p_ne(make(arena, char, KiB(4) - capy_arena_size(arena)), NULL);
+    expect_s_eq(capy_strkvmap_set(strkvmap, strl("bar"), strl("foo")), ENOMEM);
+
+    capy_arena_destroy(arena);
+    return true;
+}
+
+static int test_capy_strkvmmap(void)
+{
+    capy_arena *arena = capy_arena_init(0, KiB(2));
 
     expect_p_eq(capy_strkvmmap_init(arena, KiB(8)), NULL);
 
-    capy_strkvmmap *strkvmmap = capy_strkvmmap_init(arena, 8);
+    capy_strkvmmap *strkvmmap = capy_strkvmmap_init(arena, 4);
 
     expect_p_ne(strkvmmap, NULL);
-    expect_u_eq(strkvmmap->capacity, 8);
+    expect_u_eq(strkvmmap->capacity, 4);
     expect_u_eq(strkvmmap->size, 0);
     expect_p_eq(strkvmmap->arena, arena);
     expect_p_ne(strkvmmap->items, NULL);
 
-    capy_strkvn *strkvn;
+    expect_s_eq(capy_strkvmmap_add(strkvmmap, strl("foo"), strl("bar")), 0);
+    expect_s_eq(capy_strkvmmap_add(strkvmmap, strl("foo"), strl("baz")), 0);
+    expect_s_eq(capy_strkvmmap_add(strkvmmap, strl("foo"), strl("buz")), 0);
 
-    expect_s_eq(capy_strkvmmap_add(strkvmmap, str("foo"), str("bar")), 0);
-    expect_s_eq(capy_strkvmmap_add(strkvmmap, str("foo"), str("baz")), 0);
-    expect_s_eq(capy_strkvmmap_add(strkvmmap, str("foo"), str("buz")), 0);
-
-    strkvn = capy_strkvmmap_get(strkvmmap, str("foo"));
+    capy_strkvn *strkvn = capy_strkvmmap_get(strkvmmap, strl("foo"));
     expect_p_ne(strkvn, NULL);
-    expect_str_eq(strkvn->key, str("foo"));
-    expect_str_eq(strkvn->value, str("bar"));
+    expect_str_eq(strkvn->key, strl("foo"));
+    expect_str_eq(strkvn->value, strl("bar"));
     expect_p_ne(strkvn->next, NULL);
-    expect_str_eq(strkvn->next->key, str("foo"));
-    expect_str_eq(strkvn->next->value, str("baz"));
+    expect_str_eq(strkvn->next->key, strl("foo"));
+    expect_str_eq(strkvn->next->value, strl("baz"));
     expect_p_ne(strkvn->next->next, NULL);
-    expect_str_eq(strkvn->next->next->key, str("foo"));
-    expect_str_eq(strkvn->next->next->value, str("buz"));
+    expect_str_eq(strkvn->next->next->key, strl("foo"));
+    expect_str_eq(strkvn->next->next->value, strl("buz"));
     expect_p_eq(strkvn->next->next->next, NULL);
 
-    expect_s_eq(capy_strkvmmap_set(strkvmmap, str("bar"), str("foo")), 0);
-    expect_s_eq(capy_strkvmmap_set(strkvmmap, str("foo"), str("bar")), 0);
+    expect_s_eq(capy_strkvmmap_set(strkvmmap, strl("foo"), strl("bar")), 0);
 
-    strkvn = capy_strkvmmap_get(strkvmmap, str("foo"));
+    strkvn = capy_strkvmmap_get(strkvmmap, strl("foo"));
     expect_p_ne(strkvn, NULL);
-    expect_str_eq(strkvn->key, str("foo"));
-    expect_str_eq(strkvn->value, str("bar"));
+    expect_str_eq(strkvn->key, strl("foo"));
+    expect_str_eq(strkvn->value, strl("bar"));
     expect_p_eq(strkvn->next, NULL);
 
-    capy_strkvmmap_delete(strkvmmap, str("foo"));
-    strkvn = capy_strkvmmap_get(strkvmmap, str("foo"));
+    capy_strkvmmap_delete(strkvmmap, strl("foo"));
+    strkvn = capy_strkvmmap_get(strkvmmap, strl("foo"));
     expect_p_eq(strkvn, NULL);
 
-    strkvn = capy_strkvmmap_get(strkvmmap, str("bar"));
-    expect_p_ne(strkvn, NULL);
-    expect_str_eq(strkvn->key, str("bar"));
-    expect_str_eq(strkvn->value, str("foo"));
-    expect_p_eq(strkvn->next, NULL);
+    expect_s_eq(capy_strkvmmap_add(strkvmmap, strl("bar"), strl("foo")), 0);
+    expect_s_eq(capy_strkvmmap_add(strkvmmap, strl("foo"), strl("bar")), 0);
+    expect_s_eq(capy_strkvmmap_add(strkvmmap, strl("foo"), strl("baz")), 0);
 
-    expect_s_eq(capy_strkvmmap_add(strkvmmap, str("foo"), str("1")), 0);
-    expect_s_eq(capy_strkvmmap_add(strkvmmap, str("foo"), str("2")), 0);
-    expect_s_eq(capy_strkvmmap_add(strkvmmap, str("foo"), str("fail")), ENOMEM);
+    expect_p_ne(make(arena, char, KiB(4) - capy_arena_size(arena)), NULL);
+    expect_s_eq(capy_strkvmmap_add(strkvmmap, strl("foo"), strl("fail")), ENOMEM);
+    expect_s_eq(capy_strkvmmap_add(strkvmmap, strl("baz"), strl("fail")), ENOMEM);
+    expect_s_eq(capy_strkvmmap_set(strkvmmap, strl("baz"), strl("fail")), ENOMEM);
 
-    return 0;
+    return true;
+}
+
+static void test_strmap(testbench *t)
+{
+    runtest(t, test_capy_strset, "capy_strset_(init|has|add)");
+    runtest(t, test_capy_strkvmap, "capy_strset_(init|get|set)");
+    runtest(t, test_capy_strkvmmap, "capy_strset_(init|get|set|add)");
 }

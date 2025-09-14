@@ -1,6 +1,6 @@
 #include <capy/test.h>
 
-static int test_uri(void)
+static int test_uri_parse(void)
 {
     struct table_uri
     {
@@ -18,328 +18,271 @@ static int test_uri(void)
 
     struct table_uri uris[] = {
         {
-            .raw = str("http://foo@localhost:8080/post?id=1#title"),
-            .scheme = str("http"),
-            .authority = str("foo@localhost:8080"),
-            .userinfo = str("foo"),
-            .host = str("localhost"),
-            .port = str("8080"),
-            .path = str("/post"),
-            .query = str("id=1"),
-            .fragment = str("title"),
+            .raw = strl("http://foo@localhost:8080/post?id=1#title"),
+            .scheme = strl("http"),
+            .authority = strl("foo@localhost:8080"),
+            .userinfo = strl("foo"),
+            .host = strl("localhost"),
+            .port = strl("8080"),
+            .path = strl("/post"),
+            .query = strl("id=1"),
+            .fragment = strl("title"),
             .is_valid = true,
         },
         {
-            .raw = str("data:text/plain;charset=utf-8,foo%20bar"),
-            .scheme = str("data"),
-            .path = str("text/plain;charset=utf-8,foo%20bar"),
+            .raw = strl("data:text/plain;charset=utf-8,foo%20bar"),
+            .scheme = strl("data"),
+            .path = strl("text/plain;charset=utf-8,foo%20bar"),
             .is_valid = true,
         },
         {
-            .raw = str("foo bar://localhost"),
-            .scheme = str("foo bar"),
-            .authority = str("localhost"),
-            .host = str("localhost"),
+            .raw = strl("foo bar://localhost"),
+            .scheme = strl("foo bar"),
+            .authority = strl("localhost"),
+            .host = strl("localhost"),
             .is_valid = false,
         },
         {
-            .raw = str(" http://localhost"),
-            .scheme = str(" http"),
-            .authority = str("localhost"),
-            .host = str("localhost"),
+            .raw = strl(" http://localhost"),
+            .scheme = strl(" http"),
+            .authority = strl("localhost"),
+            .host = strl("localhost"),
             .is_valid = false,
         },
         {
-            .raw = str(":"),
-            .scheme = str(""),
+            .raw = strl(":"),
+            .scheme = strl(""),
             .is_valid = true,
         },
         {
-            .raw = str("h:"),
-            .scheme = str("h"),
+            .raw = strl("h:"),
+            .scheme = strl("h"),
             .is_valid = true,
         },
         {
-            .raw = str("//127.0.0.1"),
-            .authority = str("127.0.0.1"),
-            .host = str("127.0.0.1"),
+            .raw = strl("//127.0.0.1"),
+            .authority = strl("127.0.0.1"),
+            .host = strl("127.0.0.1"),
             .is_valid = true,
         },
         {
-            .raw = str("//10.20.30.5"),
-            .authority = str("10.20.30.5"),
-            .host = str("10.20.30.5"),
+            .raw = strl("//10.20.30.5"),
+            .authority = strl("10.20.30.5"),
+            .host = strl("10.20.30.5"),
             .is_valid = true,
         },
         {
-            .raw = str("//1O.0.0.1"),
-            .authority = str("1O.0.0.1"),
-            .host = str("1O.0.0.1"),
+            .raw = strl("//1O.0.0.1"),
+            .authority = strl("1O.0.0.1"),
+            .host = strl("1O.0.0.1"),
             .is_valid = true,
         },
         {
-            .raw = str("//10"),
-            .authority = str("10"),
-            .host = str("10"),
+            .raw = strl("//10"),
+            .authority = strl("10"),
+            .host = strl("10"),
             .is_valid = true,
         },
         {
-            .raw = str("//30.40.50.60"),
-            .authority = str("30.40.50.60"),
-            .host = str("30.40.50.60"),
+            .raw = strl("//30.40.50.60"),
+            .authority = strl("30.40.50.60"),
+            .host = strl("30.40.50.60"),
             .is_valid = true,
         },
         {
-            .raw = str("//70.80.90.9O"),
-            .authority = str("70.80.90.9O"),
-            .host = str("70.80.90.9O"),
+            .raw = strl("//70.80.90.9O"),
+            .authority = strl("70.80.90.9O"),
+            .host = strl("70.80.90.9O"),
             .is_valid = true,
         },
         {
-            .raw = str("//foo%2"),
-            .authority = str("foo%2"),
-            .host = str("foo%2"),
+            .raw = strl("//foo%2"),
+            .authority = strl("foo%2"),
+            .host = strl("foo%2"),
             .is_valid = false,
         },
         {
-            .raw = str("//foo%20bar"),
-            .authority = str("foo%20bar"),
-            .host = str("foo%20bar"),
+            .raw = strl("//foo%20bar"),
+            .authority = strl("foo%20bar"),
+            .host = strl("foo%20bar"),
             .is_valid = true,
         },
         {
-            .raw = str("//foo bar"),
-            .authority = str("foo bar"),
-            .host = str("foo bar"),
+            .raw = strl("//foo bar"),
+            .authority = strl("foo bar"),
+            .host = strl("foo bar"),
             .is_valid = false,
         },
         {
-            .raw = str("//foo%0gbar"),
-            .authority = str("foo%0gbar"),
-            .host = str("foo%0gbar"),
+            .raw = strl("//foo%0gbar"),
+            .authority = strl("foo%0gbar"),
+            .host = strl("foo%0gbar"),
             .is_valid = false,
         },
         {
-            .raw = str("//foo%g0bar"),
-            .authority = str("foo%g0bar"),
-            .host = str("foo%g0bar"),
+            .raw = strl("//foo%g0bar"),
+            .authority = strl("foo%g0bar"),
+            .host = strl("foo%g0bar"),
             .is_valid = false,
         },
         {
-            .raw = str("/foo@bar"),
-            .path = str("/foo@bar"),
+            .raw = strl("/foo@bar"),
+            .path = strl("/foo@bar"),
             .is_valid = true,
         },
         {
-            .raw = str("/foo/^bar"),
-            .path = str("/foo/^bar"),
+            .raw = strl("/foo/^bar"),
+            .path = strl("/foo/^bar"),
             .is_valid = false,
         },
         {
-            .raw = str("/foo^bar/"),
-            .path = str("/foo^bar/"),
+            .raw = strl("/foo^bar/"),
+            .path = strl("/foo^bar/"),
             .is_valid = false,
         },
         {
-            .raw = str("foo/"),
-            .path = str("foo/"),
+            .raw = strl("foo/"),
+            .path = strl("foo/"),
             .is_valid = true,
         },
         {
-            .raw = str("/foo"),
-            .path = str("/foo"),
+            .raw = strl("/foo"),
+            .path = strl("/foo"),
             .is_valid = true,
         },
         {
-            .raw = str("//foo@[::1]:8080"),
-            .authority = str("foo@[::1]:8080"),
-            .userinfo = str("foo"),
-            .host = str("[::1]"),
-            .port = str("8080"),
+            .raw = strl("//foo@[::1]:8080"),
+            .authority = strl("foo@[::1]:8080"),
+            .userinfo = strl("foo"),
+            .host = strl("[::1]"),
+            .port = strl("8080"),
             .is_valid = true,
         },
         {
-            .raw = str("//[::12345]"),
-            .authority = str("[::12345]"),
-            .host = str("[::12345]"),
+            .raw = strl("//[::12345]"),
+            .authority = strl("[::12345]"),
+            .host = strl("[::12345]"),
             .is_valid = false,
         },
         {
-            .raw = str("//[::127.0.0.1]"),
-            .authority = str("[::127.0.0.1]"),
-            .host = str("[::127.0.0.1]"),
+            .raw = strl("//[::127.0.0.1]"),
+            .authority = strl("[::127.0.0.1]"),
+            .host = strl("[::127.0.0.1]"),
             .is_valid = true,
         },
         {
-            .raw = str("//[::1:2:3:4:5:6:7]"),
-            .authority = str("[::1:2:3:4:5:6:7]"),
-            .host = str("[::1:2:3:4:5:6:7]"),
+            .raw = strl("//[::1:2:3:4:5:6:7]"),
+            .authority = strl("[::1:2:3:4:5:6:7]"),
+            .host = strl("[::1:2:3:4:5:6:7]"),
             .is_valid = true,
         },
         {
-            .raw = str("//[::1:2:3:4:5:6:7:8]"),
-            .authority = str("[::1:2:3:4:5:6:7:8]"),
-            .host = str("[::1:2:3:4:5:6:7:8]"),
+            .raw = strl("//[::1:2:3:4:5:6:7:8]"),
+            .authority = strl("[::1:2:3:4:5:6:7:8]"),
+            .host = strl("[::1:2:3:4:5:6:7:8]"),
             .is_valid = false,
         },
         {
-            .raw = str("//[1::2:3:4:5:6:7]"),
-            .authority = str("[1::2:3:4:5:6:7]"),
-            .host = str("[1::2:3:4:5:6:7]"),
+            .raw = strl("//[1::2:3:4:5:6:7]"),
+            .authority = strl("[1::2:3:4:5:6:7]"),
+            .host = strl("[1::2:3:4:5:6:7]"),
             .is_valid = true,
         },
         {
-            .raw = str("//[1::2:3:4:5:6:7:8]"),
-            .authority = str("[1::2:3:4:5:6:7:8]"),
-            .host = str("[1::2:3:4:5:6:7:8]"),
+            .raw = strl("//[1::2:3:4:5:6:7:8]"),
+            .authority = strl("[1::2:3:4:5:6:7:8]"),
+            .host = strl("[1::2:3:4:5:6:7:8]"),
             .is_valid = false,
         },
         {
-            .raw = str("//[]"),
-            .authority = str("[]"),
-            .host = str("[]"),
+            .raw = strl("//[]"),
+            .authority = strl("[]"),
+            .host = strl("[]"),
             .is_valid = false,
         },
         {
-            .raw = str("//["),
-            .authority = str("["),
-            .host = str("["),
+            .raw = strl("//["),
+            .authority = strl("["),
+            .host = strl("["),
             .is_valid = false,
         },
         {
-            .raw = str("//[1:]"),
-            .authority = str("[1:]"),
-            .host = str("[1:]"),
+            .raw = strl("//[1:]"),
+            .authority = strl("[1:]"),
+            .host = strl("[1:]"),
             .is_valid = false,
         },
         {
-            .raw = str("//[1:2:3:4:5:6:7:8]"),
-            .authority = str("[1:2:3:4:5:6:7:8]"),
-            .host = str("[1:2:3:4:5:6:7:8]"),
+            .raw = strl("//[1:2:3:4:5:6:7:8]"),
+            .authority = strl("[1:2:3:4:5:6:7:8]"),
+            .host = strl("[1:2:3:4:5:6:7:8]"),
             .is_valid = true,
         },
         {
-            .raw = str("//[0:0:0:0:0:0:127.0.0.1]"),
-            .authority = str("[0:0:0:0:0:0:127.0.0.1]"),
-            .host = str("[0:0:0:0:0:0:127.0.0.1]"),
+            .raw = strl("//[0:0:0:0:0:0:127.0.0.1]"),
+            .authority = strl("[0:0:0:0:0:0:127.0.0.1]"),
+            .host = strl("[0:0:0:0:0:0:127.0.0.1]"),
             .is_valid = true,
         },
         {
-            .raw = str("//[0:0:0:0:0:0:0:127.0.0.1]"),
-            .authority = str("[0:0:0:0:0:0:0:127.0.0.1]"),
-            .host = str("[0:0:0:0:0:0:0:127.0.0.1]"),
+            .raw = strl("//[0:0:0:0:0:0:0:127.0.0.1]"),
+            .authority = strl("[0:0:0:0:0:0:0:127.0.0.1]"),
+            .host = strl("[0:0:0:0:0:0:0:127.0.0.1]"),
             .is_valid = false,
         },
         {
-            .raw = str("//[::0:0:0:0:0:0:127.0.0.1]"),
-            .authority = str("[::0:0:0:0:0:0:127.0.0.1]"),
-            .host = str("[::0:0:0:0:0:0:127.0.0.1]"),
+            .raw = strl("//[::0:0:0:0:0:0:127.0.0.1]"),
+            .authority = strl("[::0:0:0:0:0:0:127.0.0.1]"),
+            .host = strl("[::0:0:0:0:0:0:127.0.0.1]"),
             .is_valid = false,
         },
         {
-            .raw = str("//[::0::1]"),
-            .authority = str("[::0::1]"),
-            .host = str("[::0::1]"),
+            .raw = strl("//[::0::1]"),
+            .authority = strl("[::0::1]"),
+            .host = strl("[::0::1]"),
             .is_valid = false,
         },
         {
-            .raw = str("//foo bar@localhost"),
-            .authority = str("foo bar@localhost"),
-            .userinfo = str("foo bar"),
-            .host = str("localhost"),
+            .raw = strl("//foo bar@localhost"),
+            .authority = strl("foo bar@localhost"),
+            .userinfo = strl("foo bar"),
+            .host = strl("localhost"),
             .is_valid = false,
         },
         {
-            .raw = str("//localhost: 8080"),
-            .authority = str("localhost: 8080"),
-            .host = str("localhost"),
-            .port = str(" 8080"),
+            .raw = strl("//localhost: 8080"),
+            .authority = strl("localhost: 8080"),
+            .host = strl("localhost"),
+            .port = strl(" 8080"),
             .is_valid = false,
         },
         {
-            .raw = str("index.html?id=foo bar"),
-            .path = str("index.html"),
-            .query = str("id=foo bar"),
+            .raw = strl("index.html?id=foo bar"),
+            .path = strl("index.html"),
+            .query = strl("id=foo bar"),
             .is_valid = false,
         },
         {
-            .raw = str("index.html#id=foo bar"),
-            .path = str("index.html"),
-            .fragment = str("id=foo bar"),
+            .raw = strl("index.html#id=foo bar"),
+            .path = strl("index.html"),
+            .fragment = strl("id=foo bar"),
             .is_valid = false,
         },
         {
-            .raw = str("//localhost?id=1"),
-            .authority = str("localhost"),
-            .host = str("localhost"),
-            .query = str("id=1"),
+            .raw = strl("//localhost?id=1"),
+            .authority = strl("localhost"),
+            .host = strl("localhost"),
+            .query = strl("id=1"),
             .is_valid = true,
         },
         {
-            .raw = str("//localhost#title"),
-            .authority = str("localhost"),
-            .host = str("localhost"),
-            .fragment = str("title"),
+            .raw = strl("//localhost#title"),
+            .authority = strl("localhost"),
+            .host = strl("localhost"),
+            .fragment = strl("title"),
             .is_valid = true,
         },
     };
-
-    struct table_resolve
-    {
-        capy_string base;
-        capy_string reference;
-        capy_string expected;
-    };
-
-    struct table_resolve uris_reference[] = {
-        {str("//localhost"), str(""), str("//localhost")},
-        {str("//localhost"), str("index.html"), str("//localhost/index.html")},
-        {str("//localhost"), str("https:a/.."), str("https:")},
-
-        // RFC 3986: https://datatracker.ietf.org/doc/html/rfc3986#section-5.4.1
-        {str("http://a/b/c/d;p?q"), str("g:h"), str("g:h")},
-        {str("http://a/b/c/d;p?q"), str("g"), str("http://a/b/c/g")},
-        {str("http://a/b/c/d;p?q"), str("./g"), str("http://a/b/c/g")},
-        {str("http://a/b/c/d;p?q"), str("g/"), str("http://a/b/c/g/")},
-        {str("http://a/b/c/d;p?q"), str("/g"), str("http://a/g")},
-        {str("http://a/b/c/d;p?q"), str("//g"), str("http://g")},
-        {str("http://a/b/c/d;p?q"), str("?y"), str("http://a/b/c/d;p?y")},
-        {str("http://a/b/c/d;p?q"), str("g?y"), str("http://a/b/c/g?y")},
-        {str("http://a/b/c/d;p?q"), str("#s"), str("http://a/b/c/d;p?q#s")},
-        {str("http://a/b/c/d;p?q"), str("g#s"), str("http://a/b/c/g#s")},
-        {str("http://a/b/c/d;p?q"), str("g?y#s"), str("http://a/b/c/g?y#s")},
-        {str("http://a/b/c/d;p?q"), str(";x"), str("http://a/b/c/;x")},
-        {str("http://a/b/c/d;p?q"), str("g;x"), str("http://a/b/c/g;x")},
-        {str("http://a/b/c/d;p?q"), str("g;x?y#s"), str("http://a/b/c/g;x?y#s")},
-        {str("http://a/b/c/d;p?q"), str(""), str("http://a/b/c/d;p?q")},
-        {str("http://a/b/c/d;p?q"), str("."), str("http://a/b/c/")},
-        {str("http://a/b/c/d;p?q"), str("./"), str("http://a/b/c/")},
-        {str("http://a/b/c/d;p?q"), str(".."), str("http://a/b/")},
-        {str("http://a/b/c/d;p?q"), str("../"), str("http://a/b/")},
-        {str("http://a/b/c/d;p?q"), str("../g"), str("http://a/b/g")},
-        {str("http://a/b/c/d;p?q"), str("../.."), str("http://a/")},
-        {str("http://a/b/c/d;p?q"), str("../../"), str("http://a/")},
-        {str("http://a/b/c/d;p?q"), str("../../g"), str("http://a/g")},
-        {str("http://a/b/c/d;p?q"), str("/./g"), str("http://a/g")},
-        {str("http://a/b/c/d;p?q"), str("/../g"), str("http://a/g")},
-        {str("http://a/b/c/d;p?q"), str("g."), str("http://a/b/c/g.")},
-        {str("http://a/b/c/d;p?q"), str(".g"), str("http://a/b/c/.g")},
-        {str("http://a/b/c/d;p?q"), str("g.."), str("http://a/b/c/g..")},
-        {str("http://a/b/c/d;p?q"), str("..g"), str("http://a/b/c/..g")},
-        {str("http://a/b/c/d;p?q"), str("./../g"), str("http://a/b/g")},
-        {str("http://a/b/c/d;p?q"), str("./g/."), str("http://a/b/c/g/")},
-        {str("http://a/b/c/d;p?q"), str("g/./h"), str("http://a/b/c/g/h")},
-        {str("http://a/b/c/d;p?q"), str("g/../h"), str("http://a/b/c/h")},
-        {str("http://a/b/c/d;p?q"), str("g;x=1/./y"), str("http://a/b/c/g;x=1/y")},
-        {str("http://a/b/c/d;p?q"), str("g;x=1/../y"), str("http://a/b/c/y")},
-        {str("http://a/b/c/d;p?q"), str("g?y/./x"), str("http://a/b/c/g?y/./x")},
-        {str("http://a/b/c/d;p?q"), str("g?y/../x"), str("http://a/b/c/g?y/../x")},
-        {str("http://a/b/c/d;p?q"), str("g#s/./x"), str("http://a/b/c/g#s/./x")},
-        {str("http://a/b/c/d;p?q"), str("g#s/../x"), str("http://a/b/c/g#s/../x")},
-        {str("http://a/b/c/d;p?q"), str("http:g"), str("http:g")},
-    };
-
-    capy_arena *arena = capy_arena_init(GiB(8ULL));
 
     for (size_t i = 0; i < arrlen(uris); i++)
     {
@@ -356,6 +299,68 @@ static int test_uri(void)
         expect_str_eq(uri.fragment, uris[i].fragment);
     }
 
+    return true;
+}
+
+static int test_uri_resolve_reference(void)
+{
+    struct table_resolve
+    {
+        capy_string base;
+        capy_string reference;
+        capy_string expected;
+    };
+
+    struct table_resolve uris_reference[] = {
+        {strl("//localhost"), strl(""), strl("//localhost")},
+        {strl("//localhost"), strl("index.html"), strl("//localhost/index.html")},
+        {strl("//localhost"), strl("https:a/.."), strl("https:")},
+
+        // RFC 3986: https://datatracker.ietf.org/doc/html/rfc3986#section-5.4.1
+        {strl("http://a/b/c/d;p?q"), strl("g:h"), strl("g:h")},
+        {strl("http://a/b/c/d;p?q"), strl("g"), strl("http://a/b/c/g")},
+        {strl("http://a/b/c/d;p?q"), strl("./g"), strl("http://a/b/c/g")},
+        {strl("http://a/b/c/d;p?q"), strl("g/"), strl("http://a/b/c/g/")},
+        {strl("http://a/b/c/d;p?q"), strl("/g"), strl("http://a/g")},
+        {strl("http://a/b/c/d;p?q"), strl("//g"), strl("http://g")},
+        {strl("http://a/b/c/d;p?q"), strl("?y"), strl("http://a/b/c/d;p?y")},
+        {strl("http://a/b/c/d;p?q"), strl("g?y"), strl("http://a/b/c/g?y")},
+        {strl("http://a/b/c/d;p?q"), strl("#s"), strl("http://a/b/c/d;p?q#s")},
+        {strl("http://a/b/c/d;p?q"), strl("g#s"), strl("http://a/b/c/g#s")},
+        {strl("http://a/b/c/d;p?q"), strl("g?y#s"), strl("http://a/b/c/g?y#s")},
+        {strl("http://a/b/c/d;p?q"), strl(";x"), strl("http://a/b/c/;x")},
+        {strl("http://a/b/c/d;p?q"), strl("g;x"), strl("http://a/b/c/g;x")},
+        {strl("http://a/b/c/d;p?q"), strl("g;x?y#s"), strl("http://a/b/c/g;x?y#s")},
+        {strl("http://a/b/c/d;p?q"), strl(""), strl("http://a/b/c/d;p?q")},
+        {strl("http://a/b/c/d;p?q"), strl("."), strl("http://a/b/c/")},
+        {strl("http://a/b/c/d;p?q"), strl("./"), strl("http://a/b/c/")},
+        {strl("http://a/b/c/d;p?q"), strl(".."), strl("http://a/b/")},
+        {strl("http://a/b/c/d;p?q"), strl("../"), strl("http://a/b/")},
+        {strl("http://a/b/c/d;p?q"), strl("../g"), strl("http://a/b/g")},
+        {strl("http://a/b/c/d;p?q"), strl("../.."), strl("http://a/")},
+        {strl("http://a/b/c/d;p?q"), strl("../../"), strl("http://a/")},
+        {strl("http://a/b/c/d;p?q"), strl("../../g"), strl("http://a/g")},
+        {strl("http://a/b/c/d;p?q"), strl("/./g"), strl("http://a/g")},
+        {strl("http://a/b/c/d;p?q"), strl("/../g"), strl("http://a/g")},
+        {strl("http://a/b/c/d;p?q"), strl("g."), strl("http://a/b/c/g.")},
+        {strl("http://a/b/c/d;p?q"), strl(".g"), strl("http://a/b/c/.g")},
+        {strl("http://a/b/c/d;p?q"), strl("g.."), strl("http://a/b/c/g..")},
+        {strl("http://a/b/c/d;p?q"), strl("..g"), strl("http://a/b/c/..g")},
+        {strl("http://a/b/c/d;p?q"), strl("./../g"), strl("http://a/b/g")},
+        {strl("http://a/b/c/d;p?q"), strl("./g/."), strl("http://a/b/c/g/")},
+        {strl("http://a/b/c/d;p?q"), strl("g/./h"), strl("http://a/b/c/g/h")},
+        {strl("http://a/b/c/d;p?q"), strl("g/../h"), strl("http://a/b/c/h")},
+        {strl("http://a/b/c/d;p?q"), strl("g;x=1/./y"), strl("http://a/b/c/g;x=1/y")},
+        {strl("http://a/b/c/d;p?q"), strl("g;x=1/../y"), strl("http://a/b/c/y")},
+        {strl("http://a/b/c/d;p?q"), strl("g?y/./x"), strl("http://a/b/c/g?y/./x")},
+        {strl("http://a/b/c/d;p?q"), strl("g?y/../x"), strl("http://a/b/c/g?y/../x")},
+        {strl("http://a/b/c/d;p?q"), strl("g#s/./x"), strl("http://a/b/c/g#s/./x")},
+        {strl("http://a/b/c/d;p?q"), strl("g#s/../x"), strl("http://a/b/c/g#s/../x")},
+        {strl("http://a/b/c/d;p?q"), strl("http:g"), strl("http:g")},
+    };
+
+    capy_arena *arena = capy_arena_init(0, MiB(8));
+
     for (size_t i = 0; i < arrlen(uris_reference); i++)
     {
         capy_uri base = capy_uri_parse(uris_reference[i].base);
@@ -366,5 +371,13 @@ static int test_uri(void)
         expect_str_eq(result, uris_reference[i].expected);
     }
 
-    return 0;
+    capy_arena_destroy(arena);
+
+    return true;
+}
+
+static void test_uri(testbench *t)
+{
+    runtest(t, test_uri_parse, "capy_uri_parse");
+    runtest(t, test_uri_resolve_reference, "capy_uri_resolve_reference");
 }

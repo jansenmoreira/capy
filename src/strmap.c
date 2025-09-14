@@ -1,4 +1,5 @@
 #include <capy/hash.h>
+#include <capy/macros.h>
 #include <capy/strmap.h>
 #include <errno.h>
 
@@ -141,7 +142,7 @@ capy_strset *capy_strset_init(capy_arena *arena, size_t capacity)
         set->size = 0;
         set->capacity = capacity;
         set->arena = arena;
-        set->items = ptrcast(capy_string *, set + 1);
+        set->items = recast(capy_string *, set + 1);
     }
 
     return set;
@@ -182,7 +183,7 @@ capy_strkvmap *capy_strkvmap_init(capy_arena *arena, size_t capacity)
         m->size = 0;
         m->capacity = capacity;
         m->arena = arena;
-        m->items = ptrcast(capy_strkv *, m + 1);
+        m->items = recast(capy_strkv *, m + 1);
     }
 
     return m;
@@ -225,7 +226,7 @@ capy_strkvmmap *capy_strkvmmap_init(capy_arena *arena, size_t capacity)
         mm->size = 0;
         mm->capacity = capacity;
         mm->arena = arena;
-        mm->items = ptrcast(capy_strkvn *, mm + 1);
+        mm->items = recast(capy_strkvn *, mm + 1);
     }
 
     return mm;
@@ -294,7 +295,7 @@ must_check int capy_strkvmmap_add(capy_strkvmmap *mm, capy_string key, capy_stri
         item = item->next;
     }
 
-    item->next = capy_arena_make(mm->arena, capy_strkvn, 1);
+    item->next = make(mm->arena, capy_strkvn, 1);
 
     if (item->next == NULL)
     {
