@@ -96,33 +96,13 @@ typedef struct capy_http_request
     int close;
 } capy_http_request;
 
-typedef struct capy_http_response
-{
-    capy_strkvmmap *headers;
-    capy_buffer *content;
-    capy_http_status status;
-} capy_http_response;
-
-typedef struct capy_http_server_options
-{
-    size_t workers;
-    size_t workers_conn_max;
-    int trace;
-
-    size_t msg_buffer_size;
-    size_t max_mem_req_headers;
-    size_t max_mem_req_content;
-    size_t max_mem_req_trailers;
-    size_t max_mem_total;
-} capy_http_server_options;
-
-typedef int(capy_http_handler)(capy_arena *arena, capy_http_request *request, capy_http_response *response);
+typedef capy_http_status (*capy_http_handler)(capy_arena *arena, capy_http_request *request, capy_strkvmmap *headers, capy_buffer *body);
 
 typedef struct capy_http_route
 {
     capy_http_method method;
     capy_string path;
-    capy_http_handler *handler;
+    capy_http_handler handler;
 } capy_http_route;
 
 typedef struct capy_http_router_map
@@ -139,6 +119,22 @@ typedef struct capy_http_router
     capy_http_route routes[10];
 } capy_http_router;
 
+typedef struct capy_http_server_options
+{
+    const char *host;
+    const char *port;
+
+    int routes_size;
+
+    capy_http_route *routes;
+
+    size_t workers;
+    size_t connections;
+
+    size_t line_buffer_size;
+    size_t mem_connection_max;
+} capy_http_server_options;
+
 // DECLARATIONS
 
 capy_http_method capy_http_parse_method(capy_string input);
@@ -147,12 +143,12 @@ must_check int capy_http_parse_reqline(capy_arena *arena, capy_http_request *req
 capy_strkvmmap *capy_http_parse_uriparams(capy_arena *arena, capy_string path, capy_string handler_path);
 must_check int capy_http_parse_field(capy_strkvmmap *fields, capy_string line);
 
-must_check int capy_http_write_response(capy_buffer *buffer, capy_http_response *response);
+must_check int capy_http_write_response(capy_buffer *buffer, capy_http_status status, capy_strkvmmap *headers, capy_buffer *body, int close);
 must_check int capy_http_request_validate(capy_arena *arena, capy_http_request *request);
-int capy_http_serve(const char *host, const char *port, capy_http_router *router, capy_http_server_options options);
+int capy_http_serve(capy_http_server_options options);
 
 capy_http_router *capy_http_router_init(capy_arena *arena, int n, capy_http_route *routes);
 capy_http_route *capy_http_route_get(capy_http_router *router, capy_http_method method, capy_string path);
-int capy_http_router_handle(capy_arena *arena, capy_http_router *router, capy_http_request *request, capy_http_response *response);
+capy_http_status capy_http_router_handle(capy_arena *arena, capy_http_router *router, capy_http_request *request, capy_strkvmmap *headers, capy_buffer *body);
 
 #endif

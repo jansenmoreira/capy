@@ -24,7 +24,9 @@ capy_arena *capy_arena_init(size_t min, size_t max)
     size_t page_size = (size_t)(sysconf(_SC_PAGE_SIZE));
 
     max = align_to(max, page_size);
-    min = align_to(min + sizeof(capy_arena), page_size);
+    min = (min != 0) ? align_to(min, page_size) : page_size;
+
+    capy_mem("capy_arena_init: capacity=%zu", min);
 
     capy_arena *arena = mmap(NULL, max, PROT_NONE, MAP_NORESERVE | MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
@@ -101,6 +103,8 @@ void *capy_arena_alloc(capy_arena *arena, size_t size, size_t align, int zeroini
     {
         size_t capacity = next_pow2(arena->capacity + size);
 
+        capy_mem("capy_arena_alloc: ptr=%p capacity=%zu", (void *)arena, capacity);
+
         if (mprotect(arena, capacity, PROT_READ | PROT_WRITE))
         {
             return NULL;
@@ -139,6 +143,8 @@ int capy_arena_free(capy_arena *arena, void *addr)
             {
                 capacity = arena->min;
             }
+
+            capy_mem("capy_arena_free: capacity=%zu", capacity);
 
             char *tail = (char *)(arena) + capacity;
 

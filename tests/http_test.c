@@ -268,6 +268,8 @@ static int test_capy_http_write_response(void)
 
     fields = capy_strkvmmap_init(arena, 16);
 
+    capy_buffer *body = capy_buffer_init(arena, 1024);
+
     capy_strkvmmap_clear(fields);
 
     expect_s_eq(capy_strkvmmap_add(fields, strl("X-Foo"), strl("bar")), 0);
@@ -275,16 +277,11 @@ static int test_capy_http_write_response(void)
     expect_s_eq(capy_strkvmmap_add(fields, strl("X-Foo"), strl("buz")), 0);
     expect_s_eq(capy_strkvmmap_set(fields, strl("X-Bar"), strl("foo")), 0);
 
-    capy_http_response response = {
-        .headers = fields,
-        .content = capy_buffer_init(arena, 1024),
-        .status = 200,
-    };
-
-    expect_s_eq(capy_buffer_wcstr(response.content, "foobar"), 0);
+    expect_s_eq(capy_buffer_wcstr(body, "foobar"), 0);
 
     capy_buffer *buffer = capy_buffer_init(arena, 1024);
-    expect_s_eq(capy_http_write_response(buffer, &response), 0);
+
+    expect_s_eq(capy_http_write_response(buffer, 200, fields, body, false), 0);
 
     // char expected_response[] =
     //     "HTTP/1.1 200\r\n"
@@ -302,54 +299,100 @@ static int test_capy_http_write_response(void)
     return true;
 }
 
+static capy_http_status test_handler1(unused capy_arena *arena, unused capy_http_request *request, unused capy_strkvmmap *headers, unused capy_buffer *body)
+{
+    return CAPY_HTTP_OK;
+}
+
+static capy_http_status test_handler2(unused capy_arena *arena, unused capy_http_request *request, unused capy_strkvmmap *headers, unused capy_buffer *body)
+{
+    return CAPY_HTTP_OK;
+}
+
+static capy_http_status test_handler3(unused capy_arena *arena, unused capy_http_request *request, unused capy_strkvmmap *headers, unused capy_buffer *body)
+{
+    return CAPY_HTTP_OK;
+}
+
+static capy_http_status test_handler4(unused capy_arena *arena, unused capy_http_request *request, unused capy_strkvmmap *headers, unused capy_buffer *body)
+{
+    return CAPY_HTTP_OK;
+}
+
+static capy_http_status test_handler5(unused capy_arena *arena, unused capy_http_request *request, unused capy_strkvmmap *headers, unused capy_buffer *body)
+{
+    return CAPY_HTTP_OK;
+}
+
+static capy_http_status test_handler6(unused capy_arena *arena, unused capy_http_request *request, unused capy_strkvmmap *headers, unused capy_buffer *body)
+{
+    return CAPY_HTTP_OK;
+}
+
+static capy_http_status test_handler7(unused capy_arena *arena, unused capy_http_request *request, unused capy_strkvmmap *headers, unused capy_buffer *body)
+{
+    return CAPY_HTTP_OK;
+}
+
+static capy_http_status test_handler8(unused capy_arena *arena, unused capy_http_request *request, unused capy_strkvmmap *headers, unused capy_buffer *body)
+{
+    return CAPY_HTTP_OK;
+}
+
+static capy_http_status test_handler9(unused capy_arena *arena, unused capy_http_request *request, unused capy_strkvmmap *headers, unused capy_buffer *body)
+{
+    return CAPY_HTTP_OK;
+}
+
 static int test_capy_http_router_init(void)
 {
     capy_arena *arena = capy_arena_init(0, GiB(1));
 
     capy_http_router *router = NULL;
-    capy_http_route *route = NULL;
 
     capy_http_route routes[] = {
-        {CAPY_HTTP_GET, strl("/foo/bar/baz"), (capy_http_handler *)(1)},
-        {CAPY_HTTP_POST, strl("/foo/baz"), (capy_http_handler *)(2)},
-        {CAPY_HTTP_POST, strl("/foo/baz/bar"), (capy_http_handler *)(3)},
-        {CAPY_HTTP_POST, strl("/foo/bar"), (capy_http_handler *)(4)},
-        {CAPY_HTTP_GET, strl("/foo/bar"), (capy_http_handler *)(5)},
-        {CAPY_HTTP_GET, strl("/foo/bar"), (capy_http_handler *)(6)},
-        {CAPY_HTTP_POST, strl("/bar/foo"), (capy_http_handler *)(7)},
-        {CAPY_HTTP_POST, strl("foo/bar"), (capy_http_handler *)(8)},
-        {CAPY_HTTP_POST, strl("foo/^id/baz"), (capy_http_handler *)(9)},
+        {CAPY_HTTP_GET, strl("/foo/bar/baz"), test_handler1},
+        {CAPY_HTTP_POST, strl("/foo/baz"), test_handler2},
+        {CAPY_HTTP_POST, strl("/foo/baz/bar"), test_handler3},
+        {CAPY_HTTP_POST, strl("/foo/bar"), test_handler4},
+        {CAPY_HTTP_GET, strl("/foo/bar"), test_handler5},
+        {CAPY_HTTP_GET, strl("/foo/bar"), test_handler6},
+        {CAPY_HTTP_POST, strl("/bar/foo"), test_handler7},
+        {CAPY_HTTP_POST, strl("foo/bar"), test_handler8},
+        {CAPY_HTTP_POST, strl("foo/^id/baz"), test_handler9},
     };
+
+    capy_http_route *route;
 
     router = capy_http_router_init(arena, arrlen(routes), routes);
 
     route = capy_http_route_get(router, CAPY_HTTP_GET, strl("foo/bar/baz/"));
     expect_p_ne(route, NULL);
-    expect_u_eq((size_t)route->handler, (size_t)(1));
+    expect_p_eq(route->handler, test_handler1);
 
     route = capy_http_route_get(router, CAPY_HTTP_POST, strl("foo/baz/"));
     expect_p_ne(route, NULL);
-    expect_u_eq((size_t)route->handler, (size_t)(2));
+    expect_p_eq(route->handler, test_handler2);
 
     route = capy_http_route_get(router, CAPY_HTTP_POST, strl("foo/baz/bar"));
     expect_p_ne(route, NULL);
-    expect_u_eq((size_t)route->handler, (size_t)(3));
+    expect_p_eq(route->handler, test_handler3);
 
     route = capy_http_route_get(router, CAPY_HTTP_POST, strl("foo/bar"));
     expect_p_ne(route, NULL);
-    expect_u_eq((size_t)route->handler, (size_t)(8));
+    expect_p_eq(route->handler, test_handler8);
 
     route = capy_http_route_get(router, CAPY_HTTP_GET, strl("foo/bar"));
     expect_p_ne(route, NULL);
-    expect_u_eq((size_t)route->handler, (size_t)(6));
+    expect_p_eq(route->handler, test_handler6);
 
     route = capy_http_route_get(router, CAPY_HTTP_POST, strl("bar/foo"));
     expect_p_ne(route, NULL);
-    expect_u_eq((size_t)route->handler, (size_t)(7));
+    expect_p_eq(route->handler, test_handler7);
 
     route = capy_http_route_get(router, CAPY_HTTP_POST, strl("foo/123412341324/baz"));
     expect_p_ne(route, NULL);
-    expect_u_eq((size_t)route->handler, (size_t)(9));
+    expect_p_eq(route->handler, test_handler9);
 
     route = capy_http_route_get(router, CAPY_HTTP_POST, strl("bar/baz"));
     expect_p_eq(route, NULL);

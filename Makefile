@@ -1,8 +1,8 @@
 .PHONY: linux/debug linux/release rapidhash coverage
 
-CC_FLAGS := -Iinclude -std=c99 -Werror -Wall -Wextra -Wconversion -Wpedantic -Wmissing-prototypes -Wmissing-variable-declarations -Wno-missing-field-initializers -Wno-unused-function
+CC_FLAGS := -Iinclude -std=c11 -Werror -Wall -Wextra -Wconversion -Wpedantic -Wmissing-prototypes -Wmissing-variable-declarations -Wno-missing-field-initializers -Wno-unused-function
 
-LINUX_FLAGS := -DCAPY_LINUX -D_GNU_SOURCE -D_POSIX_C_SOURCE=200112L
+LINUX_FLAGS := -DCAPY_SO_LINUX -DCAPY_ARCH_AMD64 -D_GNU_SOURCE -D_POSIX_C_SOURCE=200112L
 
 LINUX_DEBUG_FLAGS := ${CC_FLAGS} ${LINUX_FLAGS} -g -fprofile-arcs -ftest-coverage
 

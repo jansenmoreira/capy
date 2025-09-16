@@ -296,7 +296,7 @@ static must_check int capy_http_router_map_set(capy_arena *arena, capy_http_rout
     return 0;
 }
 
-static capy_http_router *http_route_add_(capy_arena *arena, capy_http_router *router, capy_http_method method, capy_string suffix, capy_string path, capy_http_handler *handler)
+static capy_http_router *http_route_add_(capy_arena *arena, capy_http_router *router, capy_http_method method, capy_string suffix, capy_string path, capy_http_handler handler)
 {
     if (router == NULL)
     {
@@ -331,25 +331,19 @@ static capy_http_router *http_route_add_(capy_arena *arena, capy_http_router *ro
     return router;
 }
 
-static int http_404_handler(capy_arena *arena, capy_http_request *request, capy_http_response *response)
+static capy_http_status http_status_text(capy_http_status status, capy_strkvmmap *headers, capy_buffer *body)
 {
-    (void)request;
+    int err;
 
-    response->content = capy_buffer_init(arena, 128);
-
-    if (response->content == NULL)
+    if ((err = capy_strkvmmap_add(headers, strl("Content-Type"), strl("text/plain; charset=UTF-8"))))
     {
-        return ENOMEM;
+        return CAPY_HTTP_INTERNAL_SERVER_ERROR;
     }
 
-    int err = capy_buffer_wcstr(response->content, "404 Not Found!\n");
-
-    if (err)
+    if ((err = capy_buffer_format(body, 0, "%lu %s\n", status, capy_http_status_string[status])))
     {
-        return err;
+        return CAPY_HTTP_INTERNAL_SERVER_ERROR;
     }
-
-    response->status = CAPY_HTTP_NOT_FOUND;
 
     return 0;
 }
@@ -490,7 +484,7 @@ capy_http_version capy_http_parse_version(capy_string input)
 static const char *http_weekday[] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
 static const char *http_months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 
-int capy_http_write_response(capy_buffer *buffer, capy_http_response *response)
+int capy_http_write_response(capy_buffer *buffer, capy_http_status status, capy_strkvmmap *headers, capy_buffer *body, int close)
 {
     int err;
 
@@ -498,24 +492,26 @@ int capy_http_write_response(capy_buffer *buffer, capy_http_response *response)
     struct tm ct;
     gmtime_r(&t, &ct);
 
-    size_t content_length = (response->content) ? response->content->size : 0;
+    size_t content_length = (body) ? body->size : 0;
+    const char *close_header = (close) ? "Connection: close\r\n" : "";
 
     if ((err = capy_buffer_format(buffer, 0,
                                   "HTTP/1.1 %d %s\r\n"
                                   "Date: %s, %02d %s %04d %02d:%02d:%02d GMT\r\n"
-                                  "Content-Length: %llu\r\n",
-                                  response->status, capy_http_status_string[response->status].data,
+                                  "Content-Length: %llu\r\n"
+                                  "%s",
+                                  status, capy_http_status_string[status].data,
                                   http_weekday[ct.tm_wday],
                                   ct.tm_mday, http_months[ct.tm_mon], ct.tm_year + 1900,
                                   ct.tm_hour, ct.tm_min, ct.tm_sec,
-                                  content_length)))
+                                  content_length, close_header)))
     {
         return err;
     }
 
-    for (size_t i = 0; i < response->headers->capacity; i++)
+    for (size_t i = 0; i < headers->capacity; i++)
     {
-        capy_strkvn *header = response->headers->items + i;
+        capy_strkvn *header = headers->items + i;
 
         if (header->key.size == 0)
         {
@@ -538,7 +534,7 @@ int capy_http_write_response(capy_buffer *buffer, capy_http_response *response)
         return err;
     }
 
-    return capy_buffer_wbytes(buffer, response->content->size, response->content->data);
+    return capy_buffer_wbytes(buffer, body->size, body->data);
 }
 
 int capy_http_parse_reqline(capy_arena *arena, capy_http_request *request, capy_string line)
@@ -779,7 +775,7 @@ capy_http_route *capy_http_route_get(capy_http_router *router, capy_http_method 
 
     if (segment.size == 0)
     {
-        capy_http_route *route = &router->routes[method];
+        capy_http_route *route = router->routes + method;
 
         if (route->handler == NULL)
         {
@@ -844,16 +840,17 @@ capy_strkvmmap *capy_http_parse_uriparams(capy_arena *arena, capy_string path, c
     return params;
 }
 
-int capy_http_router_handle(capy_arena *arena, capy_http_router *router,
-                            capy_http_request *request, capy_http_response *response)
+capy_http_status capy_http_router_handle(capy_arena *arena, capy_http_router *router,
+                                         capy_http_request *request, capy_strkvmmap *headers, capy_buffer *body)
 {
     capy_http_route *route = capy_http_route_get(router, request->method, request->uri.path);
 
     if (route == NULL)
     {
-        return http_404_handler(arena, request, response);
+        return http_status_text(CAPY_HTTP_NOT_FOUND, headers, body);
     }
 
     request->params = capy_http_parse_uriparams(arena, request->uri.path, route->path);
-    return route->handler(arena, request, response);
+
+    return route->handler(arena, request, headers, body);
 }

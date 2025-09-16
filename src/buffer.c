@@ -65,6 +65,17 @@ must_check int capy_buffer_resize(capy_buffer *buf, size_t size)
     return 0;
 }
 
+int capy_buffer_format_noalloc(capy_buffer *buf, const char *fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    int n = vsnprintf(buf->data, buf->capacity, fmt, args);
+    capy_assert(n >= 0);
+    buf->size = (size_t)n;
+    va_end(args);
+    return n;
+}
+
 int capy_buffer_format(capy_buffer *buf, size_t max, const char *fmt, ...)
 {
     int n;

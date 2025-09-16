@@ -7,6 +7,7 @@
 #include <capy/buffer.h>
 #include <capy/hash.h>
 #include <capy/http.h>
+#include <capy/logs.h>
 #include <capy/math.h>
 #include <capy/string.h>
 #include <capy/strmap.h>

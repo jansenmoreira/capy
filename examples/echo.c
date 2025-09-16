@@ -5,35 +5,45 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-static int fail_handler(capy_arena *arena, capy_http_request *request, capy_http_response *response)
+static capy_http_status failure_(unused capy_buffer *body, int err, const char *file, int line, const char *msg)
 {
-    (void)!arena;
-    (void)!request;
-    (void)!response;
-
-    return 1;
+    capy_buffer_format_noalloc(body, "[%s:%d] => %s: %s\n", file, line, msg, strerror(err));
+    return CAPY_HTTP_INTERNAL_SERVER_ERROR;
 }
 
-static int params_handler(capy_arena *arena, capy_http_request *request, capy_http_response *response)
+#define failure(body, err, msg) failure_((body), (err), __FILE__, __LINE__, (msg))
+
+static capy_http_status fail_handler(unused capy_arena *arena, unused capy_http_request *request, unused capy_strkvmmap *headers, unused capy_buffer *body)
 {
-    (void)!arena;
+    return CAPY_HTTP_INTERNAL_SERVER_ERROR;
+}
+
+static capy_http_status params_handler(unused capy_arena *arena, capy_http_request *request, unused capy_strkvmmap *headers, capy_buffer *body)
+{
+    int err;
 
     capy_strkvn *param = capy_strkvmmap_get(request->params, strl("id"));
 
-    (void)!capy_buffer_format(response->content, 0, "%.*s -> %.*s\n",
-                              (int)param->key.size, param->key.data,
-                              (int)param->value.size, param->value.data);
+    if ((err = capy_buffer_format(body, 0, "%.*s -> %.*s\n",
+                                  (int)param->key.size, param->key.data,
+                                  (int)param->value.size, param->value.data)))
+    {
+        return failure(body, err, "failed to get URI params");
+    }
 
-    response->status = CAPY_HTTP_OK;
-
-    return 0;
+    return CAPY_HTTP_OK;
 }
 
-static int echo_handler(capy_arena *arena, capy_http_request *request, capy_http_response *response)
+static capy_http_status echo_handler(capy_arena *arena, capy_http_request *request, capy_strkvmmap *headers, capy_buffer *body)
 {
+    int err;
+
     capy_string uri = capy_uri_string(arena, request->uri);
 
-    (void)!capy_buffer_format(response->content, 0, "uri: %s\n", uri.data);
+    if ((err = capy_buffer_format(body, 0, "uri: %s\n", uri.data)))
+    {
+        return failure(body, err, "failed to produce URI");
+    }
 
     for (size_t i = 0; i < request->headers->capacity; i++)
     {
@@ -46,58 +56,85 @@ static int echo_handler(capy_arena *arena, capy_http_request *request, capy_http
 
         while (header != NULL)
         {
-            (void)!capy_buffer_format(response->content, 0, "%s: %s\n", header->key.data, header->value.data);
+            if ((err = capy_buffer_format(body, 0, "%s: %s\n", header->key.data, header->value.data)))
+            {
+                return failure(body, err, "failed to write header");
+            }
+
             header = header->next;
         }
     }
 
-    (void)!capy_buffer_format(response->content, 0, "size: %lu\n", request->content_length);
-    (void)!capy_buffer_wbase64url(response->content, request->content_length, request->content, true);
-    (void)!capy_buffer_wcstr(response->content, "\n");
+    if ((err = capy_buffer_format(body, 0, "size: %lu\n", request->content_length)))
+    {
+        return failure(body, err, "failed to write size");
+    }
 
-    (void)!capy_strkvmmap_set(response->headers, strl("X-Foo"), strl("bar"));
-    (void)!capy_strkvmmap_add(response->headers, strl("X-Foo"), strl("baz"));
-    (void)!capy_strkvmmap_add(response->headers, strl("X-Bar"), strl("foo"));
+    if ((err = capy_buffer_wbase64url(body, request->content_length, request->content, true)))
+    {
+        return failure(body, err, "failed to write base64 encoded body");
+    }
 
-    response->status = CAPY_HTTP_OK;
+    if ((err = capy_buffer_wcstr(body, "\n")))
+    {
+        return failure(body, err, "failed to newline");
+    }
 
-    return 0;
+    if ((err = capy_strkvmmap_set(headers, strl("X-Foo"), strl("bar"))))
+    {
+        return failure(body, err, "failed to set header");
+    }
+
+    if ((err = capy_strkvmmap_add(headers, strl("X-Foo"), strl("baz"))))
+    {
+        return failure(body, err, "failed to set header");
+    }
+
+    if ((err = capy_strkvmmap_add(headers, strl("X-Bar"), strl("foo"))))
+    {
+        return failure(body, err, "failed to set header");
+    }
+
+    return CAPY_HTTP_OK;
 }
 
 int main(int argc, char *argv[])
 {
-    setvbuf(stdout, NULL, _IOLBF, 0);
+    capy_log_init(CAPY_LOG_INFO);
 
     capy_http_server_options options = {
-        .trace = 0,
         .workers = 0,
     };
 
-    const char *host = "127.0.0.1";
-    const char *port = "8080";
+    options.host = "127.0.0.1";
+    options.port = "8080";
 
     int opt;
 
-    while ((opt = getopt(argc, argv, "vw:a:p:")) != -1)
+    while ((opt = getopt(argc, argv, "vmw:c:a:p:")) != -1)
     {
         switch (opt)
         {
             case 'v':
-                options.trace = true;
+                capy_stdout->mask |= CAPY_LOG_DEBUG;
+                break;
+            case 'm':
+                capy_stdout->mask |= CAPY_LOG_MEM;
                 break;
             case 'w':
                 options.workers = (size_t)(strtoull(optarg, NULL, 10));
                 break;
+            case 'c':
+                options.connections = (size_t)(strtoull(optarg, NULL, 10));
+                break;
             case 'a':
-                host = optarg;
+                options.host = optarg;
                 break;
             case 'p':
-                port = optarg;
+                options.port = optarg;
                 break;
         }
     }
-
-    capy_arena *arena = capy_arena_init(0, KiB(8));
 
     capy_http_route routes[] = {
         {CAPY_HTTP_POST, strl("/"), echo_handler},
@@ -105,9 +142,11 @@ int main(int argc, char *argv[])
         {CAPY_HTTP_PUT, strl("/fail/"), fail_handler},
     };
 
-    capy_http_router *router = capy_http_router_init(arena, arrlen(routes), routes);
+    options.routes = routes;
+    options.routes_size = arrlen(routes);
+    options.mem_connection_max = KiB(512);
 
-    capy_http_serve(host, port, router, options);
+    capy_http_serve(options);
 
     return 0;
 }
