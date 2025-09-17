@@ -30,7 +30,7 @@ void capy_logf(capy_logger *logger, unsigned int level, const char *format, ...)
         struct timespec timestamp;
         timespec_get(&timestamp, TIME_UTC);
 
-        n += strftime(log_buffer + n, (size_t)max, "%X", gmtime(&timestamp.tv_sec));
+        n += (ssize_t)strftime(log_buffer + n, (size_t)max, "%X", gmtime(&timestamp.tv_sec));
         max = max - n;
 
         n += snprintf(log_buffer + n, (size_t)max, ".%03ld ", timestamp.tv_nsec / 1000000);

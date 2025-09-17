@@ -10,6 +10,7 @@
 #ifdef __GNUC__
 #define must_check __attribute__((warn_unused_result))
 #define unused __attribute__((unused))
+#define nofail (void)!
 #else
 #define unused
 #define must_check

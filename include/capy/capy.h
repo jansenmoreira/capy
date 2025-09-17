@@ -5,6 +5,7 @@
 #include <capy/assert.h>
 #include <capy/base64.h>
 #include <capy/buffer.h>
+#include <capy/error.h>
 #include <capy/hash.h>
 #include <capy/http.h>
 #include <capy/logs.h>

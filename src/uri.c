@@ -411,6 +411,11 @@ static size_t uri_valid_host(capy_string host)
 
 static size_t uri_valid_scheme(capy_string scheme)
 {
+    if (scheme.size == 0)
+    {
+        return 0;
+    }
+
     capy_string input = scheme;
 
     if (!uri_pctenc_validate(input, URI_SCHEME_BEGIN, NULL))
@@ -488,14 +493,21 @@ static capy_string uri_path_merge(capy_arena *arena, capy_string base, capy_stri
     return (capy_string){.data = buffer, .size = size};
 }
 
-capy_string capy_uri_normalize(capy_arena *arena, capy_string input, int lowercase)
+int capy_uri_normalize(capy_arena *arena, capy_string *output, capy_string input, int lowercase)
 {
     if (input.size == 0)
     {
-        return (capy_string){.size = 0};
+        *output = (capy_string){.size = 0};
+        return 0;
     }
 
     char *buffer = make(arena, char, input.size + 1);
+
+    if (buffer == NULL)
+    {
+        return ENOMEM;
+    }
+
     size_t size = 0;
 
     while (input.size)
@@ -529,7 +541,8 @@ capy_string capy_uri_normalize(capy_arena *arena, capy_string input, int lowerca
         }
     }
 
-    return (capy_string){.data = buffer, .size = size};
+    *output = (capy_string){.data = buffer, .size = size};
+    return 0;
 }
 
 capy_string capy_uri_path_removedots(capy_arena *arena, capy_string path)
@@ -594,23 +607,23 @@ capy_string capy_uri_path_removedots(capy_arena *arena, capy_string path)
     return capy_string_bytes(output_size, output);
 }
 
-void capy_uri_parse_authority(capy_uri *uri)
+capy_uri capy_uri_parse_authority(capy_uri uri)
 {
-    uri->host = uri->authority;
+    uri.host = uri.authority;
 
-    for (size_t i = 0; i < uri->host.size; i++)
+    for (size_t i = 0; i < uri.host.size; i++)
     {
-        if (uri->host.data[i] == '@')
+        if (uri.host.data[i] == '@')
         {
-            uri->userinfo = capy_string_slice(uri->authority, 0, i);
-            uri->host = capy_string_shl(uri->host, i + 1);
+            uri.userinfo = capy_string_slice(uri.authority, 0, i);
+            uri.host = capy_string_shl(uri.host, i + 1);
             break;
         }
     }
 
-    for (size_t i = uri->host.size; i > 0; i--)
+    for (size_t i = uri.host.size; i > 0; i--)
     {
-        char c = uri->host.data[i - 1];
+        char c = uri.host.data[i - 1];
 
         if (c == ']')
         {
@@ -618,11 +631,13 @@ void capy_uri_parse_authority(capy_uri *uri)
         }
         else if (c == ':')
         {
-            uri->port = capy_string_shl(uri->host, i);
-            uri->host = capy_string_slice(uri->host, 0, i - 1);
+            uri.port = capy_string_shl(uri.host, i);
+            uri.host = capy_string_slice(uri.host, 0, i - 1);
             break;
         }
     }
+
+    return uri;
 }
 
 capy_uri capy_uri_parse(capy_string input)
@@ -640,6 +655,7 @@ capy_uri capy_uri_parse(capy_string input)
         else if (c == ':')
         {
             uri.scheme = capy_string_slice(input, 0, i);
+            uri.flags |= CAPY_URI_SCHEME;
             input = capy_string_shl(input, i + 1);
 
             break;
@@ -663,6 +679,7 @@ capy_uri capy_uri_parse(capy_string input)
         }
 
         uri.authority = capy_string_slice(input, 0, i);
+        uri.flags |= CAPY_URI_AUTHORITY;
         input = capy_string_shl(input, i);
     }
 
@@ -695,23 +712,23 @@ capy_uri capy_uri_parse(capy_string input)
         }
 
         uri.query = capy_string_slice(input, 0, i);
+        uri.flags |= CAPY_URI_QUERY;
         input = capy_string_shl(input, i);
     }
 
     if (input.size)
     {
         uri.fragment = capy_string_shl(input, 1);
+        uri.flags |= CAPY_URI_FRAGMENT;
         input = (capy_string){NULL};
     }
 
-    capy_uri_parse_authority(&uri);
-
-    return uri;
+    return capy_uri_parse_authority(uri);
 }
 
 int capy_uri_valid(capy_uri uri)
 {
-    if (uri.scheme.size && !uri_valid_scheme(uri.scheme))
+    if ((uri.flags & CAPY_URI_SCHEME) && !uri_valid_scheme(uri.scheme))
     {
         return false;
     }
@@ -752,61 +769,54 @@ int capy_uri_valid(capy_uri uri)
 // @todo: return error
 capy_uri capy_uri_resolve_reference(capy_arena *arena, capy_uri base, capy_uri reference)
 {
-    capy_uri uri = {{NULL}};
+    capy_uri uri = reference;
 
     if (reference.scheme.size)
     {
-        uri.scheme = reference.scheme;
-        uri.authority = reference.authority;
-        uri.userinfo = reference.userinfo;
-        uri.host = reference.host;
-        uri.port = reference.port;
         uri.path = capy_uri_path_removedots(arena, reference.path);
-        uri.query = reference.query;
+        return uri;
     }
-    else
+
+    if (reference.authority.size)
     {
-        if (reference.authority.size)
+        uri.scheme = base.scheme;
+        uri.path = capy_uri_path_removedots(arena, reference.path);
+        uri.flags &= ~CAPY_URI_SCHEME;
+        uri.flags |= base.flags & CAPY_URI_SCHEME;
+        return uri;
+    }
+
+    uri.scheme = base.scheme;
+    uri.authority = base.authority;
+    uri.userinfo = base.userinfo;
+    uri.host = base.host;
+    uri.port = base.port;
+    uri.flags &= ~(CAPY_URI_SCHEME | CAPY_URI_AUTHORITY);
+    uri.flags |= base.flags & (CAPY_URI_SCHEME | CAPY_URI_AUTHORITY);
+
+    if (reference.path.size)
+    {
+        if (reference.path.data[0] == '/')
         {
-            uri.authority = reference.authority;
-            uri.userinfo = reference.userinfo;
-            uri.host = reference.host;
-            uri.port = reference.port;
             uri.path = capy_uri_path_removedots(arena, reference.path);
-            uri.query = reference.query;
         }
         else
         {
-            if (reference.path.size == 0)
-            {
-                uri.path = base.path;
-                uri.query = (reference.query.size) ? reference.query : base.query;
-            }
-            else
-            {
-                if (reference.path.data[0] == '/')
-                {
-                    uri.path = capy_uri_path_removedots(arena, reference.path);
-                }
-                else
-                {
-                    uri.path = uri_path_merge(arena, base.path, reference.path);
-                    uri.path = capy_uri_path_removedots(arena, uri.path);
-                }
-
-                uri.query = reference.query;
-            }
-
-            uri.authority = base.authority;
-            uri.userinfo = base.userinfo;
-            uri.host = base.host;
-            uri.port = base.port;
+            uri.path = uri_path_merge(arena, base.path, reference.path);
+            uri.path = capy_uri_path_removedots(arena, uri.path);
         }
-
-        uri.scheme = base.scheme;
     }
+    else
+    {
+        uri.path = base.path;
 
-    uri.fragment = reference.fragment;
+        if (reference.query.size == 0)
+        {
+            uri.query = base.query;
+            uri.flags &= ~CAPY_URI_QUERY;
+            uri.flags |= base.flags & CAPY_URI_QUERY;
+        }
+    }
 
     return uri;
 }
@@ -823,7 +833,7 @@ capy_string capy_uri_string(capy_arena *arena, capy_uri uri)
     char *buffer = make(arena, char, buffer_max);
     size_t buffer_size = 0;
 
-    if (uri.scheme.size)
+    if (uri.flags & CAPY_URI_SCHEME)
     {
         memcpy(buffer + buffer_size, uri.scheme.data, uri.scheme.size);
         buffer_size += uri.scheme.size;

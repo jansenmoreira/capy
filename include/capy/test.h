@@ -1,5 +1,5 @@
-#ifndef TEST_H
-#define TEST_H
+#ifndef CAPY_TEST_H
+#define CAPY_TEST_H
 
 #include <capy/capy.h>
 #include <capy/macros.h>
@@ -143,17 +143,17 @@ static inline int expect_f_lte_(double lhs, double rhs, const char *file, int li
     return false;
 }
 
-static inline int expect_p_eq_(void *lhs, void *rhs, const char *file, int line)
+static inline int expect_p_eq_(uintptr_t lhs, uintptr_t rhs, const char *file, int line)
 {
     if (lhs == rhs) return true;
-    fprintf(stderr, "%s:%d: condition %p == %p failed\n", file, line, lhs, rhs);
+    fprintf(stderr, "%s:%d: condition %" PRIxPTR " == %" PRIxPTR " failed\n", file, line, lhs, rhs);
     return false;
 }
 
-static inline int expect_p_ne_(void *lhs, void *rhs, const char *file, int line)
+static inline int expect_p_ne_(uintptr_t lhs, uintptr_t rhs, const char *file, int line)
 {
     if (lhs != rhs) return true;
-    fprintf(stderr, "%s:%d: condition %p != %p failed\n", file, line, lhs, rhs);
+    fprintf(stderr, "%s:%d: condition %" PRIxPTR " != %" PRIxPTR " failed\n", file, line, lhs, rhs);
     return false;
 }
 
@@ -193,10 +193,33 @@ static inline int expect_str_ne_(capy_string lhs, capy_string rhs, const char *f
 #define expect_f_gte(lhs, rhs) { if (!expect_f_gte_((lhs), (rhs), __FILE__, __LINE__)) return false; }
 #define expect_f_lt(lhs, rhs) { if (!expect_f_lt_((lhs), (rhs), __FILE__, __LINE__)) return false; }
 #define expect_f_lte(lhs, rhs) { if (!expect_f_lte_((lhs), (rhs), __FILE__, __LINE__)) return false; }
-#define expect_p_eq(lhs, rhs) { if (!expect_p_eq_(cast(void*, (lhs)), cast(void*, (rhs)), __FILE__, __LINE__)) return false; }
-#define expect_p_ne(lhs, rhs) { if (!expect_p_ne_(cast(void*, (lhs)), cast(void*, (rhs)), __FILE__, __LINE__)) return false; }
+#define expect_p_eq(lhs, rhs) { if (!expect_p_eq_(cast(uintptr_t, (lhs)), cast(uintptr_t, (rhs)), __FILE__, __LINE__)) return false; }
+#define expect_p_ne(lhs, rhs) { if (!expect_p_ne_(cast(uintptr_t, (lhs)), cast(uintptr_t, (rhs)), __FILE__, __LINE__)) return false; }
 #define expect_str_eq(lhs, rhs) { if (!expect_str_eq_((lhs), (rhs), __FILE__, __LINE__)) return false; }
 #define expect_str_ne(lhs, rhs) { if (!expect_str_ne_((lhs), (rhs), __FILE__, __LINE__)) return false; }
+
+#define assert_u_eq(lhs, rhs) { if (!expect_u_eq_((lhs), (rhs), __FILE__, __LINE__)) abort(); }
+#define assert_u_ne(lhs, rhs) { if (!expect_u_ne_((lhs), (rhs), __FILE__, __LINE__)) abort(); }
+#define assert_u_gt(lhs, rhs) { if (!expect_u_gt_((lhs), (rhs), __FILE__, __LINE__)) abort(); }
+#define assert_u_gte(lhs, rhs) { if (!expect_u_gte_((lhs), (rhs), __FILE__, __LINE__)) abort(); }
+#define assert_u_lt(lhs, rhs) { if (!expect_u_lt_((lhs), (rhs), __FILE__, __LINE__)) abort(); }
+#define assert_u_lte(lhs, rhs) { if (!expect_u_lte_((lhs), (rhs), __FILE__, __LINE__)) abort(); }
+#define assert_s_eq(lhs, rhs) { if (!expect_s_eq_((lhs), (rhs), __FILE__, __LINE__)) abort(); }
+#define assert_s_ne(lhs, rhs) { if (!expect_s_ne_((lhs), (rhs), __FILE__, __LINE__)) abort(); }
+#define assert_s_gt(lhs, rhs) { if (!expect_s_gt_((lhs), (rhs), __FILE__, __LINE__)) abort(); }
+#define assert_s_gte(lhs, rhs) { if (!expect_s_gte_((lhs), (rhs), __FILE__, __LINE__)) abort(); }
+#define assert_s_lt(lhs, rhs) { if (!expect_s_lt_((lhs), (rhs), __FILE__, __LINE__)) abort(); }
+#define assert_s_lte(lhs, rhs) { if (!expect_s_lte_((lhs), (rhs), __FILE__, __LINE__)) abort(); }
+#define assert_f_eq(lhs, rhs) { if (!expect_f_eq_((lhs), (rhs), __FILE__, __LINE__)) abort(); }
+#define assert_f_ne(lhs, rhs) { if (!expect_f_ne_((lhs), (rhs), __FILE__, __LINE__)) abort(); }
+#define assert_f_gt(lhs, rhs) { if (!expect_f_gt_((lhs), (rhs), __FILE__, __LINE__)) abort(); }
+#define assert_f_gte(lhs, rhs) { if (!expect_f_gte_((lhs), (rhs), __FILE__, __LINE__)) abort(); }
+#define assert_f_lt(lhs, rhs) { if (!expect_f_lt_((lhs), (rhs), __FILE__, __LINE__)) abort(); }
+#define assert_f_lte(lhs, rhs) { if (!expect_f_lte_((lhs), (rhs), __FILE__, __LINE__)) abort(); }
+#define assert_p_eq(lhs, rhs) { if (!expect_p_eq_(cast(void*, (lhs)), cast(void*, (rhs)), __FILE__, __LINE__)) abort(); }
+#define assert_p_ne(lhs, rhs) { if (!expect_p_ne_(cast(void*, (lhs)), cast(void*, (rhs)), __FILE__, __LINE__)) abort(); }
+#define assert_str_eq(lhs, rhs) { if (!expect_str_eq_((lhs), (rhs), __FILE__, __LINE__)) abort(); }
+#define assert_str_ne(lhs, rhs) { if (!expect_str_ne_((lhs), (rhs), __FILE__, __LINE__)) abort(); }
 
 // clang-format on
 

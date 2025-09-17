@@ -1,5 +1,5 @@
-#ifndef CAPY_VECTOR_H
-#define CAPY_VECTOR_H
+#ifndef CAPY_VEC_H
+#define CAPY_VEC_H
 
 #include <capy/arena.h>
 #include <capy/assert.h>

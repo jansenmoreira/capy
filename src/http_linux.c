@@ -108,7 +108,7 @@ typedef struct http_conn
 
 static inline int log_gaierr(int err, const char *file, int line, const char *msg)
 {
-    capy_error("[%s:%d] => %s: %s\n", file, line, msg, gai_strerror(err));
+    capy_logerr("[%s:%d] => %s: %s\n", file, line, msg, gai_strerror(err));
     return err;
 }
 
@@ -509,6 +509,7 @@ static http_conn_state conn_message_init(http_conn *conn)
     conn->request = (capy_http_request){
         .headers = capy_strkvmmap_init(conn->arena, 16),
         .trailers = capy_strkvmmap_init(conn->arena, 4),
+        .query = capy_strkvmmap_init(conn->arena, 8),
     };
 
     conn->headers = capy_strkvmmap_init(conn->arena, 16);
@@ -591,16 +592,10 @@ static inline void conn_trace(http_conn *conn, http_worker *worker)
     size_t to_read = (conn->line_buffer) ? conn->line_buffer->size : 0;
     size_t to_write = (conn->response_buffer) ? conn->response_buffer->size : 0;
 
-    capy_debug("worker: %-24s | WK:%-4zu SK:%-4d MH:%-8zu MC:%-8zu MT:%-8zu MR:%-8zu MA:%-8zu RS:%-8zu WS:%-8zu | %3" PRIi64 " %s",
-               http_conn_state_cstr[conn->state], worker->id, conn->socket,
-               conn->mem_headers, conn->mem_content, conn->mem_trailers, conn->mem_response, mem_total,
-               to_read, to_write, elapsed, elapsed_unit);
-
-    // capy_debug(
-    //     " %8ldµs | worker | socket | mem_req_headers  | mem_req_content  | mem_req_trailers | mem_response     | mem_total        | to_read  | to_write\n"
-    //     "%-24s | %-6lu | %-6d | %-16ld | %-16ld | %-16ld | %-16ld | %-16lu | %-8lu | %-8lu",
-    //     elapsed, http_conn_state_cstr[conn->state], worker->id, conn->socket,
-    //     conn->mem_headers, conn->mem_content, conn->mem_trailers, conn->mem_response, mem_total, to_read, to_write);
+    capy_logdbg("worker: %-24s | WK:%-4zu SK:%-4d MH:%-8zu MC:%-8zu MT:%-8zu MR:%-8zu MA:%-8zu RS:%-8zu WS:%-8zu | %3" PRIi64 " %s",
+                http_conn_state_cstr[conn->state], worker->id, conn->socket,
+                conn->mem_headers, conn->mem_content, conn->mem_trailers, conn->mem_response, mem_total,
+                to_read, to_write, elapsed, elapsed_unit);
 }
 
 static inline int conn_state_machine(http_conn *conn, http_worker *worker)
@@ -913,7 +908,7 @@ static int http_clean_connections(http_conn **conns, size_t *count)
         {
             if (difftime(ts.tv_sec, conn->timestamp.tv_sec) > 15)
             {
-                capy_info("server: connection (%d) closed due to inactivity", conn->socket);
+                capy_loginf("server: connection (%d) closed due to inactivity", conn->socket);
 
                 if ((err = conn_close(conn)))
                 {
@@ -1038,8 +1033,8 @@ int capy_http_serve(capy_http_server_options options)
 
     http_worker *workers = http_create_workers(arena, workers_epoll_fd, &mask, options.workers);
 
-    capy_info("server: listening at %s:%s (workers = %lu, connections = %lu)",
-              options.host, options.port, options.workers, options.connections);
+    capy_loginf("server: listening at %s:%s (workers = %lu, connections = %lu)",
+                options.host, options.port, options.workers, options.connections);
 
     void *address_buffer = &(struct sockaddr_storage){0};
     socklen_t address_buffer_size = sizeof(address_buffer);
@@ -1158,7 +1153,7 @@ int capy_http_serve(capy_http_server_options options)
     close(epoll_fd);
     close(workers_epoll_fd);
 
-    capy_info("server: shutting down");
+    capy_loginf("server: shutting down");
 
     return 0;
 }

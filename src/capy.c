@@ -1,6 +1,7 @@
 #include "assert.c"
 #include "base64.c"
 #include "buffer.c"
+#include "error.c"
 #include "hash.c"
 #include "logs.c"
 #include "math.c"

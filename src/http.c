@@ -172,6 +172,56 @@ static uint8_t http_char_categories[256] = {
     ['~'] = HTTP_VCHAR | HTTP_TOKEN,
 };
 
+static char http_hexdecode[256] = {
+    ['0'] = 0,
+    ['1'] = 1,
+    ['2'] = 2,
+    ['3'] = 3,
+    ['4'] = 4,
+    ['5'] = 5,
+    ['6'] = 6,
+    ['7'] = 7,
+    ['8'] = 8,
+    ['9'] = 9,
+    ['a'] = 10,
+    ['b'] = 11,
+    ['c'] = 12,
+    ['d'] = 13,
+    ['e'] = 14,
+    ['f'] = 15,
+    ['A'] = 10,
+    ['B'] = 11,
+    ['C'] = 12,
+    ['D'] = 13,
+    ['E'] = 14,
+    ['F'] = 15,
+};
+
+static const char *http_weekday[] = {
+    "Mon",
+    "Tue",
+    "Wed",
+    "Thu",
+    "Fri",
+    "Sat",
+    "Sun",
+};
+
+static const char *http_months[] = {
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+};
+
 // STATIC DEFINITIONS
 
 static int http_string_validate(capy_string s, int categories, const char *chars)
@@ -210,13 +260,18 @@ static capy_string http_next_token(capy_string *buffer, const char *delimiters)
     return capy_string_slice(input, 0, i);
 }
 
-static size_t http_consume_chars(capy_string *buffer, const char *chars)
+static size_t http_consume_chars(capy_string *buffer, const char *chars, size_t limit)
 {
     capy_string input = *buffer;
 
     size_t i;
 
-    for (i = 0; i < input.size && capy_char_is(input.data[i], chars); i++)
+    if (limit == 0 || limit > input.size)
+    {
+        limit = input.size;
+    }
+
+    for (i = 0; i < limit && capy_char_is(input.data[i], chars); i++)
     {
     }
 
@@ -227,14 +282,14 @@ static size_t http_consume_chars(capy_string *buffer, const char *chars)
 
 static int http_canonical_field_name(capy_arena *arena, capy_string input, capy_string *output)
 {
-    int upper = 1;
-
     char *data = make(arena, char, input.size + 1);
 
     if (data == NULL)
     {
         return ENOMEM;
     }
+
+    int upper = 1;
 
     for (size_t i = 0; i < input.size; i++)
     {
@@ -301,10 +356,21 @@ static capy_http_router *http_route_add_(capy_arena *arena, capy_http_router *ro
     if (router == NULL)
     {
         router = make(arena, capy_http_router, 1);
+
+        if (router == NULL)
+        {
+            return NULL;
+        }
+
         router->segments = capy_http_router_map_init(arena, 4);
+
+        if (router->segments == NULL)
+        {
+            return NULL;
+        }
     }
 
-    http_consume_chars(&suffix, "/");
+    http_consume_chars(&suffix, "/", 0);
     capy_string segment = http_next_token(&suffix, "/");
 
     if (segment.size == 0)
@@ -321,6 +387,12 @@ static capy_http_router *http_route_add_(capy_arena *arena, capy_http_router *ro
     capy_http_router *child = capy_http_router_map_get(router->segments, segment);
 
     child = http_route_add_(arena, child, method, suffix, path, handler);
+
+    if (child == NULL)
+    {
+        return NULL;
+    }
+
     child->segment = segment;
 
     if (capy_http_router_map_set(arena, router->segments, *child))
@@ -343,6 +415,87 @@ static capy_http_status http_status_text(capy_http_status status, capy_strkvmmap
     if ((err = capy_buffer_format(body, 0, "%lu %s\n", status, capy_http_status_string[status])))
     {
         return CAPY_HTTP_INTERNAL_SERVER_ERROR;
+    }
+
+    return 0;
+}
+
+static int http_query_pctdecode(capy_arena *arena, capy_string *output, capy_string input)
+{
+    if (input.size == 0)
+    {
+        *output = (capy_string){.size = 0};
+        return 0;
+    }
+
+    char *bytes = make(arena, char, output->size + 1);
+
+    size_t j = 0;
+
+    for (size_t i = 0; i < input.size; i++, j++)
+    {
+        if (input.data[i] == '%')
+        {
+            int v = http_hexdecode[cast(unsigned char, input.data[i + 1])] << 4 |
+                    http_hexdecode[cast(unsigned char, input.data[i + 2])];
+
+            bytes[j] = cast(char, v);
+            i += 2;
+        }
+        else if (input.data[i] == '+')
+        {
+            bytes[j] = ' ';
+        }
+        else
+        {
+            bytes[j] = input.data[i];
+        }
+    }
+
+    *output = capy_string_bytes(j, bytes);
+    return 0;
+}
+
+static int capy_http_parse_query(capy_strkvmmap *fields, capy_string line)
+{
+    int err;
+
+    while (line.size)
+    {
+        capy_string item = http_next_token(&line, "&");
+
+        http_consume_chars(&line, "&", 1);
+
+        if (item.size == 0)
+        {
+            continue;
+        }
+
+        capy_string name = http_next_token(&item, "=");
+
+        http_consume_chars(&item, "=", 1);
+
+        if (name.size == 0)
+        {
+            continue;
+        }
+
+        capy_string value = item;
+
+        if ((err = http_query_pctdecode(fields->arena, &name, name)))
+        {
+            return err;
+        }
+
+        if ((err = http_query_pctdecode(fields->arena, &value, value)))
+        {
+            return err;
+        }
+
+        if ((err = capy_strkvmmap_add(fields, name, value)))
+        {
+            return err;
+        }
     }
 
     return 0;
@@ -481,9 +634,6 @@ capy_http_version capy_http_parse_version(capy_string input)
     return CAPY_HTTP_VERSION_UNK;
 }
 
-static const char *http_weekday[] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
-static const char *http_months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
-
 int capy_http_write_response(capy_buffer *buffer, capy_http_status status, capy_strkvmmap *headers, capy_buffer *body, int close)
 {
     int err;
@@ -539,16 +689,20 @@ int capy_http_write_response(capy_buffer *buffer, capy_http_status status, capy_
 
 int capy_http_parse_reqline(capy_arena *arena, capy_http_request *request, capy_string line)
 {
+    int err;
+
     capy_string method = http_next_token(&line, " ");
 
-    if (http_consume_chars(&line, " ") != 1)
+    if (http_consume_chars(&line, " ", 0) != 1)
     {
         return EINVAL;
     }
 
     capy_string uri = http_next_token(&line, " ");
 
-    if (http_consume_chars(&line, " ") != 1)
+    request->uri_raw = uri;
+
+    if (http_consume_chars(&line, " ", 0) != 1)
     {
         return EINVAL;
     }
@@ -574,16 +728,19 @@ int capy_http_parse_reqline(capy_arena *arena, capy_http_request *request, capy_
         return EINVAL;
     }
 
-    request->uri = (capy_uri){{NULL}};
-
     if (request->method == CAPY_HTTP_CONNECT)
     {
-        request->uri.authority = uri;
-        capy_uri_parse_authority(&request->uri);
-        request->uri.userinfo = (capy_string){.size = 0};
+        request->uri = (capy_uri){.authority = uri};
+        request->uri = capy_uri_parse_authority(request->uri);
+
+        if (request->uri.userinfo.size)
+        {
+            return EINVAL;
+        }
     }
     else if (request->method == CAPY_HTTP_OPTIONS && capy_string_eq(uri, strl("*")))
     {
+        request->uri = (capy_uri){.path = uri};
     }
     else
     {
@@ -595,13 +752,46 @@ int capy_http_parse_reqline(capy_arena *arena, capy_http_request *request, capy_
         return EINVAL;
     }
 
-    request->uri.scheme = capy_uri_normalize(arena, request->uri.scheme, true);
-    request->uri.authority = capy_uri_normalize(arena, request->uri.authority, false);
-    request->uri.userinfo = capy_uri_normalize(arena, request->uri.userinfo, false);
-    request->uri.host = capy_uri_normalize(arena, request->uri.host, true);
-    request->uri.port = capy_uri_normalize(arena, request->uri.port, false);
-    request->uri.path = capy_uri_normalize(arena, request->uri.path, false);
-    request->uri.query = capy_uri_normalize(arena, request->uri.query, false);
+    if ((err = capy_string_copy(arena, &request->uri_raw, request->uri_raw)))
+    {
+        return err;
+    }
+
+    if ((err = capy_uri_normalize(arena, &request->uri.scheme, request->uri.scheme, true)))
+    {
+        return err;
+    }
+
+    if ((err = capy_uri_normalize(arena, &request->uri.authority, request->uri.authority, false)))
+    {
+        return err;
+    }
+
+    if ((err = capy_uri_normalize(arena, &request->uri.userinfo, request->uri.userinfo, false)))
+    {
+        return err;
+    }
+
+    if ((err = capy_uri_normalize(arena, &request->uri.host, request->uri.host, true)))
+    {
+        return err;
+    }
+
+    if ((err = capy_uri_normalize(arena, &request->uri.port, request->uri.port, false)))
+    {
+        return err;
+    }
+
+    if ((err = capy_uri_normalize(arena, &request->uri.path, request->uri.path, false)))
+    {
+        return err;
+    }
+
+    if ((err = capy_uri_normalize(arena, &request->uri.query, request->uri.query, false)))
+    {
+        return err;
+    }
+
     request->uri.fragment = (capy_string){.size = 0};
 
     return 0;
@@ -609,6 +799,8 @@ int capy_http_parse_reqline(capy_arena *arena, capy_http_request *request, capy_
 
 int capy_http_request_validate(capy_arena *arena, capy_http_request *request)
 {
+    int err;
+
     request->content_length = 0;
     request->chunked = 0;
 
@@ -633,19 +825,32 @@ int capy_http_request_validate(capy_arena *arena, capy_http_request *request)
         return EINVAL;
     }
 
+    if ((request->uri.flags & CAPY_URI_AUTHORITY) && request->uri.authority.size == 0)
+    {
+        return EINVAL;
+    }
+
     if (request->uri.scheme.size == 0)
     {
         request->uri.scheme = strl("http");
     }
 
-    if (request->uri.authority.size == 0)
+    if (!capy_string_eq(request->uri.scheme, strl("http")))
     {
-        request->uri.authority = host->value;
-        capy_uri_parse_authority(&request->uri);
+        return EINVAL;
+    }
 
-        if (request->uri.userinfo.size || !capy_uri_valid(request->uri))
+    if (request->method != CAPY_HTTP_CONNECT)
+    {
+        if (request->uri.authority.size == 0)
         {
-            return EINVAL;
+            request->uri.authority = host->value;
+            request->uri = capy_uri_parse_authority(request->uri);
+
+            if (!capy_uri_valid(request->uri))
+            {
+                return EINVAL;
+            }
         }
     }
 
@@ -654,9 +859,12 @@ int capy_http_request_validate(capy_arena *arena, capy_http_request *request)
         request->uri.port = strl("80");
     }
 
-    int err = capy_string_join(arena, &host->value, ":", 2, (capy_string[]){request->uri.host, request->uri.port});
+    if (request->uri.authority.size == 0)
+    {
+        return EINVAL;
+    }
 
-    if (err)
+    if ((err = capy_string_join(arena, &host->value, ":", 2, (capy_string[]){request->uri.host, request->uri.port})))
     {
         return err;
     }
@@ -710,11 +918,18 @@ int capy_http_request_validate(capy_arena *arena, capy_http_request *request)
         }
     }
 
+    if ((err = capy_http_parse_query(request->query, request->uri.query)))
+    {
+        return err;
+    }
+
     return 0;
 }
 
 int capy_http_parse_field(capy_strkvmmap *fields, capy_string line)
 {
+    int err;
+
     capy_string name = http_next_token(&line, ":");
 
     if (name.size == 0 || !http_string_validate(name, HTTP_TOKEN, NULL))
@@ -722,7 +937,7 @@ int capy_http_parse_field(capy_strkvmmap *fields, capy_string line)
         return EINVAL;
     }
 
-    if (http_consume_chars(&line, ":") != 1)
+    if (http_consume_chars(&line, ":", 0) != 1)
     {
         return EINVAL;
     }
@@ -734,16 +949,12 @@ int capy_http_parse_field(capy_strkvmmap *fields, capy_string line)
         return EINVAL;
     }
 
-    int err = http_canonical_field_name(fields->arena, name, &name);
-
-    if (err)
+    if ((err = http_canonical_field_name(fields->arena, name, &name)))
     {
         return err;
     }
 
-    err = capy_string_copy(fields->arena, &value, value);
-
-    if (err)
+    if ((err = capy_string_copy(fields->arena, &value, value)))
     {
         return err;
     }
@@ -770,7 +981,7 @@ capy_http_router *capy_http_router_init(capy_arena *arena, int n, capy_http_rout
 
 capy_http_route *capy_http_route_get(capy_http_router *router, capy_http_method method, capy_string path)
 {
-    http_consume_chars(&path, "/");
+    http_consume_chars(&path, "/", 0);
     capy_string segment = http_next_token(&path, "/");
 
     if (segment.size == 0)
@@ -802,11 +1013,16 @@ capy_http_route *capy_http_route_get(capy_http_router *router, capy_http_method 
 
 capy_strkvmmap *capy_http_parse_uriparams(capy_arena *arena, capy_string path, capy_string handler_path)
 {
-    capy_strkvmmap *params = NULL;
+    capy_strkvmmap *params = capy_strkvmmap_init(arena, 8);
+
+    if (params == NULL)
+    {
+        return NULL;
+    }
 
     for (;;)
     {
-        http_consume_chars(&path, "/");
+        http_consume_chars(&path, "/", 0);
         capy_string path_segment = http_next_token(&path, "/");
 
         if (path_segment.size == 0)
@@ -814,7 +1030,7 @@ capy_strkvmmap *capy_http_parse_uriparams(capy_arena *arena, capy_string path, c
             break;
         }
 
-        http_consume_chars(&handler_path, "/");
+        http_consume_chars(&handler_path, "/", 0);
         capy_string handler_path_segment = http_next_token(&handler_path, "/");
 
         if (handler_path_segment.data[0] != '^')
@@ -822,16 +1038,9 @@ capy_strkvmmap *capy_http_parse_uriparams(capy_arena *arena, capy_string path, c
             continue;
         }
 
-        if (params == NULL)
-        {
-            params = capy_strkvmmap_init(arena, 8);
-        }
-
         handler_path_segment = capy_string_shl(handler_path_segment, 1);
 
-        int err = capy_strkvmmap_add(params, handler_path_segment, path_segment);
-
-        if (err)
+        if (capy_strkvmmap_add(params, handler_path_segment, path_segment))
         {
             return NULL;
         }
@@ -851,6 +1060,11 @@ capy_http_status capy_http_router_handle(capy_arena *arena, capy_http_router *ro
     }
 
     request->params = capy_http_parse_uriparams(arena, request->uri.path, route->path);
+
+    if (request->params == NULL)
+    {
+        return http_status_text(CAPY_HTTP_INTERNAL_SERVER_ERROR, headers, body);
+    }
 
     return route->handler(arena, request, headers, body);
 }

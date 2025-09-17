@@ -5,7 +5,7 @@
             "type": "lldb",
             "request": "launch",
             "name": "tests",
-            "program": "${workspaceFolder}/build/tests",
+            "program": "${workspaceFolder}/build/debug/tests",
             "args": [],
             "cwd": "${workspaceFolder}",
             "preLaunchTask": "build",
@@ -20,11 +20,12 @@
             "type": "lldb",
             "request": "launch",
             "name": "ex_echo",
-            "program": "${workspaceFolder}/build/ex_echo",
+            "program": "${workspaceFolder}/build/debug/ex_echo",
             "args": [
                 "-w",
-                "8",
+                "1",
                 "-m",
+                "-v",
                 "-c",
                 "64"
             ],

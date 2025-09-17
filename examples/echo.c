@@ -7,6 +7,7 @@
 
 static capy_http_status failure_(unused capy_buffer *body, int err, const char *file, int line, const char *msg)
 {
+    body->size = 0;
     capy_buffer_format_noalloc(body, "[%s:%d] => %s: %s\n", file, line, msg, strerror(err));
     return CAPY_HTTP_INTERNAL_SERVER_ERROR;
 }
@@ -29,6 +30,26 @@ static capy_http_status params_handler(unused capy_arena *arena, capy_http_reque
                                   (int)param->value.size, param->value.data)))
     {
         return failure(body, err, "failed to get URI params");
+    }
+
+    for (size_t i = 0; i < request->query->capacity; i++)
+    {
+        capy_strkvn *param = request->query->items + i;
+
+        if (param->key.size == 0)
+        {
+            continue;
+        }
+
+        while (param != NULL)
+        {
+            if ((err = capy_buffer_format(body, 0, "%s: %s\n", param->key.data, param->value.data)))
+            {
+                return failure(body, err, "failed to write query params");
+            }
+
+            param = param->next;
+        }
     }
 
     return CAPY_HTTP_OK;
@@ -144,7 +165,7 @@ int main(int argc, char *argv[])
 
     options.routes = routes;
     options.routes_size = arrlen(routes);
-    options.mem_connection_max = KiB(512);
+    options.mem_connection_max = MiB(1);
 
     capy_http_serve(options);
 

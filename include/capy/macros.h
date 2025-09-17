@@ -1,5 +1,5 @@
-#ifndef CAPY_HELPERS_H
-#define CAPY_HELPERS_H
+#ifndef CAPY_MACROS_H
+#define CAPY_MACROS_H
 
 #include <capy/capy.h>
 

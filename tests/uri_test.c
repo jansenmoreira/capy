@@ -52,7 +52,7 @@ static int test_uri_parse(void)
         {
             .raw = strl(":"),
             .scheme = strl(""),
-            .is_valid = true,
+            .is_valid = false,
         },
         {
             .raw = strl("h:"),

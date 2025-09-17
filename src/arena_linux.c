@@ -21,12 +21,10 @@ struct capy_arena
 
 capy_arena *capy_arena_init(size_t min, size_t max)
 {
-    size_t page_size = (size_t)(sysconf(_SC_PAGE_SIZE));
+    size_t page_size = cast(size_t, sysconf(_SC_PAGE_SIZE));
 
     max = align_to(max, page_size);
     min = (min != 0) ? align_to(min, page_size) : page_size;
-
-    capy_mem("capy_arena_init: capacity=%zu", min);
 
     capy_arena *arena = mmap(NULL, max, PROT_NONE, MAP_NORESERVE | MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
@@ -39,6 +37,8 @@ capy_arena *capy_arena_init(size_t min, size_t max)
     {
         return NULL;
     }
+
+    capy_logmem("capy_arena_init: ptr=%p capacity=%zu", (void *)arena, min);
 
     arena->size = 40;
     arena->capacity = min;
@@ -87,6 +87,20 @@ void *capy_arena_realloc(capy_arena *arena, void *src, size_t size, size_t new_s
     return dest;
 }
 
+int capy_arena_reserve(capy_arena *arena, size_t size, size_t align)
+{
+    void *addr = capy_arena_alloc(arena, size, align, false);
+
+    if (addr == NULL)
+    {
+        return ENOMEM;
+    }
+
+    arena->size = cast(size_t, cast(char *, addr) - cast(char *, arena));
+
+    return 0;
+}
+
 void *capy_arena_alloc(capy_arena *arena, size_t size, size_t align, int zeroinit)
 {
     capy_assert(arena != NULL);
@@ -103,7 +117,7 @@ void *capy_arena_alloc(capy_arena *arena, size_t size, size_t align, int zeroini
     {
         size_t capacity = next_pow2(arena->capacity + size);
 
-        capy_mem("capy_arena_alloc: ptr=%p capacity=%zu", (void *)arena, capacity);
+        capy_logmem("capy_arena_alloc: ptr=%p from=%zu to=%zu", (void *)arena, arena->capacity, capacity);
 
         if (mprotect(arena, capacity, PROT_READ | PROT_WRITE))
         {
@@ -129,7 +143,8 @@ int capy_arena_free(capy_arena *arena, void *addr)
 {
     capy_assert(cast(size_t, addr) >= cast(size_t, arena) + sizeof(capy_arena));
     capy_assert(cast(size_t, addr) <= cast(size_t, arena) + arena->size);
-    arena->size = cast(size_t, addr) - cast(size_t, arena);
+
+    arena->size = cast(size_t, cast(char *, addr) - cast(char *, arena));
 
     if (arena->capacity > arena->min)
     {
@@ -137,14 +152,14 @@ int capy_arena_free(capy_arena *arena, void *addr)
 
         if (arena->size <= threshold)
         {
-            size_t capacity = arena->capacity >> 1;
+            size_t capacity = next_pow2(arena->size << 1);
 
             if (capacity < arena->min)
             {
                 capacity = arena->min;
             }
 
-            capy_mem("capy_arena_free: capacity=%zu", capacity);
+            capy_logmem("capy_arena_free: ptr=%p from=%zu to=%zu", (void *)arena, arena->capacity, capacity);
 
             char *tail = (char *)(arena) + capacity;
 

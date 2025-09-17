@@ -67,13 +67,30 @@ must_check int capy_buffer_resize(capy_buffer *buf, size_t size)
 
 int capy_buffer_format_noalloc(capy_buffer *buf, const char *fmt, ...)
 {
+    int n;
+
+    size_t max = buf->capacity - buf->size;
+
     va_list args;
     va_start(args, fmt);
-    int n = vsnprintf(buf->data, buf->capacity, fmt, args);
-    capy_assert(n >= 0);
-    buf->size = (size_t)n;
+    n = vsnprintf(buf->data + buf->size, max + 1, fmt, args);
     va_end(args);
-    return n;
+
+    if (n < 0)
+    {
+        return EINVAL;
+    }
+
+    if (cast(size_t, n) < max)
+    {
+        buf->size += cast(size_t, n);
+    }
+    else
+    {
+        buf->size += max;
+    }
+
+    return 0;
 }
 
 int capy_buffer_format(capy_buffer *buf, size_t max, const char *fmt, ...)
@@ -87,7 +104,12 @@ int capy_buffer_format(capy_buffer *buf, size_t max, const char *fmt, ...)
         n = vsnprintf(NULL, 0, fmt, args);
         va_end(args);
 
-        max = (size_t)(n) + 1;
+        if (n < 0)
+        {
+            return EINVAL;
+        }
+
+        max = cast(size_t, n) + 1;
     }
 
     size_t index = buf->size;
@@ -106,9 +128,14 @@ int capy_buffer_format(capy_buffer *buf, size_t max, const char *fmt, ...)
     n = vsnprintf(buf->data + index, max + 1, fmt, args);
     va_end(args);
 
-    if ((size_t)n < max)
+    if (n < 0)
     {
-        buf->size = index + (size_t)(n);
+        return EINVAL;
+    }
+
+    if (cast(size_t, n) < max)
+    {
+        buf->size = index + cast(size_t, n);
     }
 
     return 0;

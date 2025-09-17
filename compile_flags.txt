@@ -18,3 +18,5 @@
 -D_POSIX_C_SOURCE=200112L
 
 -Wno-unused-function
+-nostdinc
+-I/usr/lib/musl/include

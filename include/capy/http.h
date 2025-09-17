@@ -87,9 +87,11 @@ typedef struct capy_http_request
     capy_http_method method;
     capy_http_version version;
     capy_uri uri;
+    capy_string uri_raw;
     capy_strkvmmap *headers;
     capy_strkvmmap *trailers;
     capy_strkvmmap *params;
+    capy_strkvmmap *query;
     const char *content;
     size_t content_length;
     int chunked;

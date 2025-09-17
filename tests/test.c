@@ -1,6 +1,7 @@
 #include "arena_test.c"
 #include "base64_test.c"
 #include "buffer_test.c"
+#include "error_test.c"
 #include "http_test.c"
 #include "string_test.c"
 #include "strmap_test.c"
@@ -21,6 +22,7 @@ int main(void)
     test_http(&t);
     test_base64(&t);
     test_strmap(&t);
+    test_error(&t);
 
     printf("\nSummary - %d of %d tests succeeded\n", t.succeded, t.succeded + t.failed);
 
