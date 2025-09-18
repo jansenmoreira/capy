@@ -1,12 +1,6 @@
 #ifndef CAPY_STD_H
 #define CAPY_STD_H
 
-#if __STDC_VERSION__ <= 199901L
-#ifdef __GNUC__
-#define _Alignof __alignof__
-#endif
-#endif
-
 #ifdef __GNUC__
 #define must_check __attribute__((warn_unused_result))
 #define unused __attribute__((unused))
@@ -14,6 +8,7 @@
 #else
 #define unused
 #define must_check
+#define nofail
 #endif
 
 #include <inttypes.h>

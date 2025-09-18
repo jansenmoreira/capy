@@ -20,6 +20,14 @@ void capy_log_init(unsigned int mask)
     capy_stdout->mask = mask;
 }
 
+static const char *levelmsg[] = {
+    [1] = "MEM",
+    [2] = "DBG",
+    [4] = "INF",
+    [8] = "WRN",
+    [16] = "ERR",
+};
+
 void capy_logf(capy_logger *logger, unsigned int level, const char *format, ...)
 {
     if (level & logger->mask)
@@ -29,6 +37,9 @@ void capy_logf(capy_logger *logger, unsigned int level, const char *format, ...)
 
         struct timespec timestamp;
         timespec_get(&timestamp, TIME_UTC);
+
+        n += snprintf(log_buffer + n, (size_t)max, "%s ", levelmsg[level]);
+        max = max - n;
 
         n += (ssize_t)strftime(log_buffer + n, (size_t)max, "%X", gmtime(&timestamp.tv_sec));
         max = max - n;

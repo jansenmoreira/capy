@@ -95,9 +95,7 @@ typedef struct http_conn
     size_t chunk_size;
 
     capy_http_request request;
-
-    capy_strkvmmap *headers;
-    capy_buffer *body;
+    capy_http_response response;
 
     capy_http_router *router;
 
@@ -106,20 +104,47 @@ typedef struct http_conn
     struct timespec timestamp;
 } http_conn;
 
-static inline int log_gaierr(int err, const char *file, int line, const char *msg)
+static capy_err http_gaierror(int err)
 {
-    capy_logerr("[%s:%d] => %s: %s\n", file, line, msg, gai_strerror(err));
-    return err;
+    if (err == 0) return ok;
+    return (capy_err){.code = err, .msg = gai_strerror(err)};
 }
 
-static int conn_epoll(http_conn *conn, int epoll_fd, int op, uint32_t events)
+static capy_err conn_epoll(http_conn *conn, int epoll_fd, int op, uint32_t events)
 {
     struct epoll_event client_event = {
         .events = events,
         .data.ptr = conn,
     };
 
-    return epoll_ctl(epoll_fd, op, conn->socket, &client_event);
+    if (epoll_ctl(epoll_fd, op, conn->socket, &client_event) == -1)
+    {
+        return errwrap(capy_errno(errno), "Failed to update workers epoll");
+    }
+
+    return ok;
+}
+
+static capy_err conn_blocked(http_conn *conn, http_worker *worker)
+{
+    timespec_get(&conn->timestamp, TIME_UTC);
+
+    uint32_t event = EPOLLIN;
+
+    if (conn->after_unblock == STATE_WRITE_RESPONSE)
+    {
+        event = EPOLLOUT;
+    }
+
+    return conn_epoll(conn, worker->epoll_fd, EPOLL_CTL_MOD, event | EPOLLET | EPOLLONESHOT);
+}
+
+static capy_err conn_close(http_conn *conn)
+{
+    close(conn->socket);
+    conn->state = STATE_CLOSED;
+    conn->socket = 0;
+    return ok;
 }
 
 static inline int conn_get_line(http_conn *conn, capy_string *line)
@@ -165,8 +190,10 @@ static inline void conn_consume_line(http_conn *conn)
     conn_consume_bytes(conn, conn->line_cursor);
 }
 
-static inline http_conn_state conn_write_response(http_conn *conn)
+static inline capy_err conn_write_response(http_conn *conn)
 {
+    capy_err err;
+
     ssize_t bytes_written = send(conn->socket,
                                  conn->response_buffer->data,
                                  conn->response_buffer->size,
@@ -174,69 +201,80 @@ static inline http_conn_state conn_write_response(http_conn *conn)
 
     if (bytes_written == 0)
     {
-        return STATE_CLOSED;
+        conn->state = STATE_CLOSED;
+        return ok;
     }
     else if (bytes_written == -1)
     {
-        int err = errno;
+        err = capy_errno(errno);
 
-        if (err == EWOULDBLOCK || err == EAGAIN)
+        if (err.code == EWOULDBLOCK || err.code == EAGAIN)
         {
             conn->after_unblock = STATE_WRITE_RESPONSE;
-
-            return STATE_BLOCKED;
+            conn->state = STATE_BLOCKED;
+            return ok;
         }
 
-        if (err != ECONNRESET)
+        if (err.code != ECONNRESET)
         {
-            capy_log_errno(errno, "Failed to write message");
+            conn->state = STATE_CLOSED;
+            return ok;
         }
 
-        return STATE_CLOSED;
+        return errwrap(err, "Failed to write response");
     }
 
     capy_buffer_shl(conn->response_buffer, cast(size_t, bytes_written));
 
-    if (conn->response_buffer->size == 0)
+    if (conn->response_buffer->size > 0)
     {
-        if (conn->request.close)
-        {
-            return STATE_CLOSED;
-        }
-
-        return STATE_INIT;
+        conn->state = STATE_WRITE_RESPONSE;
+    }
+    else if (conn->request.close)
+    {
+        conn->state = STATE_CLOSED;
+    }
+    else
+    {
+        conn->state = STATE_INIT;
     }
 
-    return STATE_WRITE_RESPONSE;
+    return ok;
 }
 
-static inline http_conn_state conn_parse_request_line(http_conn *conn)
+static inline capy_err conn_parse_request_line(http_conn *conn)
 {
     capy_string line;
 
     if (conn_get_line(conn, &line))
     {
         conn->after_read = STATE_PARSE_REQUEST_LINE;
-        return STATE_READ_SOCKET;
+        conn->state = STATE_READ_SOCKET;
+        return ok;
     }
 
-    switch (capy_http_parse_reqline(conn->arena, &conn->request, line))
+    capy_err err = capy_http_parse_reqline(conn->arena, &conn->request, line);
+
+    if (err.code == EINVAL)
     {
-        case 0:
-            break;
-        case EINVAL:
-            return STATE_BAD_REQUEST;
-        default:
-            return STATE_SERVER_FAILURE;
+        conn->state = STATE_BAD_REQUEST;
+        return ok;
+    }
+    else if (err.code)
+    {
+        return errwrap(err, "Failed to parse request line");
     }
 
     conn_consume_line(conn);
+    conn->state = STATE_PARSE_HEADERS;
 
-    return STATE_PARSE_HEADERS;
+    return ok;
 }
 
-static inline http_conn_state conn_parse_headers(http_conn *conn)
+static inline capy_err conn_parse_headers(http_conn *conn)
 {
+    capy_err err;
+
     for (;;)
     {
         capy_string line;
@@ -244,7 +282,8 @@ static inline http_conn_state conn_parse_headers(http_conn *conn)
         if (conn_get_line(conn, &line))
         {
             conn->after_read = STATE_PARSE_HEADERS;
-            return STATE_READ_SOCKET;
+            conn->state = STATE_READ_SOCKET;
+            return ok;
         }
 
         if (line.size == 0)
@@ -253,44 +292,54 @@ static inline http_conn_state conn_parse_headers(http_conn *conn)
             break;
         }
 
-        switch (capy_http_parse_field(conn->request.headers, line))
+        err = capy_http_parse_field(conn->request.headers, line);
+
+        if (err.code == EINVAL)
         {
-            case 0:
-                break;
-            case EINVAL:
-                return STATE_BAD_REQUEST;
-            default:
-                return STATE_SERVER_FAILURE;
+            conn->state = STATE_BAD_REQUEST;
+            return ok;
+        }
+        else if (err.code)
+        {
+            return errwrap(err, "Failed to parse headers");
         }
 
         conn_consume_line(conn);
     }
 
-    switch (capy_http_request_validate(conn->arena, &conn->request))
+    err = capy_http_request_validate(conn->arena, &conn->request);
+
+    if (err.code == EINVAL)
     {
-        case 0:
-            break;
-        case EINVAL:
-            return STATE_BAD_REQUEST;
-        default:
-            return STATE_SERVER_FAILURE;
+        conn->state = STATE_BAD_REQUEST;
+        return ok;
+    }
+    else if (err.code)
+    {
+        return errwrap(err, "Failed to validate request");
     }
 
     if (conn->request.content_length)
     {
         conn->chunk_size = conn->request.content_length;
-        return STATE_PARSE_CONTENT;
+        conn->state = STATE_PARSE_CONTENT;
     }
     else if (conn->request.chunked)
     {
-        return STATE_PARSE_CHUNK_SIZE;
+        conn->state = STATE_PARSE_CHUNK_SIZE;
+    }
+    else
+    {
+        conn->state = STATE_PROCESS_REQUEST;
     }
 
-    return STATE_PROCESS_REQUEST;
+    return ok;
 }
 
-static inline http_conn_state conn_parse_trailers(http_conn *conn)
+static inline capy_err conn_parse_trailers(http_conn *conn)
 {
+    capy_err err;
+
     for (;;)
     {
         capy_string line;
@@ -298,7 +347,8 @@ static inline http_conn_state conn_parse_trailers(http_conn *conn)
         if (conn_get_line(conn, &line))
         {
             conn->after_read = STATE_PARSE_TRAILERS;
-            return STATE_READ_SOCKET;
+            conn->state = STATE_READ_SOCKET;
+            return ok;
         }
 
         if (line.size == 0)
@@ -307,30 +357,34 @@ static inline http_conn_state conn_parse_trailers(http_conn *conn)
             break;
         }
 
-        switch (capy_http_parse_field(conn->request.trailers, line))
+        err = capy_http_parse_field(conn->request.trailers, line);
+
+        if (err.code == EINVAL)
         {
-            case 0:
-                break;
-            case EINVAL:
-                return STATE_BAD_REQUEST;
-            default:
-                return STATE_SERVER_FAILURE;
+            conn->state = STATE_BAD_REQUEST;
+            return ok;
+        }
+        else if (err.code)
+        {
+            return errwrap(err, "Failed to parse trailers");
         }
 
         conn_consume_line(conn);
     }
 
-    return STATE_PROCESS_REQUEST;
+    conn->state = STATE_PROCESS_REQUEST;
+    return ok;
 }
 
-static inline http_conn_state conn_parse_chunk_size(http_conn *conn)
+static inline capy_err conn_parse_chunk_size(http_conn *conn)
 {
     capy_string line;
 
     if (conn_get_line(conn, &line))
     {
         conn->after_read = STATE_PARSE_CHUNK_SIZE;
-        return STATE_READ_SOCKET;
+        conn->state = STATE_READ_SOCKET;
+        return ok;
     }
 
     int64_t value;
@@ -338,7 +392,8 @@ static inline http_conn_state conn_parse_chunk_size(http_conn *conn)
     // todo: validate chunck_size extensions
     if (capy_string_hex(line, &value) == 0)
     {
-        return STATE_BAD_REQUEST;
+        conn->state = STATE_BAD_REQUEST;
+        return ok;
     }
 
     conn->chunk_size = (size_t)(value);
@@ -347,21 +402,29 @@ static inline http_conn_state conn_parse_chunk_size(http_conn *conn)
 
     if (conn->chunk_size == 0)
     {
-        return STATE_PARSE_TRAILERS;
+        conn->state = STATE_PARSE_TRAILERS;
+    }
+    else
+    {
+        conn->state = STATE_PARSE_CHUNK_DATA;
     }
 
-    return STATE_PARSE_CHUNK_DATA;
+    return ok;
 }
 
-static inline http_conn_state conn_parse_chunk_data(http_conn *conn)
+static inline capy_err conn_parse_chunk_data(http_conn *conn)
 {
+    capy_err err;
+
     size_t msg_size = conn->line_buffer->size;
 
     if (conn->chunk_size + 2 > msg_size)
     {
-        if (capy_buffer_wbytes(conn->content_buffer, msg_size, conn->line_buffer->data))
+        err = capy_buffer_wbytes(conn->content_buffer, msg_size, conn->line_buffer->data);
+
+        if (err.code)
         {
-            return STATE_SERVER_FAILURE;
+            return errwrap(err, "Failed to read chunk data");
         }
 
         conn_consume_bytes(conn, msg_size);
@@ -369,79 +432,95 @@ static inline http_conn_state conn_parse_chunk_data(http_conn *conn)
         conn->chunk_size -= msg_size;
 
         conn->after_read = STATE_PARSE_CHUNK_DATA;
-        return STATE_READ_SOCKET;
+        conn->state = STATE_READ_SOCKET;
+        return ok;
     }
 
     const char *end = conn->line_buffer->data + conn->chunk_size;
 
     if (end[0] != '\r' || end[1] != '\n')
     {
-        return STATE_BAD_REQUEST;
+        conn->state = STATE_BAD_REQUEST;
+        return ok;
     }
 
-    if (capy_buffer_wbytes(conn->content_buffer, conn->chunk_size, conn->line_buffer->data))
+    err = capy_buffer_wbytes(conn->content_buffer, conn->chunk_size, conn->line_buffer->data);
+
+    if (err.code)
     {
-        return STATE_SERVER_FAILURE;
+        return errwrap(err, "Failed to read chunk data");
     }
 
     conn_consume_bytes(conn, conn->chunk_size + 2);
 
-    return STATE_PARSE_CHUNK_SIZE;
+    conn->state = STATE_PARSE_CHUNK_SIZE;
+    return ok;
 }
 
-static inline http_conn_state conn_read_socket(http_conn *conn)
+static capy_err conn_read_socket(http_conn *conn)
 {
+    capy_err err;
+
     size_t line_limit = conn->line_buffer->capacity;
     size_t line_size = conn->line_buffer->size;
     size_t bytes_wanted = line_limit - line_size;
 
     if (bytes_wanted == 0)
     {
-        return STATE_BAD_REQUEST;
+        conn->state = STATE_BAD_REQUEST;
+        return ok;
     }
 
     ssize_t bytes_read = recv(conn->socket, conn->line_buffer->data + line_size, bytes_wanted, 0);
 
     if (bytes_read == 0)
     {
-        return STATE_CLOSED;
+        conn->state = STATE_CLOSED;
+        return ok;
     }
 
     if (bytes_read == -1)
     {
-        int err = errno;
+        err = capy_errno(errno);
 
-        if (err == EWOULDBLOCK || err == EAGAIN)
+        if (err.code == EWOULDBLOCK || err.code == EAGAIN)
         {
             conn->after_unblock = STATE_READ_SOCKET;
-            return STATE_BLOCKED;
+            conn->state = STATE_BLOCKED;
+            return ok;
         }
 
-        if (err != ECONNRESET)
+        if (err.code == ECONNRESET)
         {
-            capy_log_errno(errno, "Failed to read message");
+            conn->state = STATE_CLOSED;
+            return ok;
         }
 
-        return STATE_CLOSED;
+        return errwrap(err, "Failed to read socket");
     }
 
-    if (capy_buffer_resize(conn->line_buffer, line_size + cast(size_t, bytes_read)))
+    if ((err = capy_buffer_resize(conn->line_buffer, line_size + cast(size_t, bytes_read))).code)
     {
-        return STATE_SERVER_FAILURE;
+        return err;
     }
 
-    return conn->after_read;
+    conn->state = conn->after_read;
+    return ok;
 }
 
-static inline http_conn_state conn_parse_content(http_conn *conn)
+static inline capy_err conn_parse_content(http_conn *conn)
 {
+    capy_err err;
+
     size_t message_size = conn->line_buffer->size;
 
     if (conn->chunk_size > message_size)
     {
-        if (capy_buffer_wbytes(conn->content_buffer, message_size, conn->line_buffer->data))
+        err = capy_buffer_wbytes(conn->content_buffer, message_size, conn->line_buffer->data);
+
+        if (err.code)
         {
-            return STATE_SERVER_FAILURE;
+            return errwrap(err, "Failed to read content data");
         }
 
         conn_consume_bytes(conn, message_size);
@@ -449,56 +528,71 @@ static inline http_conn_state conn_parse_content(http_conn *conn)
         conn->chunk_size -= message_size;
 
         conn->after_read = STATE_PARSE_CONTENT;
-        return STATE_READ_SOCKET;
+        conn->state = STATE_READ_SOCKET;
+        return ok;
     }
 
-    if (capy_buffer_wbytes(conn->content_buffer, conn->chunk_size, conn->line_buffer->data))
+    err = capy_buffer_wbytes(conn->content_buffer, conn->chunk_size, conn->line_buffer->data);
+
+    if (err.code)
     {
-        return STATE_SERVER_FAILURE;
+        return errwrap(err, "Failed to read content data");
     }
 
     conn_consume_bytes(conn, conn->chunk_size);
 
-    return STATE_PROCESS_REQUEST;
+    conn->state = STATE_PROCESS_REQUEST;
+    return ok;
 }
 
-static inline http_conn_state conn_bad_request(http_conn *conn)
+static inline capy_err conn_bad_request(http_conn *conn)
 {
+    capy_err err;
+
     conn->request.close = true;
+    conn->response.status = CAPY_HTTP_BAD_REQUEST;
 
-    if (http_status_text(CAPY_HTTP_BAD_REQUEST, conn->headers, conn->body))
+    if ((err = http_response_status(&conn->response)).code)
     {
-        return STATE_SERVER_FAILURE;
+        return errwrap(err, "Failed to generate BAD_REQUEST");
     }
 
-    if (capy_http_write_response(conn->response_buffer, CAPY_HTTP_BAD_REQUEST, conn->headers, conn->body, true))
+    if (capy_http_write_response(conn->response_buffer, &conn->response, true).code)
     {
-        return STATE_SERVER_FAILURE;
+        return errwrap(err, "Failed to write to response_buffer");
     }
 
-    return STATE_WRITE_RESPONSE;
+    return ok;
 }
 
-static inline http_conn_state conn_process_request(http_conn *conn)
+static inline capy_err conn_process_request(http_conn *conn)
 {
+    capy_err err;
+
     conn->request.content = conn->content_buffer->data;
     conn->request.content_length = conn->content_buffer->size;
 
-    capy_http_status status = capy_http_router_handle(conn->arena, conn->router, &conn->request, conn->headers, conn->body);
-
-    if (capy_http_write_response(conn->response_buffer, status, conn->headers, conn->body, conn->request.close))
+    if ((err = capy_http_router_handle(conn->arena, conn->router, &conn->request, &conn->response)).code)
     {
-        return STATE_SERVER_FAILURE;
+        return errwrap(err, "Failed to handle request");
     }
 
-    return STATE_WRITE_RESPONSE;
+    if ((err = capy_http_write_response(conn->response_buffer, &conn->response, conn->request.close)).code)
+    {
+        return errwrap(err, "Failed to write to response_buffer");
+    }
+
+    conn->state = STATE_WRITE_RESPONSE;
+    return ok;
 }
 
-static http_conn_state conn_message_init(http_conn *conn)
+static capy_err conn_message_init(http_conn *conn)
 {
-    if (capy_arena_free(conn->arena, conn->marker_init))
+    capy_err err;
+
+    if ((err = capy_arena_free(conn->arena, conn->marker_init)).code)
     {
-        return STATE_SERVER_FAILURE;
+        return err;
     }
 
     conn->line_buffer->size = 0;
@@ -509,11 +603,14 @@ static http_conn_state conn_message_init(http_conn *conn)
     conn->request = (capy_http_request){
         .headers = capy_strkvmmap_init(conn->arena, 16),
         .trailers = capy_strkvmmap_init(conn->arena, 4),
+        .params = capy_strkvmmap_init(conn->arena, 8),
         .query = capy_strkvmmap_init(conn->arena, 8),
     };
 
-    conn->headers = capy_strkvmmap_init(conn->arena, 16);
-    conn->body = capy_buffer_init(conn->arena, 256);
+    conn->response = (capy_http_response){
+        .headers = capy_strkvmmap_init(conn->arena, 16),
+        .body = capy_buffer_init(conn->arena, 256),
+    };
 
     conn->content_buffer = capy_buffer_init(conn->arena, 256);
     conn->response_buffer = capy_buffer_init(conn->arena, 512);
@@ -523,57 +620,9 @@ static http_conn_state conn_message_init(http_conn *conn)
     conn->mem_trailers = 0;
     conn->mem_response = 0;
 
-    return STATE_PARSE_REQUEST_LINE;
-}
+    conn->state = STATE_PARSE_REQUEST_LINE;
 
-static int conn_blocked(http_conn *conn, http_worker *worker)
-{
-    timespec_get(&conn->timestamp, TIME_UTC);
-
-    uint32_t event = (conn->after_unblock == STATE_WRITE_RESPONSE) ? EPOLLOUT : EPOLLIN;
-
-    if (conn_epoll(conn, worker->epoll_fd, EPOLL_CTL_MOD, event | EPOLLET | EPOLLONESHOT) == -1)
-    {
-        return capy_log_errno(errno, "Failed to update client epoll");
-    }
-
-    return 0;
-}
-
-static int conn_close(http_conn *conn)
-{
-    if (close(conn->socket) == -1)
-    {
-        return capy_log_errno(errno, "Failed to close connection");
-    }
-
-    conn->state = STATE_CLOSED;
-    conn->socket = 0;
-
-    return 0;
-}
-
-static int64_t difftimespec_us(struct timespec a, struct timespec b)
-{
-    return ((a.tv_sec - b.tv_sec) * (int64_t)(1000000000) + a.tv_nsec - b.tv_nsec) / 1000;
-}
-
-static void normalize_time(int64_t *us, const char **unit)
-{
-    if (*us > 1000000)
-    {
-        *unit = "s";
-        *us /= 1000000;
-    }
-    else if (*us > 1000)
-    {
-        *unit = "ms";
-        *us /= 1000;
-    }
-    else
-    {
-        *unit = "μs";
-    }
+    return ok;
 }
 
 static inline void conn_trace(http_conn *conn, http_worker *worker)
@@ -581,10 +630,9 @@ static inline void conn_trace(http_conn *conn, http_worker *worker)
     struct timespec timestamp;
     timespec_get(&timestamp, TIME_UTC);
 
-    int64_t elapsed = difftimespec_us(timestamp, conn->timestamp);
-    const char *elapsed_unit = "us";
-
-    normalize_time(&elapsed, &elapsed_unit);
+    int64_t elapsed = timespec_diff(timestamp, conn->timestamp);
+    const char *elapsed_unit;
+    nanoseconds_normalize(&elapsed, &elapsed_unit);
 
     conn->timestamp = timestamp;
 
@@ -598,9 +646,11 @@ static inline void conn_trace(http_conn *conn, http_worker *worker)
                 to_read, to_write, elapsed, elapsed_unit);
 }
 
-static inline int conn_state_machine(http_conn *conn, http_worker *worker)
+static inline capy_err conn_state_machine(http_conn *conn, http_worker *worker)
 {
     capy_assert(conn != NULL);
+
+    capy_err err;
 
     if (conn->state == STATE_BLOCKED)
     {
@@ -616,73 +666,108 @@ static inline int conn_state_machine(http_conn *conn, http_worker *worker)
         switch (conn->state)
         {
             case STATE_INIT:
-                conn->state = conn_message_init(conn);
-                break;
+            {
+                err = conn_message_init(conn);
+            }
+            break;
 
             case STATE_READ_SOCKET:
-                conn->state = conn_read_socket(conn);
-                break;
+            {
+                err = conn_read_socket(conn);
+            }
+            break;
 
             case STATE_PARSE_REQUEST_LINE:
-                conn->state = conn_parse_request_line(conn);
+            {
+                err = conn_parse_request_line(conn);
                 conn->mem_headers += (ssize_t)capy_arena_size(conn->arena) - begin;
-                break;
+            }
+            break;
 
             case STATE_PARSE_HEADERS:
-                conn->state = conn_parse_headers(conn);
+            {
+                err = conn_parse_headers(conn);
                 conn->mem_headers += (ssize_t)capy_arena_size(conn->arena) - begin;
-                break;
+            }
+            break;
 
             case STATE_PARSE_CONTENT:
-                conn->state = conn_parse_content(conn);
+            {
+                err = conn_parse_content(conn);
                 conn->mem_content += (ssize_t)capy_arena_size(conn->arena) - begin;
-                break;
+            }
+            break;
 
             case STATE_PARSE_CHUNK_SIZE:
-                conn->state = conn_parse_chunk_size(conn);
+            {
+                err = conn_parse_chunk_size(conn);
                 conn->mem_content += (ssize_t)capy_arena_size(conn->arena) - begin;
-                break;
+            }
+            break;
 
             case STATE_PARSE_CHUNK_DATA:
-                conn->state = conn_parse_chunk_data(conn);
+            {
+                err = conn_parse_chunk_data(conn);
                 conn->mem_content += (ssize_t)capy_arena_size(conn->arena) - begin;
-                break;
+            }
+            break;
 
             case STATE_PARSE_TRAILERS:
-                conn->state = conn_parse_trailers(conn);
+            {
+                err = conn_parse_trailers(conn);
                 conn->mem_trailers += (ssize_t)capy_arena_size(conn->arena) - begin;
-                break;
+            }
+            break;
 
             case STATE_PROCESS_REQUEST:
-                conn->state = conn_process_request(conn);
+            {
+                err = conn_process_request(conn);
                 conn->mem_response += (ssize_t)capy_arena_size(conn->arena) - begin;
-                break;
+            }
+            break;
 
             case STATE_BAD_REQUEST:
-                conn->state = conn_bad_request(conn);
+            {
+                err = conn_bad_request(conn);
                 conn->mem_response += (ssize_t)capy_arena_size(conn->arena) - begin;
-                break;
+            }
+            break;
 
             case STATE_WRITE_RESPONSE:
-                conn->state = conn_write_response(conn);
-                break;
+            {
+                err = conn_write_response(conn);
+            }
+            break;
 
             case STATE_BLOCKED:
+            {
                 return conn_blocked(conn, worker);
+            }
+            break;
 
             case STATE_CLOSED:
+            {
                 return conn_close(conn);
+            }
 
-            case STATE_SERVER_FAILURE:
-            case STATE_UNKNOWN:
             default:
+            {
                 capy_assert(false);
+            }
+        }
+
+        if (err.code)
+        {
+            logerr("While processing request: %s", err.msg);
+            return conn_close(conn);
         }
     }
 }
 
 static void *conn_worker(void *data)
 {
+    capy_err err;
+
     http_worker *worker = data;
 
     struct epoll_event events[1];
@@ -693,15 +778,15 @@ static void *conn_worker(void *data)
 
         if (events_count == -1)
         {
-            int err = errno;
+            err = capy_errno(errno);
 
-            if (err == EINTR)
+            if (err.code == EINTR)
             {
                 continue;
             }
 
-            capy_log_errno(err, "Failed to receive events from epoll");
-            return NULL;
+            capy_logerr("Failed to receive events from epoll (worker): %s", err.msg);
+            abort();
         }
 
         for (int i = 0; i < events_count; i++)
@@ -717,8 +802,9 @@ static void *conn_worker(void *data)
 
             if (conn->socket)
             {
-                if (conn_state_machine(conn, worker))
+                if ((err = conn_state_machine(conn, worker)).code)
                 {
+                    capy_logerr("While processing request: %s", err.msg);
                     abort();
                 }
             }
@@ -726,11 +812,9 @@ static void *conn_worker(void *data)
             pthread_mutex_unlock(&conn->mut);
         }
     }
-
-    return 0;
 }
 
-static capy_http_server_options http_get_default_options(capy_http_server_options options)
+static capy_http_server_options http_server_options_with_defaults(capy_http_server_options options)
 {
     if (!options.workers)
     {
@@ -765,7 +849,25 @@ static capy_http_server_options http_get_default_options(capy_http_server_option
     return options;
 }
 
-static int http_bind_server(const char *host, const char *port)
+typedef struct http_server
+{
+    capy_arena *arena;
+    capy_http_router *router;
+
+    int fd;
+    int epoll_fd;
+    int workers_epoll_fd;
+    int signal_fd;
+    sigset_t signals;
+
+    http_worker *workers;
+    http_conn **connections;
+    size_t active_connections;
+
+    capy_http_server_options options;
+} http_server;
+
+static capy_err http_server_bind(http_server *server)
 {
     struct addrinfo hints = {
         .ai_family = AF_INET,
@@ -775,129 +877,196 @@ static int http_bind_server(const char *host, const char *port)
 
     struct addrinfo *addresses;
 
-    int err = getaddrinfo(host, port, &hints, &addresses);
+    capy_err err = http_gaierror(getaddrinfo(server->options.host, server->options.port, &hints, &addresses));
 
-    if (err)
+    if (err.code)
     {
-        log_gaierr(err, __FILE__, __LINE__, "Failed to get server address");
-        return -1;
+        return err;
     }
-
-    int server_fd = -1;
 
     for (struct addrinfo *address = addresses; address != NULL; address = address->ai_next)
     {
+        err = ok;
+
         int fd = socket(address->ai_family, address->ai_socktype, address->ai_protocol);
 
         if (fd == -1)
         {
+            err = capy_errno(errno);
             continue;
         }
 
         if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (int[]){1}, sizeof(int)) == -1)
         {
-            capy_log_errno(errno, "Failed to set SO_REUSEADDR value");
+            err = capy_errno(errno);
             break;
         }
 
         if (bind(fd, address->ai_addr, address->ai_addrlen) == -1)
         {
+            err = capy_errno(errno);
             continue;
         }
 
-        server_fd = fd;
+        server->fd = fd;
         break;
     }
 
     freeaddrinfo(addresses);
 
-    return server_fd;
+    return err;
 }
 
-static http_conn **http_create_connections(capy_arena *arena, capy_http_router *router, capy_http_server_options *options)
+static capy_err http_server_create_signal_fd(http_server *server)
 {
-    int err;
+    sigemptyset(&server->signals);
+    sigaddset(&server->signals, SIGINT);
+    sigaddset(&server->signals, SIGQUIT);
+    sigprocmask(SIG_BLOCK, &server->signals, NULL);
 
-    http_conn **conns = make(arena, http_conn *, options->connections);
+    server->signal_fd = signalfd(-1, &server->signals, 0);
 
-    if (conns == NULL)
+    if (server->signal_fd == -1)
     {
-        capy_log_errno(errno, "Failed to create connection pool");
-        return NULL;
+        return capy_errno(errno);
     }
 
-    for (size_t i = 0; i < options->connections; i++)
+    return ok;
+}
+
+static capy_err http_server_create_epoll(http_server *server)
+{
+    struct epoll_event event;
+
+    server->epoll_fd = epoll_create1(0);
+
+    if (server->epoll_fd == -1)
     {
-        capy_arena *arena = capy_arena_init(KiB(4) + options->line_buffer_size, options->mem_connection_max);
+        return capy_errno(errno);
+    }
+
+    event = (struct epoll_event){
+        .events = EPOLLIN,
+        .data.u64 = SIGNAL_EPOLL_EVENT,
+    };
+
+    if (epoll_ctl(server->epoll_fd, EPOLL_CTL_ADD, server->signal_fd, &event) == -1)
+    {
+        return capy_errno(errno);
+    }
+
+    event = (struct epoll_event){
+        .events = EPOLLIN,
+        .data.u64 = 0,
+    };
+
+    if (epoll_ctl(server->epoll_fd, EPOLL_CTL_ADD, server->fd, &event) == -1)
+    {
+        return capy_errno(errno);
+    }
+
+    return ok;
+}
+
+static capy_err http_server_create_workers_epoll(http_server *server)
+{
+    struct epoll_event event;
+
+    server->workers_epoll_fd = epoll_create1(0);
+
+    if (server->workers_epoll_fd == -1)
+    {
+        return capy_errno(errno);
+    }
+
+    event = (struct epoll_event){
+        .events = EPOLLIN,
+        .data.u64 = SIGNAL_EPOLL_EVENT,
+    };
+
+    if (epoll_ctl(server->workers_epoll_fd, EPOLL_CTL_ADD, server->signal_fd, &event) == -1)
+    {
+        return capy_errno(errno);
+    }
+
+    return ok;
+}
+
+static capy_err http_server_create_connections(http_server *server)
+{
+    server->connections = make(server->arena, http_conn *, server->options.connections);
+
+    if (server->connections == NULL)
+    {
+        return capy_errno(ENOMEM);
+    }
+
+    for (size_t i = 0; i < server->options.connections; i++)
+    {
+        capy_arena *arena = capy_arena_init(server->options.line_buffer_size + KiB(4),
+                                            server->options.mem_connection_max);
 
         if (arena == NULL)
         {
-            capy_log_errno(errno, "Failed to create connection arena");
-            return NULL;
+            return capy_errno(ENOMEM);
         }
 
         http_conn *conn = make(arena, http_conn, 1);
 
         conn->arena = arena;
-        conn->router = router;
+        conn->router = server->router;
         conn->state = STATE_CLOSED;
-        conn->options = options;
-        conn->line_buffer = capy_buffer_init(arena, options->line_buffer_size);
+        conn->options = &server->options;
+        conn->line_buffer = capy_buffer_init(arena, server->options.line_buffer_size);
         conn->line_buffer->arena = NULL;
         conn->marker_init = capy_arena_end(arena);
 
-        if ((err = pthread_mutex_init(&conn->mut, NULL)))
-        {
-            capy_log_errno(err, "Failed to create worker mutex");
-            return NULL;
-        }
+        pthread_mutex_init(&conn->mut, NULL);
 
-        conns[i] = conn;
+        server->connections[i] = conn;
     }
 
-    return conns;
+    return ok;
 }
 
-static http_worker *http_create_workers(capy_arena *arena, int epoll_fd, sigset_t *mask, size_t workers_count)
+static capy_err http_server_create_workers(http_server *server)
 {
-    int err;
+    server->workers = make(server->arena, http_worker, server->options.workers);
 
-    http_worker *workers = make(arena, http_worker, workers_count);
-
-    if (workers == NULL)
+    if (server->workers == NULL)
     {
-        capy_log_errno(errno, "Failed to create workers pool");
-        return NULL;
+        return capy_errno(ENOMEM);
     }
 
-    for (size_t i = 0; i < workers_count; i++)
+    for (size_t i = 0; i < server->options.workers; i++)
     {
-        workers[i].id = i;
-        workers[i].epoll_fd = epoll_fd;
-        workers[i].mask = mask;
+        server->workers[i] = (http_worker){
+            .id = i,
+            .epoll_fd = server->workers_epoll_fd,
+            .mask = &server->signals,
+        };
 
-        if ((err = pthread_create(&workers[i].thread_id, NULL, conn_worker, &workers[i])))
+        int err = pthread_create(&server->workers[i].thread_id, NULL, conn_worker, &server->workers[i]);
+
+        if (err)
         {
-            capy_log_errno(err, "Failed to create worker thread");
-            return NULL;
+            return capy_errno(err);
         }
     }
 
-    return workers;
+    return ok;
 }
 
-static int http_clean_connections(http_conn **conns, size_t *count)
+static void http_server_update_connections(http_server *server)
 {
-    int err;
-
     struct timespec ts;
     timespec_get(&ts, TIME_UTC);
 
-    size_t total_count = *count;
+    size_t total = server->active_connections;
 
-    for (size_t i = 0; i < total_count; i++)
+    for (size_t i = 0; i < total; i++)
     {
-        http_conn *conn = conns[i];
+        http_conn *conn = server->connections[i];
 
         if (pthread_mutex_trylock(&conn->mut) == EBUSY)
         {
@@ -909,132 +1078,123 @@ static int http_clean_connections(http_conn **conns, size_t *count)
             if (difftime(ts.tv_sec, conn->timestamp.tv_sec) > 15)
             {
                 capy_loginf("server: connection (%d) closed due to inactivity", conn->socket);
-
-                if ((err = conn_close(conn)))
-                {
-                    return err;
-                }
+                conn_close(conn);
             }
         }
 
         pthread_mutex_unlock(&conn->mut);
     }
 
-    size_t active_count = 0;
+    size_t active = 0;
 
-    for (size_t i = 0; i < total_count; i++)
+    for (size_t i = 0; i < total; i++)
     {
-        http_conn *conn = conns[i];
+        http_conn *conn = server->connections[i];
 
         if (conn->state == STATE_CLOSED)
         {
             continue;
         }
 
-        conns[i] = conns[active_count];
-        conns[active_count] = conn;
+        server->connections[i] = server->connections[active];
+        server->connections[active] = conn;
 
-        active_count += 1;
+        active += 1;
     }
 
-    *count = active_count;
-
-    return 0;
+    server->active_connections = active;
 }
 
-int capy_http_serve(capy_http_server_options options)
+static void http_server_destroy(http_server *server)
 {
-    int err;
-
-    options = http_get_default_options(options);
-
-    int server_fd = http_bind_server(options.host, options.port);
-
-    if (server_fd == -1)
+    for (size_t i = 0; i < server->options.workers; i++)
     {
-        return capy_log_errno(EADDRNOTAVAIL, "Failed to bind server");
+        pthread_join(server->workers[i].thread_id, NULL);
     }
 
-    sigset_t mask;
-
-    sigemptyset(&mask);
-    sigaddset(&mask, SIGINT);
-    sigaddset(&mask, SIGQUIT);
-    sigprocmask(SIG_BLOCK, &mask, NULL);
-
-    int signal_fd = signalfd(-1, &mask, 0);
-
-    if (signal_fd == -1)
+    for (size_t i = 0; i < server->options.connections; i++)
     {
-        return capy_log_errno(errno, "Failed to get signal file descriptors");
+        http_conn *conn = server->connections[i];
+
+        if (conn->socket != 0)
+        {
+            close(conn->socket);
+        }
+
+        pthread_mutex_destroy(&conn->mut);
+        capy_arena_destroy(conn->arena);
     }
 
-    struct epoll_event event;
+    close(server->signal_fd);
+    close(server->fd);
+    close(server->epoll_fd);
+    close(server->workers_epoll_fd);
 
-    int epoll_fd = epoll_create1(0);
+    capy_arena_destroy(server->arena);
+}
 
-    if (epoll_fd == -1)
-    {
-        return capy_log_errno(errno, "Failed to create epoll");
-    }
+capy_err capy_http_serve(capy_http_server_options options)
+{
+    capy_err err;
 
-    int workers_epoll_fd = epoll_create1(0);
-
-    if (workers_epoll_fd == -1)
-    {
-        return capy_log_errno(errno, "Failed to create workers epoll");
-    }
-
-    event = (struct epoll_event){
-        .events = EPOLLIN,
-        .data.u64 = SIGNAL_EPOLL_EVENT,
-    };
-
-    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, signal_fd, &event) == -1)
-    {
-        return capy_log_errno(errno, "Failed to add signal to server epoll");
-    }
-
-    if (epoll_ctl(workers_epoll_fd, EPOLL_CTL_ADD, signal_fd, &event) == -1)
-    {
-        return capy_log_errno(errno, "Failed to add signal to server epoll");
-    }
-
-    event = (struct epoll_event){
-        .events = EPOLLIN,
-        .data.u64 = 0,
-    };
-
-    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_fd, &event) == -1)
-    {
-        return capy_log_errno(errno, "Failed to add server socket to server epoll");
-    }
-
-    if (listen(server_fd, 10) == -1)
-    {
-        return capy_log_errno(errno, "Failed to listen");
-    }
-
-    size_t reserve = (sizeof(http_worker) * options.workers) +
-                     (sizeof(http_conn *) * options.connections);
-
-    capy_arena *arena = capy_arena_init(reserve, MiB(8));
+    capy_arena *arena = capy_arena_init(0, MiB(1));
 
     if (arena == NULL)
     {
-        capy_log_errno(ENOMEM, "Failed to create arena for worker threads");
-        return ENOMEM;
+        return errfmt(ENOMEM, "Failed to create server arena");
     }
 
     capy_http_router *router = capy_http_router_init(arena, options.routes_size, options.routes);
 
-    http_conn **conns = http_create_connections(arena, router, &options);
-    size_t conns_count = 0;
+    if (router == NULL)
+    {
+        return errfmt(ENOMEM, "Failed to create router");
+    }
 
-    http_worker *workers = http_create_workers(arena, workers_epoll_fd, &mask, options.workers);
+    http_server server = {
+        .router = router,
+        .arena = arena,
+        .options = http_server_options_with_defaults(options),
+    };
+
+    if ((err = http_server_bind(&server)).code)
+    {
+        return errwrap(err, "Failed to bind server");
+    }
+
+    if ((err = http_server_create_signal_fd(&server)).code)
+    {
+        return errwrap(err, "Failed to create signal file descriptors");
+    }
+
+    if ((err = http_server_create_epoll(&server)).code)
+    {
+        return errwrap(err, "Failed to create listen epoll");
+    }
+
+    if ((err = http_server_create_workers_epoll(&server)).code)
+    {
+        return errwrap(err, "Failed to create listen epoll");
+    }
+
+    if ((err = http_server_create_connections(&server)).code)
+    {
+        return errwrap(err, "Failed to create connection pool");
+    }
+
+    if ((err = http_server_create_workers(&server)).code)
+    {
+        return errwrap(err, "Failed to create workers pool");
+    }
+
+    if (listen(server.fd, 10) == -1)
+    {
+        return errwrap(capy_errno(errno), "Failed to listen");
+    }
 
     capy_loginf("server: listening at %s:%s (workers = %lu, connections = %lu)",
-                options.host, options.port, options.workers, options.connections);
+                server.options.host, server.options.port,
+                server.options.workers, server.options.connections);
 
     void *address_buffer = &(struct sockaddr_storage){0};
     socklen_t address_buffer_size = sizeof(address_buffer);
@@ -1049,24 +1209,21 @@ int capy_http_serve(capy_http_server_options options)
 
     for (int stop = false; !stop;)
     {
-        int events_count = epoll_pwait(epoll_fd, events, 10, 5000, &mask);
+        int events_count = epoll_pwait(server.epoll_fd, events, 10, 5000, &server.signals);
 
         if (events_count == -1)
         {
-            err = errno;
+            err = capy_errno(errno);
 
-            if (err == EINTR)
+            if (err.code == EINTR)
             {
                 continue;
             }
 
-            return capy_log_errno(errno, "Failed to receive events from epoll");
+            return errwrap(err, "Failed to receive events from epoll");
         }
 
-        if ((err = http_clean_connections(conns, &conns_count)))
-        {
-            return err;
-        }
+        http_server_update_connections(&server);
 
         for (int i = 0; i < events_count; i++)
         {
@@ -1076,84 +1233,65 @@ int capy_http_serve(capy_http_server_options options)
                 break;
             }
 
-            int conn_fd = accept4(server_fd, address_buffer, &address_buffer_size, SOCK_NONBLOCK);
+            int conn_fd = accept4(server.fd, address_buffer, &address_buffer_size, SOCK_NONBLOCK);
 
             if (conn_fd == -1)
             {
-                return capy_log_errno(errno, "Failed to accept connection");
+                return errwrap(capy_errno(errno), "Failed to accept connection");
             }
 
-            if (conns_count >= options.connections)
+            if (server.active_connections >= server.options.connections)
             {
-                if (close(conn_fd) == -1)
-                {
-                    return capy_log_errno(errno, "Failed to close connection");
-                }
-
+                close(conn_fd);
                 continue;
             }
 
             if (setsockopt(conn_fd, SOL_SOCKET, SO_KEEPALIVE, &(int){1}, sizeof(int)) == -1)
             {
-                return capy_log_errno(errno, "Failed to set SO_KEEPALIVE value");
+                return errwrap(capy_errno(errno), "Failed to set SO_KEEPALIVE value");
             }
 
             if (setsockopt(conn_fd, IPPROTO_TCP, TCP_KEEPCNT, &keepcnt, sizeof(keepcnt)) == -1)
             {
-                return capy_log_errno(errno, "Failed to set TCP_KEEPCNT value");
+                return errwrap(capy_errno(errno), "Failed to set TCP_KEEPCNT value");
             }
 
             if (setsockopt(conn_fd, IPPROTO_TCP, TCP_KEEPIDLE, &keepidle, sizeof(keepidle)) == -1)
             {
-                return capy_log_errno(errno, "Failed to set TCP_KEEPIDLE value");
+                return errwrap(capy_errno(errno), "Failed to set TCP_KEEPIDLE value");
             }
 
             if (setsockopt(conn_fd, IPPROTO_TCP, TCP_KEEPINTVL, &keepintvl, sizeof(keepintvl)) == -1)
             {
-                return capy_log_errno(errno, "Failed to set TCP_KEEPINTVL value");
+                return errwrap(capy_errno(errno), "Failed to set TCP_KEEPINTVL value");
             }
 
             if (setsockopt(conn_fd, IPPROTO_TCP, TCP_USER_TIMEOUT, &timeout, sizeof(timeout)) == -1)
             {
-                return capy_log_errno(errno, "Failed to set TCP_USER_TIMEOUT value");
+                return errwrap(capy_errno(errno), "Failed to set TCP_USER_TIMEOUT value");
             }
 
             if (setsockopt(conn_fd, IPPROTO_TCP, TCP_NODELAY, &(int){1}, sizeof(int)) == -1)
             {
-                return capy_log_errno(errno, "Failed to set TCP_NODELAY value");
+                return errwrap(capy_errno(errno), "Failed to set TCP_NODELAY value");
             }
 
-            http_conn *conn = conns[conns_count++];
+            http_conn *conn = server.connections[server.active_connections++];
 
             conn->socket = conn_fd;
             conn->state = STATE_INIT;
             timespec_get(&conn->timestamp, TIME_UTC);
 
-            if (conn_epoll(conn, workers_epoll_fd, EPOLL_CTL_ADD, EPOLLIN | EPOLLET | EPOLLONESHOT) == -1)
+            if ((err = conn_epoll(conn, server.workers_epoll_fd, EPOLL_CTL_ADD, EPOLLIN | EPOLLET | EPOLLONESHOT)).code)
             {
-                return capy_log_errno(errno, "Failed to add client to epoll");
+                return err;
             }
         }
     }
 
-    for (size_t i = 0; i < options.workers; i++)
-    {
-        pthread_join(workers[i].thread_id, NULL);
-    }
-
-    for (size_t i = 0; i < options.connections; i++)
-    {
-        pthread_mutex_destroy(&conns[i]->mut);
-        capy_arena_destroy(conns[i]->arena);
-    }
-
-    capy_arena_destroy(arena);
-    close(signal_fd);
-    close(server_fd);
-    close(epoll_fd);
-    close(workers_epoll_fd);
+    http_server_destroy(&server);
 
     capy_loginf("server: shutting down");
 
-    return 0;
+    return ok;
 }

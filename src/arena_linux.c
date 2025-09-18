@@ -49,56 +49,51 @@ capy_arena *capy_arena_init(size_t min, size_t max)
     return arena;
 }
 
-void capy_arena_destroy(capy_arena *arena)
+capy_err capy_arena_destroy(capy_arena *arena)
 {
     capy_assert(arena != NULL);
 
     if (munmap(arena, arena->max) == -1)
     {
-        capy_log_errno(errno, "munmap failed")
+        return capy_errno(errno);
     }
+
+    return ok;
 }
 
-void *capy_arena_realloc(capy_arena *arena, void *src, size_t size, size_t new_size, int zeroinit)
+void *capy_arena_realloc(capy_arena *arena, void *data, size_t size, size_t new_size, int zeroinit)
 {
     capy_assert(arena != NULL);
-    capy_assert(src != NULL);
+    capy_assert(data != NULL);
     capy_assert(new_size > size);
 
-    char *end = cast(char *, src) + size;
+    void *tmp;
+
+    char *end = cast(char *, data) + size;
 
     if (end == capy_arena_end(arena))
     {
-        if (capy_arena_alloc(arena, new_size - size, 0, zeroinit) == NULL)
+        tmp = capy_arena_alloc(arena, new_size - size, 0, zeroinit);
+
+        if (tmp == NULL)
+        {
+            return NULL;
+        }
+    }
+    else
+    {
+        tmp = capy_arena_alloc(arena, new_size, 8, false);
+
+        if (tmp == NULL)
         {
             return NULL;
         }
 
-        return src;
+        memcpy(tmp, data, size);
+        data = tmp;
     }
 
-    char *dest = capy_arena_alloc(arena, new_size, 8, false);
-
-    if (dest != NULL)
-    {
-        memcpy(dest, src, size);
-    }
-
-    return dest;
-}
-
-int capy_arena_reserve(capy_arena *arena, size_t size, size_t align)
-{
-    void *addr = capy_arena_alloc(arena, size, align, false);
-
-    if (addr == NULL)
-    {
-        return ENOMEM;
-    }
-
-    arena->size = cast(size_t, cast(char *, addr) - cast(char *, arena));
-
-    return 0;
+    return data;
 }
 
 void *capy_arena_alloc(capy_arena *arena, size_t size, size_t align, int zeroinit)
@@ -115,21 +110,21 @@ void *capy_arena_alloc(capy_arena *arena, size_t size, size_t align, int zeroini
 
     if (end > arena->capacity)
     {
-        size_t capacity = next_pow2(arena->capacity + size);
-
-        capy_logmem("capy_arena_alloc: ptr=%p from=%zu to=%zu", (void *)arena, arena->capacity, capacity);
+        size_t capacity = next_pow2(end);
 
         if (mprotect(arena, capacity, PROT_READ | PROT_WRITE))
         {
             return NULL;
         }
 
+        capy_logmem("capy_arena_alloc: ptr=%p from=%zu to=%zu", (void *)arena, arena->capacity, capacity);
+
         arena->capacity = capacity;
     }
 
     arena->size = end;
 
-    char *data = (char *)(arena) + begin;
+    char *data = cast(char *, arena) + begin;
 
     if (zeroinit)
     {
@@ -139,10 +134,10 @@ void *capy_arena_alloc(capy_arena *arena, size_t size, size_t align, int zeroini
     return data;
 }
 
-int capy_arena_free(capy_arena *arena, void *addr)
+capy_err capy_arena_free(capy_arena *arena, void *addr)
 {
-    capy_assert(cast(size_t, addr) >= cast(size_t, arena) + sizeof(capy_arena));
-    capy_assert(cast(size_t, addr) <= cast(size_t, arena) + arena->size);
+    capy_assert(cast(uintptr_t, addr) >= cast(uintptr_t, arena) + sizeof(capy_arena));
+    capy_assert(cast(uintptr_t, addr) <= cast(uintptr_t, arena) + arena->size);
 
     arena->size = cast(size_t, cast(char *, addr) - cast(char *, arena));
 
@@ -159,22 +154,36 @@ int capy_arena_free(capy_arena *arena, void *addr)
                 capacity = arena->min;
             }
 
-            capy_logmem("capy_arena_free: ptr=%p from=%zu to=%zu", (void *)arena, arena->capacity, capacity);
-
-            char *tail = (char *)(arena) + capacity;
+            char *tail = cast(char *, arena) + capacity;
 
             size_t tail_size = arena->capacity - capacity;
 
             if (mprotect(tail, tail_size, PROT_NONE))
             {
-                return errno;
+                return capy_errno(errno);
             }
+
+            capy_logmem("capy_arena_free: ptr=%p from=%zu to=%zu", (void *)arena, arena->capacity, capacity);
 
             arena->capacity = capacity;
         }
     }
 
-    return 0;
+    return ok;
+}
+
+capy_err capy_arena_reserve(capy_arena *arena, size_t size, size_t align)
+{
+    size_t tmp = arena->size;
+
+    if (capy_arena_alloc(arena, size, align, false) == NULL)
+    {
+        return capy_errno(ENOMEM);
+    }
+
+    arena->size = tmp;
+
+    return ok;
 }
 
 size_t capy_arena_size(capy_arena *arena)
@@ -186,5 +195,5 @@ size_t capy_arena_size(capy_arena *arena)
 void *capy_arena_end(capy_arena *arena)
 {
     capy_assert(arena != NULL);
-    return (char *)(arena) + arena->size;
+    return cast(char *, arena) + arena->size;
 }

@@ -359,7 +359,7 @@ static int test_uri_resolve_reference(void)
         {strl("http://a/b/c/d;p?q"), strl("http:g"), strl("http:g")},
     };
 
-    capy_arena *arena = capy_arena_init(0, MiB(8));
+    capy_arena *arena = capy_arena_init(0, KiB(4));
 
     for (size_t i = 0; i < arrlen(uris_reference); i++)
     {

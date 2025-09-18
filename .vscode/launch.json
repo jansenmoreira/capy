@@ -23,11 +23,9 @@
             "program": "${workspaceFolder}/build/debug/ex_echo",
             "args": [
                 "-w",
-                "1",
+                "64",
                 "-m",
                 "-v",
-                "-c",
-                "64"
             ],
             "cwd": "${workspaceFolder}",
             "terminal": "integrated",

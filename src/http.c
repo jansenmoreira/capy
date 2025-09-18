@@ -14,18 +14,6 @@
 
 // STATIC
 
-static const capy_string capy_http_method_string[] = {
-    [CAPY_HTTP_CONNECT] = strli("CONNECT"),
-    [CAPY_HTTP_DELETE] = strli("DELETE"),
-    [CAPY_HTTP_GET] = strli("GET"),
-    [CAPY_HTTP_HEAD] = strli("HEAD"),
-    [CAPY_HTTP_OPTIONS] = strli("OPTIONS"),
-    [CAPY_HTTP_PATCH] = strli("PATCH"),
-    [CAPY_HTTP_POST] = strli("POST"),
-    [CAPY_HTTP_PUT] = strli("PUT"),
-    [CAPY_HTTP_TRACE] = strli("TRACE"),
-};
-
 static const capy_string capy_http_status_string[600] = {
     [CAPY_HTTP_STATUS_UNK] = strli("Unknown"),
     [CAPY_HTTP_CONTINUE] = strli("Continue"),
@@ -224,7 +212,7 @@ static const char *http_months[] = {
 
 // STATIC DEFINITIONS
 
-static int http_string_validate(capy_string s, int categories, const char *chars)
+static bool http_string_validate(capy_string s, int categories, const char *chars)
 {
     capy_string input = s;
 
@@ -280,13 +268,13 @@ static size_t http_consume_chars(capy_string *buffer, const char *chars, size_t 
     return i;
 }
 
-static int http_canonical_field_name(capy_arena *arena, capy_string input, capy_string *output)
+static capy_err http_canonical_field_name(capy_arena *arena, capy_string *output, capy_string input)
 {
     char *data = make(arena, char, input.size + 1);
 
     if (data == NULL)
     {
-        return ENOMEM;
+        return capy_errno(ENOMEM);
     }
 
     int upper = 1;
@@ -313,7 +301,7 @@ static int http_canonical_field_name(capy_arena *arena, capy_string input, capy_
 
     *output = capy_string_bytes(input.size, data);
 
-    return 0;
+    return ok;
 }
 
 static capy_http_router_map *capy_http_router_map_init(capy_arena *arena, size_t capacity)
@@ -337,18 +325,18 @@ static capy_http_router *capy_http_router_map_get(capy_http_router_map *map, cap
     return capy_strmap_get(map->items, sizeof(capy_http_router), map->capacity, key);
 }
 
-static must_check int capy_http_router_map_set(capy_arena *arena, capy_http_router_map *map, capy_http_router router)
+static must_check capy_err capy_http_router_map_set(capy_arena *arena, capy_http_router_map *map, capy_http_router router)
 {
     void *items = capy_strmap_set(arena, map->items, sizeof(capy_http_router), &map->capacity, &map->size, &router);
 
     if (items == NULL)
     {
-        return ENOMEM;
+        return capy_errno(ENOMEM);
     }
 
     map->items = items;
 
-    return 0;
+    return ok;
 }
 
 static capy_http_router *http_route_add_(capy_arena *arena, capy_http_router *router, capy_http_method method, capy_string suffix, capy_string path, capy_http_handler handler)
@@ -395,7 +383,7 @@ static capy_http_router *http_route_add_(capy_arena *arena, capy_http_router *ro
 
     child->segment = segment;
 
-    if (capy_http_router_map_set(arena, router->segments, *child))
+    if (capy_http_router_map_set(arena, router->segments, *child).code)
     {
         return NULL;
     }
@@ -403,32 +391,56 @@ static capy_http_router *http_route_add_(capy_arena *arena, capy_http_router *ro
     return router;
 }
 
-static capy_http_status http_status_text(capy_http_status status, capy_strkvmmap *headers, capy_buffer *body)
+static capy_err http_response_status(capy_http_response *response)
 {
-    int err;
+    capy_err err;
 
-    if ((err = capy_strkvmmap_add(headers, strl("Content-Type"), strl("text/plain; charset=UTF-8"))))
+    capy_string status_text = capy_http_status_string[response->status];
+
+    if ((err = capy_strkvmmap_add(response->headers, strl("Content-Type"), strl("text/plain; charset=UTF-8"))).code)
     {
-        return CAPY_HTTP_INTERNAL_SERVER_ERROR;
+        return err;
     }
 
-    if ((err = capy_buffer_format(body, 0, "%lu %s\n", status, capy_http_status_string[status])))
+    if ((err = capy_buffer_format(response->body, 0, "%lu %s\n", response->status, status_text)).code)
     {
-        return CAPY_HTTP_INTERNAL_SERVER_ERROR;
+        return err;
     }
 
-    return 0;
+    return ok;
 }
 
-static int http_query_pctdecode(capy_arena *arena, capy_string *output, capy_string input)
+static capy_err http_response_wcstr(capy_http_response *response, const char *msg)
+{
+    capy_err err;
+
+    if ((err = capy_strkvmmap_add(response->headers, strl("Content-Type"), strl("text/plain; charset=UTF-8"))).code)
+    {
+        return err;
+    }
+
+    if ((err = capy_buffer_format(response->body, 0, "%s\n", msg)).code)
+    {
+        return err;
+    }
+
+    return ok;
+}
+
+static capy_err http_query_pctdecode(capy_arena *arena, capy_string *output, capy_string input)
 {
     if (input.size == 0)
     {
         *output = (capy_string){.size = 0};
-        return 0;
+        return ok;
     }
 
     char *bytes = make(arena, char, output->size + 1);
+
+    if (bytes == NULL)
+    {
+        return capy_errno(ENOMEM);
+    }
 
     size_t j = 0;
 
@@ -453,52 +465,8 @@ static int http_query_pctdecode(capy_arena *arena, capy_string *output, capy_str
     }
 
     *output = capy_string_bytes(j, bytes);
-    return 0;
-}
 
-static int capy_http_parse_query(capy_strkvmmap *fields, capy_string line)
-{
-    int err;
-
-    while (line.size)
-    {
-        capy_string item = http_next_token(&line, "&");
-
-        http_consume_chars(&line, "&", 1);
-
-        if (item.size == 0)
-        {
-            continue;
-        }
-
-        capy_string name = http_next_token(&item, "=");
-
-        http_consume_chars(&item, "=", 1);
-
-        if (name.size == 0)
-        {
-            continue;
-        }
-
-        capy_string value = item;
-
-        if ((err = http_query_pctdecode(fields->arena, &name, name)))
-        {
-            return err;
-        }
-
-        if ((err = http_query_pctdecode(fields->arena, &value, value)))
-        {
-            return err;
-        }
-
-        if ((err = capy_strkvmmap_add(fields, name, value)))
-        {
-            return err;
-        }
-    }
-
-    return 0;
+    return ok;
 }
 
 // DEFINITIONS
@@ -634,34 +602,36 @@ capy_http_version capy_http_parse_version(capy_string input)
     return CAPY_HTTP_VERSION_UNK;
 }
 
-int capy_http_write_response(capy_buffer *buffer, capy_http_status status, capy_strkvmmap *headers, capy_buffer *body, int close)
+capy_err capy_http_write_response(capy_buffer *buffer, capy_http_response *response, int close)
 {
-    int err;
+    capy_err err;
 
     time_t t = time(NULL);
     struct tm ct;
     gmtime_r(&t, &ct);
 
-    size_t content_length = (body) ? body->size : 0;
+    size_t content_length = (response->body) ? response->body->size : 0;
     const char *close_header = (close) ? "Connection: close\r\n" : "";
 
-    if ((err = capy_buffer_format(buffer, 0,
-                                  "HTTP/1.1 %d %s\r\n"
-                                  "Date: %s, %02d %s %04d %02d:%02d:%02d GMT\r\n"
-                                  "Content-Length: %llu\r\n"
-                                  "%s",
-                                  status, capy_http_status_string[status].data,
-                                  http_weekday[ct.tm_wday],
-                                  ct.tm_mday, http_months[ct.tm_mon], ct.tm_year + 1900,
-                                  ct.tm_hour, ct.tm_min, ct.tm_sec,
-                                  content_length, close_header)))
+    err = capy_buffer_format(buffer, 0,
+                             "HTTP/1.1 %d %s\r\n"
+                             "Date: %s, %02d %s %04d %02d:%02d:%02d GMT\r\n"
+                             "Content-Length: %llu\r\n"
+                             "%s",
+                             response->status, capy_http_status_string[response->status].data,
+                             http_weekday[ct.tm_wday],
+                             ct.tm_mday, http_months[ct.tm_mon], ct.tm_year + 1900,
+                             ct.tm_hour, ct.tm_min, ct.tm_sec,
+                             content_length, close_header);
+
+    if (err.code)
     {
         return err;
     }
 
-    for (size_t i = 0; i < headers->capacity; i++)
+    for (size_t i = 0; i < response->headers->capacity; i++)
     {
-        capy_strkvn *header = headers->items + i;
+        capy_strkvn *header = response->headers->items + i;
 
         if (header->key.size == 0)
         {
@@ -670,7 +640,7 @@ int capy_http_write_response(capy_buffer *buffer, capy_http_status status, capy_
 
         while (header != NULL)
         {
-            if ((err = capy_buffer_format(buffer, 0, "%s: %s\r\n", header->key.data, header->value.data)))
+            if ((err = capy_buffer_format(buffer, 0, "%s: %s\r\n", header->key.data, header->value.data)).code)
             {
                 return err;
             }
@@ -679,23 +649,23 @@ int capy_http_write_response(capy_buffer *buffer, capy_http_status status, capy_
         }
     }
 
-    if ((err = capy_buffer_wcstr(buffer, "\r\n")))
+    if ((err = capy_buffer_wbytes(buffer, 2, "\r\n")).code)
     {
         return err;
     }
 
-    return capy_buffer_wbytes(buffer, body->size, body->data);
+    return capy_buffer_wbytes(buffer, response->body->size, response->body->data);
 }
 
-int capy_http_parse_reqline(capy_arena *arena, capy_http_request *request, capy_string line)
+capy_err capy_http_parse_reqline(capy_arena *arena, capy_http_request *request, capy_string line)
 {
-    int err;
+    capy_err err;
 
     capy_string method = http_next_token(&line, " ");
 
     if (http_consume_chars(&line, " ", 0) != 1)
     {
-        return EINVAL;
+        return capy_errno(EINVAL);
     }
 
     capy_string uri = http_next_token(&line, " ");
@@ -704,28 +674,28 @@ int capy_http_parse_reqline(capy_arena *arena, capy_http_request *request, capy_
 
     if (http_consume_chars(&line, " ", 0) != 1)
     {
-        return EINVAL;
+        return capy_errno(EINVAL);
     }
 
     capy_string version = http_next_token(&line, " ");
 
     if (line.size != 0)
     {
-        return EINVAL;
+        return capy_errno(EINVAL);
     }
 
     request->method = capy_http_parse_method(method);
 
     if (request->method == CAPY_HTTP_METHOD_UNK)
     {
-        return EINVAL;
+        return capy_errno(EINVAL);
     }
 
     request->version = capy_http_parse_version(version);
 
     if (request->version == CAPY_HTTP_VERSION_UNK)
     {
-        return EINVAL;
+        return capy_errno(EINVAL);
     }
 
     if (request->method == CAPY_HTTP_CONNECT)
@@ -735,7 +705,7 @@ int capy_http_parse_reqline(capy_arena *arena, capy_http_request *request, capy_
 
         if (request->uri.userinfo.size)
         {
-            return EINVAL;
+            return capy_errno(EINVAL);
         }
     }
     else if (request->method == CAPY_HTTP_OPTIONS && capy_string_eq(uri, strl("*")))
@@ -749,57 +719,102 @@ int capy_http_parse_reqline(capy_arena *arena, capy_http_request *request, capy_
 
     if (!capy_uri_valid(request->uri))
     {
-        return EINVAL;
+        return capy_errno(EINVAL);
     }
 
-    if ((err = capy_string_copy(arena, &request->uri_raw, request->uri_raw)))
+    if ((err = capy_string_copy(arena, &request->uri_raw, request->uri_raw)).code)
     {
         return err;
     }
 
-    if ((err = capy_uri_normalize(arena, &request->uri.scheme, request->uri.scheme, true)))
+    if ((err = capy_uri_normalize(arena, &request->uri.scheme, request->uri.scheme, true)).code)
     {
         return err;
     }
 
-    if ((err = capy_uri_normalize(arena, &request->uri.authority, request->uri.authority, false)))
+    if ((err = capy_uri_normalize(arena, &request->uri.authority, request->uri.authority, false)).code)
     {
         return err;
     }
 
-    if ((err = capy_uri_normalize(arena, &request->uri.userinfo, request->uri.userinfo, false)))
+    if ((err = capy_uri_normalize(arena, &request->uri.userinfo, request->uri.userinfo, false)).code)
     {
         return err;
     }
 
-    if ((err = capy_uri_normalize(arena, &request->uri.host, request->uri.host, true)))
+    if ((err = capy_uri_normalize(arena, &request->uri.host, request->uri.host, true)).code)
     {
         return err;
     }
 
-    if ((err = capy_uri_normalize(arena, &request->uri.port, request->uri.port, false)))
+    if ((err = capy_uri_normalize(arena, &request->uri.port, request->uri.port, false)).code)
     {
         return err;
     }
 
-    if ((err = capy_uri_normalize(arena, &request->uri.path, request->uri.path, false)))
+    if ((err = capy_uri_normalize(arena, &request->uri.path, request->uri.path, false)).code)
     {
         return err;
     }
 
-    if ((err = capy_uri_normalize(arena, &request->uri.query, request->uri.query, false)))
+    if ((err = capy_uri_normalize(arena, &request->uri.query, request->uri.query, false)).code)
     {
         return err;
     }
 
     request->uri.fragment = (capy_string){.size = 0};
 
-    return 0;
+    return ok;
 }
 
-int capy_http_request_validate(capy_arena *arena, capy_http_request *request)
+capy_err capy_http_parse_query(capy_strkvmmap *fields, capy_string query)
 {
-    int err;
+    capy_err err;
+
+    while (query.size)
+    {
+        capy_string item = http_next_token(&query, "&");
+
+        http_consume_chars(&query, "&", 1);
+
+        if (item.size == 0)
+        {
+            continue;
+        }
+
+        capy_string name = http_next_token(&item, "=");
+
+        http_consume_chars(&item, "=", 1);
+
+        if (name.size == 0)
+        {
+            continue;
+        }
+
+        capy_string value = item;
+
+        if ((err = http_query_pctdecode(fields->arena, &name, name)).code)
+        {
+            return err;
+        }
+
+        if ((err = http_query_pctdecode(fields->arena, &value, value)).code)
+        {
+            return err;
+        }
+
+        if ((err = capy_strkvmmap_add(fields, name, value)).code)
+        {
+            return err;
+        }
+    }
+
+    return ok;
+}
+
+capy_err capy_http_request_validate(capy_arena *arena, capy_http_request *request)
+{
+    capy_err err;
 
     request->content_length = 0;
     request->chunked = 0;
@@ -815,19 +830,19 @@ int capy_http_request_validate(capy_arena *arena, capy_http_request *request)
             break;
 
         default:
-            return EINVAL;
+            return capy_errno(EINVAL);
     }
 
     capy_strkvn *host = capy_strkvmmap_get(request->headers, strl("Host"));
 
     if (host == NULL || host->next != NULL)
     {
-        return EINVAL;
+        return capy_errno(EINVAL);
     }
 
     if ((request->uri.flags & CAPY_URI_AUTHORITY) && request->uri.authority.size == 0)
     {
-        return EINVAL;
+        return capy_errno(EINVAL);
     }
 
     if (request->uri.scheme.size == 0)
@@ -837,7 +852,7 @@ int capy_http_request_validate(capy_arena *arena, capy_http_request *request)
 
     if (!capy_string_eq(request->uri.scheme, strl("http")))
     {
-        return EINVAL;
+        return capy_errno(EINVAL);
     }
 
     if (request->method != CAPY_HTTP_CONNECT)
@@ -849,7 +864,7 @@ int capy_http_request_validate(capy_arena *arena, capy_http_request *request)
 
             if (!capy_uri_valid(request->uri))
             {
-                return EINVAL;
+                return capy_errno(EINVAL);
             }
         }
     }
@@ -861,10 +876,10 @@ int capy_http_request_validate(capy_arena *arena, capy_http_request *request)
 
     if (request->uri.authority.size == 0)
     {
-        return EINVAL;
+        return capy_errno(EINVAL);
     }
 
-    if ((err = capy_string_join(arena, &host->value, ":", 2, (capy_string[]){request->uri.host, request->uri.port})))
+    if ((err = capy_string_join(arena, &host->value, ":", 2, (capy_string[]){request->uri.host, request->uri.port})).code)
     {
         return err;
     }
@@ -875,7 +890,7 @@ int capy_http_request_validate(capy_arena *arena, capy_http_request *request)
     {
         if (transfer_encoding->next || !capy_string_eq(transfer_encoding->value, strl("chunked")))
         {
-            return EINVAL;
+            return capy_errno(EINVAL);
         }
 
         request->chunked = true;
@@ -888,7 +903,7 @@ int capy_http_request_validate(capy_arena *arena, capy_http_request *request)
     {
         if (request->chunked || content_length->next || !http_string_validate(content_length->value, HTTP_DIGIT, ""))
         {
-            return EINVAL;
+            return capy_errno(EINVAL);
         }
 
         request->content_length = strtoull(content_length->value.data, NULL, 10);
@@ -901,7 +916,7 @@ int capy_http_request_validate(capy_arena *arena, capy_http_request *request)
     {
         if (connection->next != NULL)
         {
-            return EINVAL;
+            return capy_errno(EINVAL);
         }
 
         if (capy_string_eq(connection->value, strl("close")))
@@ -914,47 +929,47 @@ int capy_http_request_validate(capy_arena *arena, capy_http_request *request)
         }
         else
         {
-            return EINVAL;
+            return capy_errno(EINVAL);
         }
     }
 
-    if ((err = capy_http_parse_query(request->query, request->uri.query)))
+    if ((err = capy_http_parse_query(request->query, request->uri.query)).code)
     {
         return err;
     }
 
-    return 0;
+    return ok;
 }
 
-int capy_http_parse_field(capy_strkvmmap *fields, capy_string line)
+capy_err capy_http_parse_field(capy_strkvmmap *fields, capy_string line)
 {
-    int err;
+    capy_err err;
 
     capy_string name = http_next_token(&line, ":");
 
     if (name.size == 0 || !http_string_validate(name, HTTP_TOKEN, NULL))
     {
-        return EINVAL;
+        return capy_errno(EINVAL);
     }
 
     if (http_consume_chars(&line, ":", 0) != 1)
     {
-        return EINVAL;
+        return capy_errno(EINVAL);
     }
 
     capy_string value = capy_string_trim(line, " \t");
 
     if (!http_string_validate(value, HTTP_VCHAR, " \t"))
     {
-        return EINVAL;
+        return capy_errno(EINVAL);
     }
 
-    if ((err = http_canonical_field_name(fields->arena, name, &name)))
+    if ((err = http_canonical_field_name(fields->arena, &name, name)).code)
     {
         return err;
     }
 
-    if ((err = capy_string_copy(fields->arena, &value, value)))
+    if ((err = capy_string_copy(fields->arena, &value, value)).code)
     {
         return err;
     }
@@ -1011,14 +1026,9 @@ capy_http_route *capy_http_route_get(capy_http_router *router, capy_http_method 
     return capy_http_route_get(child, method, path);
 }
 
-capy_strkvmmap *capy_http_parse_uriparams(capy_arena *arena, capy_string path, capy_string handler_path)
+capy_err capy_http_parse_uriparams(capy_strkvmmap *params, capy_string path, capy_string handler_path)
 {
-    capy_strkvmmap *params = capy_strkvmmap_init(arena, 8);
-
-    if (params == NULL)
-    {
-        return NULL;
-    }
+    capy_err err;
 
     for (;;)
     {
@@ -1040,31 +1050,42 @@ capy_strkvmmap *capy_http_parse_uriparams(capy_arena *arena, capy_string path, c
 
         handler_path_segment = capy_string_shl(handler_path_segment, 1);
 
-        if (capy_strkvmmap_add(params, handler_path_segment, path_segment))
+        if ((err = capy_strkvmmap_add(params, handler_path_segment, path_segment)).code)
         {
-            return NULL;
+            return err;
         }
     }
 
-    return params;
+    return ok;
 }
 
-capy_http_status capy_http_router_handle(capy_arena *arena, capy_http_router *router,
-                                         capy_http_request *request, capy_strkvmmap *headers, capy_buffer *body)
+capy_err capy_http_router_handle(capy_arena *arena, capy_http_router *router, capy_http_request *request, capy_http_response *response)
 {
+    capy_err err;
+
     capy_http_route *route = capy_http_route_get(router, request->method, request->uri.path);
 
     if (route == NULL)
     {
-        return http_status_text(CAPY_HTTP_NOT_FOUND, headers, body);
+        response->status = CAPY_HTTP_NOT_FOUND;
+        return http_response_status(response);
     }
 
-    request->params = capy_http_parse_uriparams(arena, request->uri.path, route->path);
-
-    if (request->params == NULL)
+    if ((err = capy_http_parse_uriparams(request->params, request->uri.path, route->path)).code)
     {
-        return http_status_text(CAPY_HTTP_INTERNAL_SERVER_ERROR, headers, body);
+        return errwrap(err, "Failed to parse uri params");
     }
 
-    return route->handler(arena, request, headers, body);
+    if ((err = capy_http_parse_query(request->params, request->uri.query)).code)
+    {
+        return errwrap(err, "Failed to parse query params");
+    }
+
+    if ((err = route->handler(arena, request, response)).code)
+    {
+        response->status = CAPY_HTTP_INTERNAL_SERVER_ERROR;
+        return http_response_wcstr(response, err.msg);
+    }
+
+    return ok;
 }

@@ -493,19 +493,19 @@ static capy_string uri_path_merge(capy_arena *arena, capy_string base, capy_stri
     return (capy_string){.data = buffer, .size = size};
 }
 
-int capy_uri_normalize(capy_arena *arena, capy_string *output, capy_string input, int lowercase)
+capy_err capy_uri_normalize(capy_arena *arena, capy_string *output, capy_string input, int lowercase)
 {
     if (input.size == 0)
     {
         *output = (capy_string){.size = 0};
-        return 0;
+        return ok;
     }
 
     char *buffer = make(arena, char, input.size + 1);
 
     if (buffer == NULL)
     {
-        return ENOMEM;
+        return capy_errno(ENOMEM);
     }
 
     size_t size = 0;
@@ -542,7 +542,7 @@ int capy_uri_normalize(capy_arena *arena, capy_string *output, capy_string input
     }
 
     *output = (capy_string){.data = buffer, .size = size};
-    return 0;
+    return ok;
 }
 
 capy_string capy_uri_path_removedots(capy_arena *arena, capy_string path)

@@ -28,7 +28,7 @@ capy_string capy_uri_string(capy_arena *arena, capy_uri uri);
 capy_uri capy_uri_parse(capy_string input);
 capy_uri capy_uri_parse_authority(capy_uri uri);
 capy_uri capy_uri_resolve_reference(capy_arena *arena, capy_uri base, capy_uri relative);
-int capy_uri_normalize(capy_arena *arena, capy_string *output, capy_string input, int lowercase);
+must_check capy_err capy_uri_normalize(capy_arena *arena, capy_string *output, capy_string input, int lowercase);
 capy_string capy_uri_path_removedots(capy_arena *arena, capy_string path);
 
 #endif

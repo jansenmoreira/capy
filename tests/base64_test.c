@@ -42,31 +42,32 @@ static int test_capy_base64(void)
 
 static int test_capy_string_base64(void)
 {
-    capy_string result;
-    capy_arena *arena = capy_arena_init(0, 8 * 1024);
+    capy_arena *arena = capy_arena_init(0, KiB(8));
 
-    expect_s_eq(capy_string_base64url(arena, &result, strl("foobar"), false), 0);
+    capy_string result;
+
+    expect_ok(capy_string_base64url(arena, &result, strl("foobar"), false));
     expect_str_eq(result, strl("Zm9vYmFy"));
 
-    expect_s_eq(capy_string_base64url(arena, &result, strl("abcdef"), false), 0);
+    expect_ok(capy_string_base64url(arena, &result, strl("abcdef"), false));
     expect_str_eq(result, strl("YWJjZGVm"));
 
-    expect_s_eq(capy_string_base64url(arena, &result, strl("foobarb"), false), 0);
+    expect_ok(capy_string_base64url(arena, &result, strl("foobarb"), false));
     expect_str_eq(result, strl("Zm9vYmFyYg"));
 
-    expect_s_eq(capy_string_base64url(arena, &result, strl("foobarb"), true), 0);
+    expect_ok(capy_string_base64url(arena, &result, strl("foobarb"), true));
     expect_str_eq(result, strl("Zm9vYmFyYg=="));
 
-    expect_s_eq(capy_string_base64url(arena, &result, strl("foobarbz"), false), 0);
+    expect_ok(capy_string_base64url(arena, &result, strl("foobarbz"), false));
     expect_str_eq(result, strl("Zm9vYmFyYno"));
 
-    expect_s_eq(capy_string_base64url(arena, &result, strl("foobarbz"), true), 0);
+    expect_ok(capy_string_base64url(arena, &result, strl("foobarbz"), true));
     expect_str_eq(result, strl("Zm9vYmFyYno="));
 
-    expect_s_eq(capy_string_base64url(arena, &result, strl("\x00\x1F\xBF"), false), 0);
+    expect_ok(capy_string_base64url(arena, &result, strl("\x00\x1F\xBF"), false));
     expect_str_eq(result, strl("AB-_"));
 
-    expect_s_eq(capy_string_base64(arena, &result, strl("\x00\x1F\xBF"), false), 0);
+    expect_ok(capy_string_base64(arena, &result, strl("\x00\x1F\xBF"), false));
     expect_str_eq(result, strl("AB+/"));
 
     capy_arena_destroy(arena);
@@ -76,38 +77,39 @@ static int test_capy_string_base64(void)
 static int test_capy_buffer_base64(void)
 {
     capy_arena *arena = capy_arena_init(0, KiB(8));
+
     capy_buffer *buffer = capy_buffer_init(arena, 1024);
 
-    expect_s_eq(capy_buffer_resize(buffer, 0), 0);
-    expect_s_eq(capy_buffer_wbase64url(buffer, 6, "foobar", false), 0);
+    expect_ok(capy_buffer_resize(buffer, 0));
+    expect_ok(capy_buffer_wbase64url(buffer, 6, "foobar", false));
     expect_s_eq(memcmp(buffer->data, "Zm9vYmFy", buffer->size), 0);
 
-    expect_s_eq(capy_buffer_resize(buffer, 0), 0);
-    expect_s_eq(capy_buffer_wbase64url(buffer, 6, "abcdef", false), 0);
+    expect_ok(capy_buffer_resize(buffer, 0));
+    expect_ok(capy_buffer_wbase64url(buffer, 6, "abcdef", false));
     expect_s_eq(memcmp(buffer->data, "YWJjZGVm", buffer->size), 0);
 
-    expect_s_eq(capy_buffer_resize(buffer, 0), 0);
-    expect_s_eq(capy_buffer_wbase64url(buffer, 7, "foobarb", false), 0);
+    expect_ok(capy_buffer_resize(buffer, 0));
+    expect_ok(capy_buffer_wbase64url(buffer, 7, "foobarb", false));
     expect_s_eq(memcmp(buffer->data, "Zm9vYmFyYg", buffer->size), 0);
 
-    expect_s_eq(capy_buffer_resize(buffer, 0), 0);
-    expect_s_eq(capy_buffer_wbase64url(buffer, 7, "foobarb", true), 0);
+    expect_ok(capy_buffer_resize(buffer, 0));
+    expect_ok(capy_buffer_wbase64url(buffer, 7, "foobarb", true));
     expect_s_eq(memcmp(buffer->data, "Zm9vYmFyYg==", buffer->size), 0);
 
-    expect_s_eq(capy_buffer_resize(buffer, 0), 0);
-    expect_s_eq(capy_buffer_wbase64url(buffer, 8, "foobarbz", false), 0);
+    expect_ok(capy_buffer_resize(buffer, 0));
+    expect_ok(capy_buffer_wbase64url(buffer, 8, "foobarbz", false));
     expect_s_eq(memcmp(buffer->data, "Zm9vYmFyYno", buffer->size), 0);
 
-    expect_s_eq(capy_buffer_resize(buffer, 0), 0);
-    expect_s_eq(capy_buffer_wbase64url(buffer, 8, "foobarbz", true), 0);
+    expect_ok(capy_buffer_resize(buffer, 0));
+    expect_ok(capy_buffer_wbase64url(buffer, 8, "foobarbz", true));
     expect_s_eq(memcmp(buffer->data, "Zm9vYmFyYno=", buffer->size), 0);
 
-    expect_s_eq(capy_buffer_resize(buffer, 0), 0);
-    expect_s_eq(capy_buffer_wbase64url(buffer, 3, "\x00\x1F\xBF", false), 0);
+    expect_ok(capy_buffer_resize(buffer, 0));
+    expect_ok(capy_buffer_wbase64url(buffer, 3, "\x00\x1F\xBF", false));
     expect_s_eq(memcmp(buffer->data, "AB-_", buffer->size), 0);
 
-    expect_s_eq(capy_buffer_resize(buffer, 0), 0);
-    expect_s_eq(capy_buffer_wbase64(buffer, 3, "\x00\x1F\xBF", false), 0);
+    expect_ok(capy_buffer_resize(buffer, 0));
+    expect_ok(capy_buffer_wbase64(buffer, 3, "\x00\x1F\xBF", false));
     expect_s_eq(memcmp(buffer->data, "AB+/", buffer->size), 0);
 
     capy_arena_destroy(arena);

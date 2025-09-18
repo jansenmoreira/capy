@@ -8,15 +8,15 @@ static int test_capy_string_copy(void)
     capy_string input = strl("The quick brown fox jumps over the lazy dog");
     capy_string output;
 
-    expect_s_eq(capy_string_copy(arena, &output, input), 0);
+    expect_ok(capy_string_copy(arena, &output, input));
     expect_p_ne(output.data, input.data);
     expect_str_eq(output, input);
 
     expect_p_ne(make(arena, char, 4000), NULL);
-    expect_s_eq(capy_string_copy(arena, &output, input), ENOMEM);
+    expect_err(capy_string_copy(arena, &output, input));
 
     input.size = 0;
-    expect_s_eq(capy_string_copy(arena, &output, input), 0);
+    expect_ok(capy_string_copy(arena, &output, input));
     expect_p_eq(output.data, NULL);
     expect_u_eq(output.size, 0);
 
@@ -32,14 +32,14 @@ static int test_capy_string_lower(void)
     capy_string input = strl("+AZaz09{}");
     capy_string output;
 
-    expect_s_eq(capy_string_lower(arena, &output, input), 0);
+    expect_ok(capy_string_lower(arena, &output, input));
     expect_str_eq(output, expected);
 
     expect_p_ne(make(arena, char, 4040), NULL);
-    expect_s_eq(capy_string_lower(arena, &output, input), ENOMEM);
+    expect_err(capy_string_lower(arena, &output, input));
 
     input.size = 0;
-    expect_s_eq(capy_string_lower(arena, &output, input), 0);
+    expect_ok(capy_string_lower(arena, &output, input));
     expect_p_eq(output.data, NULL);
     expect_u_eq(output.size, 0);
 
@@ -55,14 +55,14 @@ static int test_capy_string_upper(void)
     capy_string input = strl("+AZaz09{}");
     capy_string output;
 
-    expect_s_eq(capy_string_upper(arena, &output, input), 0);
+    expect_ok(capy_string_upper(arena, &output, input));
     expect_str_eq(output, expected);
 
     expect_p_ne(make(arena, char, 4040), NULL);
-    expect_s_eq(capy_string_upper(arena, &output, input), ENOMEM);
+    expect_err(capy_string_upper(arena, &output, input));
 
     input.size = 0;
-    expect_s_eq(capy_string_upper(arena, &output, input), 0);
+    expect_ok(capy_string_upper(arena, &output, input));
     expect_p_eq(output.data, NULL);
     expect_u_eq(output.size, 0);
 
@@ -78,13 +78,13 @@ static int test_capy_string_join(void)
     capy_string input[] = {strli("one"), strli("two"), strli("three")};
     capy_string output;
 
-    expect_s_eq(capy_string_join(arena, &output, " ", 3, input), 0);
+    expect_ok(capy_string_join(arena, &output, " ", 3, input));
     expect_str_eq(output, expected);
 
     expect_p_ne(make(arena, char, 4040), NULL);
-    expect_s_eq(capy_string_join(arena, &output, " ", 3, input), ENOMEM);
+    expect_err(capy_string_join(arena, &output, " ", 3, input));
 
-    expect_s_eq(capy_string_join(arena, &output, " ", 0, input), 0);
+    expect_ok(capy_string_join(arena, &output, " ", 0, input));
     expect_p_eq(output.data, NULL);
     expect_u_eq(output.size, 0);
 

@@ -5,31 +5,44 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-static capy_http_status failure_(unused capy_buffer *body, int err, const char *file, int line, const char *msg)
+static capy_err explode_handler(unused capy_arena *arena, unused capy_http_request *request, unused capy_http_response *response)
 {
-    body->size = 0;
-    capy_buffer_format_noalloc(body, "[%s:%d] => %s: %s\n", file, line, msg, strerror(err));
-    return CAPY_HTTP_INTERNAL_SERVER_ERROR;
+    capy_err err;
+
+    if ((err = capy_buffer_format(response->body, 0, "%*s", 1024, " ")).code)
+    {
+        return err;
+    }
+
+    void *data = capy_arena_alloc(arena, MiB(1) - capy_arena_size(arena), 0, 0);
+
+    if (data == NULL)
+    {
+        return capy_errno(ENOMEM);
+    }
+
+    response->status = 200;
+    return ok;
 }
 
-#define failure(body, err, msg) failure_((body), (err), __FILE__, __LINE__, (msg))
-
-static capy_http_status fail_handler(unused capy_arena *arena, unused capy_http_request *request, unused capy_strkvmmap *headers, unused capy_buffer *body)
+static capy_err fail_handler(unused capy_arena *arena, unused capy_http_request *request, unused capy_http_response *response)
 {
-    return CAPY_HTTP_INTERNAL_SERVER_ERROR;
+    return capy_errno(EINVAL);
 }
 
-static capy_http_status params_handler(unused capy_arena *arena, capy_http_request *request, unused capy_strkvmmap *headers, capy_buffer *body)
+static capy_err params_handler(unused capy_arena *arena, capy_http_request *request, capy_http_response *response)
 {
-    int err;
+    capy_err err;
 
     capy_strkvn *param = capy_strkvmmap_get(request->params, strl("id"));
 
-    if ((err = capy_buffer_format(body, 0, "%.*s -> %.*s\n",
-                                  (int)param->key.size, param->key.data,
-                                  (int)param->value.size, param->value.data)))
+    err = capy_buffer_format(response->body, 0, "%.*s -> %.*s\n",
+                             (int)param->key.size, param->key.data,
+                             (int)param->value.size, param->value.data);
+
+    if (err.code)
     {
-        return failure(body, err, "failed to get URI params");
+        return errwrap(err, "Failed to get URI params");
     }
 
     for (size_t i = 0; i < request->query->capacity; i++)
@@ -43,27 +56,28 @@ static capy_http_status params_handler(unused capy_arena *arena, capy_http_reque
 
         while (param != NULL)
         {
-            if ((err = capy_buffer_format(body, 0, "%s: %s\n", param->key.data, param->value.data)))
+            if ((err = capy_buffer_format(response->body, 0, "%s: %s\n", param->key.data, param->value.data)).code)
             {
-                return failure(body, err, "failed to write query params");
+                return errwrap(err, "Failed to write query params");
             }
 
             param = param->next;
         }
     }
 
-    return CAPY_HTTP_OK;
+    response->status = 200;
+    return ok;
 }
 
-static capy_http_status echo_handler(capy_arena *arena, capy_http_request *request, capy_strkvmmap *headers, capy_buffer *body)
+static capy_err echo_handler(capy_arena *arena, capy_http_request *request, capy_http_response *response)
 {
-    int err;
+    capy_err err;
 
     capy_string uri = capy_uri_string(arena, request->uri);
 
-    if ((err = capy_buffer_format(body, 0, "uri: %s\n", uri.data)))
+    if ((err = capy_buffer_format(response->body, 0, "uri: %s\n", uri.data)).code)
     {
-        return failure(body, err, "failed to produce URI");
+        return errwrap(err, "Failed to produce URI");
     }
 
     for (size_t i = 0; i < request->headers->capacity; i++)
@@ -77,46 +91,47 @@ static capy_http_status echo_handler(capy_arena *arena, capy_http_request *reque
 
         while (header != NULL)
         {
-            if ((err = capy_buffer_format(body, 0, "%s: %s\n", header->key.data, header->value.data)))
+            if ((err = capy_buffer_format(response->body, 0, "%s: %s\n", header->key.data, header->value.data)).code)
             {
-                return failure(body, err, "failed to write header");
+                return errwrap(err, "Failed to write header");
             }
 
             header = header->next;
         }
     }
 
-    if ((err = capy_buffer_format(body, 0, "size: %lu\n", request->content_length)))
+    if ((err = capy_buffer_format(response->body, 0, "size: %lu\n", request->content_length)).code)
     {
-        return failure(body, err, "failed to write size");
+        return errwrap(err, "Failed to write size");
     }
 
-    if ((err = capy_buffer_wbase64url(body, request->content_length, request->content, true)))
+    if ((err = capy_buffer_wbase64url(response->body, request->content_length, request->content, true)).code)
     {
-        return failure(body, err, "failed to write base64 encoded body");
+        return errwrap(err, "Failed to write base64 encoded response->body");
     }
 
-    if ((err = capy_buffer_wcstr(body, "\n")))
+    if ((err = capy_buffer_wcstr(response->body, "\n")).code)
     {
-        return failure(body, err, "failed to newline");
+        return errwrap(err, "Failed to write newline");
     }
 
-    if ((err = capy_strkvmmap_set(headers, strl("X-Foo"), strl("bar"))))
+    if ((err = capy_strkvmmap_set(response->headers, strl("X-Foo"), strl("bar"))).code)
     {
-        return failure(body, err, "failed to set header");
+        return errwrap(err, "Failed to set header");
     }
 
-    if ((err = capy_strkvmmap_add(headers, strl("X-Foo"), strl("baz"))))
+    if ((err = capy_strkvmmap_add(response->headers, strl("X-Foo"), strl("baz"))).code)
     {
-        return failure(body, err, "failed to set header");
+        return errwrap(err, "Failed to set header");
     }
 
-    if ((err = capy_strkvmmap_add(headers, strl("X-Bar"), strl("foo"))))
+    if ((err = capy_strkvmmap_add(response->headers, strl("X-Bar"), strl("foo"))).code)
     {
-        return failure(body, err, "failed to set header");
+        return errwrap(err, "Failed to set header");
     }
 
-    return CAPY_HTTP_OK;
+    response->status = 200;
+    return ok;
 }
 
 int main(int argc, char *argv[])
@@ -161,6 +176,7 @@ int main(int argc, char *argv[])
         {CAPY_HTTP_POST, strl("/"), echo_handler},
         {CAPY_HTTP_GET, strl("/^id/"), params_handler},
         {CAPY_HTTP_PUT, strl("/fail/"), fail_handler},
+        {CAPY_HTTP_DELETE, strl("/explode/"), explode_handler},
     };
 
     options.routes = routes;

@@ -4,13 +4,11 @@
 
 // DEFINITIONS
 
-void *capy_vec_reserve(capy_arena *arena, void *items, size_t element_size, size_t *capacity, size_t size)
+void *capy_vec_reserve(capy_arena *arena, void *data, size_t element_size, size_t *capacity, size_t size)
 {
-    capy_assert(items != NULL);
+    capy_assert(data != NULL);
     capy_assert(capacity != NULL);
     capy_assert(*capacity > 0);
-
-    char *data = cast(char *, items);
 
     if (size > *capacity)
     {
@@ -21,38 +19,36 @@ void *capy_vec_reserve(capy_arena *arena, void *items, size_t element_size, size
 
         size = next_pow2(size);
 
-        data = capy_arena_realloc(arena, data, element_size * (*capacity), element_size * size, false);
+        data = capy_arena_realloc(arena, data, (*capacity) * element_size, size * element_size, false);
 
-        if (data != NULL)
+        if (data == NULL)
         {
-            *capacity = size;
+            return NULL;
         }
+
+        *capacity = size;
     }
 
     return data;
 }
 
-void *capy_vec_insert(capy_arena *arena, void *restrict items,
-                      size_t element_size, size_t *restrict capacity, size_t *restrict size,
-                      size_t position, size_t count, const void *restrict values)
+void *capy_vec_insert(capy_arena *arena, void *src,
+                      size_t element_size, size_t *capacity, size_t *size,
+                      size_t position, size_t count, const void *values)
 {
-    capy_assert(items != NULL);
+    capy_assert(src != NULL);
     capy_assert(size != NULL);
-
-    if (position > *size)
-    {
-        return NULL;
-    }
+    capy_assert(position <= *size);
 
     size_t old_size = (*size);
     size_t new_size = old_size + count;
     size_t tail_size = old_size - position;
 
-    items = capy_vec_reserve(arena, items, element_size, capacity, new_size);
+    void *tmp = capy_vec_reserve(arena, src, element_size, capacity, new_size);
 
-    if (items != NULL)
+    if (tmp != NULL)
     {
-        char *data = cast(char *, items);
+        char *data = cast(char *, tmp);
 
         if (tail_size > 0)
         {
@@ -71,18 +67,14 @@ void *capy_vec_insert(capy_arena *arena, void *restrict items,
         *size = new_size;
     }
 
-    return items;
+    return tmp;
 }
 
-int capy_vec_delete(void *items, size_t element_size, size_t *size, size_t position, size_t count)
+void capy_vec_delete(void *items, size_t element_size, size_t *size, size_t position, size_t count)
 {
     capy_assert(items != NULL);
     capy_assert(size != NULL);
-
-    if (position + count > *size)
-    {
-        return EINVAL;
-    }
+    capy_assert(position + count <= *size);
 
     size_t old_size = *size;
     size_t new_size = old_size - count;
@@ -98,6 +90,4 @@ int capy_vec_delete(void *items, size_t element_size, size_t *size, size_t posit
     }
 
     *size = new_size;
-
-    return 0;
 }

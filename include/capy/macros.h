@@ -41,4 +41,14 @@
 #define cast(T, v) ((T)(v))
 #define recast(T, v) ((T)((void *)(v)))
 
+#define errwrap capy_errwrap
+#define errfmt capy_errfmt
+#define ok ((capy_err){.code = 0})
+
+#define logmem capy_logmem
+#define logdbg capy_logdbg
+#define loginf capy_loginf
+#define logwrn capy_logwrn
+#define logerr capy_logerr
+
 #endif

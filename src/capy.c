@@ -1,7 +1,6 @@
 #include "assert.c"
 #include "base64.c"
 #include "buffer.c"
-#include "error.c"
 #include "hash.c"
 #include "logs.c"
 #include "math.c"
@@ -10,7 +9,8 @@
 #include "uri.c"
 #include "vec.c"
 
-#ifdef CAPY_SO_LINUX
+#ifdef CAPY_OS_LINUX
 #include "arena_linux.c"
+#include "error_linux.c"
 #include "http_linux.c"
 #endif

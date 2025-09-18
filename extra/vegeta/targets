@@ -9,3 +9,7 @@ POST http://127.0.0.1:8080/
 
 POST http://127.0.0.1:8080/
 @extra/vegeta/sample3.json
+
+# PUT http://127.0.0.1:8080/fail/
+
+# DELETE http://127.0.0.1:8080/explode/

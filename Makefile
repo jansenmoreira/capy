@@ -1,5 +1,6 @@
 CC_FLAGS := -Iinclude -std=c11 -Werror -Wall -Wextra -Wconversion -Wpedantic -Wmissing-prototypes -Wmissing-variable-declarations -Wno-missing-field-initializers -Wno-unused-function
-LINUX_FLAGS := -DCAPY_SO_LINUX -DCAPY_ARCH_AMD64 -D_GNU_SOURCE -D_POSIX_C_SOURCE=200112L
+LINUX_FLAGS := -DCAPY_OS_LINUX -DCAPY_ARCH_AMD64 -D_GNU_SOURCE -D_POSIX_C_SOURCE=200809L
+MUSL_FLAGS := -DCAPY_MUSL
 LINUX_DEBUG_FLAGS := ${CC_FLAGS} ${LINUX_FLAGS} -g -fprofile-arcs -ftest-coverage
 LINUX_RELEASE_FLAGS := ${CC_FLAGS} ${LINUX_FLAGS} -DNDEBUG -O3
 
@@ -18,10 +19,10 @@ linux/debug:
 linux/musl:
 	rm -rf build/musl/
 	mkdir -p build/musl/
-	musl-clang -static -Wno-unused-command-line-argument ${LINUX_RELEASE_FLAGS} -c src/capy.c -o build/musl/capy.o
+	musl-clang -static -Wno-unused-command-line-argument ${MUSL_FLAGS} ${LINUX_RELEASE_FLAGS} -c src/capy.c -o build/musl/capy.o
 	ar rcs build/musl/libcapy.a build/musl/capy.o
-	musl-clang -static -Wno-unused-command-line-argument ${LINUX_RELEASE_FLAGS} -Lbuild/musl tests/test.c -lcapy -o build/musl/tests
-	musl-clang -static -Wno-unused-command-line-argument ${LINUX_RELEASE_FLAGS} -Lbuild/musl examples/echo.c -lcapy -o build/musl/ex_echo
+	musl-clang -static -Wno-unused-command-line-argument ${MUSL_FLAGS} ${LINUX_RELEASE_FLAGS} -Lbuild/musl tests/test.c -lcapy -o build/musl/tests
+	musl-clang -static -Wno-unused-command-line-argument ${MUSL_FLAGS} ${LINUX_RELEASE_FLAGS} -Lbuild/musl examples/echo.c -lcapy -o build/musl/ex_echo
 
 .PHONY: linux/release
 linux/release:

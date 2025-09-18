@@ -3,11 +3,12 @@
 
 static int test_capy_arena_init(void)
 {
-    expect_p_eq(capy_arena_init(0, -1ULL), NULL);
+    expect_null(capy_arena_init(0, -1ULL));
 
     capy_arena *arena = capy_arena_init(0, KiB(32));
-    expect_p_ne(arena, NULL);
-    capy_arena_destroy(arena);
+    expect_notnull(arena);
+
+    expect_ok(capy_arena_destroy(arena));
 
     return true;
 }
@@ -15,9 +16,6 @@ static int test_capy_arena_init(void)
 static int test_capy_arena_alloc(void)
 {
     capy_arena *arena = capy_arena_init(0, KiB(32));
-
-    arena = capy_arena_init(0, KiB(32));
-    expect_p_ne(arena, NULL);
 
     size_t s16 = cast(size_t, capy_arena_alloc(arena, sizeof(int16_t), alignof(int16_t), true));
     expect_u_eq(s16 % alignof(int16_t), 0);
@@ -39,14 +37,14 @@ static int test_capy_arena_alloc(void)
 
 static int test_capy_arena_free(void)
 {
-    capy_arena *arena = capy_arena_init(KiB(4), KiB(32));
+    capy_arena *arena = capy_arena_init(0, KiB(32));
 
     void *end = capy_arena_end(arena);
     void *chunk = capy_arena_alloc(arena, KiB(16), 0, false);
 
-    expect_s_eq(capy_arena_free(arena, chunk), 0);
+    expect_ok(capy_arena_free(arena, chunk));
     expect_p_eq(capy_arena_end(arena), chunk);
-    expect_s_eq(capy_arena_free(arena, end), 0);
+    expect_ok(capy_arena_free(arena, end));
     expect_p_eq(capy_arena_end(arena), end);
 
     capy_arena_destroy(arena);

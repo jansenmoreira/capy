@@ -16,16 +16,16 @@ static int test_capy_strset(void)
 
     expect_s_eq(capy_strset_has(strset, strl("foo")), false);
 
-    expect_s_eq(capy_strset_add(strset, strl("foo")), 0);
+    expect_ok(capy_strset_add(strset, strl("foo")));
     expect_s_eq(capy_strset_has(strset, strl("foo")), true);
 
     capy_strset_delete(strset, strl("foo"));
 
     expect_s_eq(capy_strset_has(strset, strl("foo")), false);
 
-    expect_s_eq(capy_strset_add(strset, strl("foo")), 0);
+    expect_ok(capy_strset_add(strset, strl("foo")));
     expect_p_ne(make(arena, char, KiB(4) - capy_arena_size(arena)), NULL);
-    expect_s_eq(capy_strset_add(strset, strl("bar")), ENOMEM);
+    expect_err(capy_strset_add(strset, strl("bar")));
 
     capy_arena_destroy(arena);
     return true;
@@ -48,7 +48,7 @@ static int test_capy_strkvmap(void)
     capy_strkv *kv = capy_strkvmap_get(strkvmap, strl("foo"));
     expect_p_eq(kv, NULL);
 
-    expect_s_eq(capy_strkvmap_set(strkvmap, strl("foo"), strl("bar")), 0);
+    expect_ok(capy_strkvmap_set(strkvmap, strl("foo"), strl("bar")));
 
     kv = capy_strkvmap_get(strkvmap, strl("foo"));
     expect_p_ne(kv, NULL);
@@ -58,10 +58,10 @@ static int test_capy_strkvmap(void)
     capy_strkvmap_delete(strkvmap, strl("foo"));
     expect_p_eq(capy_strkvmap_get(strkvmap, strl("foo")), NULL);
 
-    expect_s_eq(capy_strkvmap_set(strkvmap, strl("foo"), strl("bar")), 0);
+    expect_ok(capy_strkvmap_set(strkvmap, strl("foo"), strl("bar")));
 
     expect_p_ne(make(arena, char, KiB(4) - capy_arena_size(arena)), NULL);
-    expect_s_eq(capy_strkvmap_set(strkvmap, strl("bar"), strl("foo")), ENOMEM);
+    expect_err(capy_strkvmap_set(strkvmap, strl("bar"), strl("foo")));
 
     capy_arena_destroy(arena);
     return true;
@@ -69,7 +69,7 @@ static int test_capy_strkvmap(void)
 
 static int test_capy_strkvmmap(void)
 {
-    capy_arena *arena = capy_arena_init(0, KiB(2));
+    capy_arena *arena = capy_arena_init(0, KiB(4));
 
     expect_p_eq(capy_strkvmmap_init(arena, KiB(8)), NULL);
 
@@ -81,9 +81,9 @@ static int test_capy_strkvmmap(void)
     expect_p_eq(strkvmmap->arena, arena);
     expect_p_ne(strkvmmap->items, NULL);
 
-    expect_s_eq(capy_strkvmmap_add(strkvmmap, strl("foo"), strl("bar")), 0);
-    expect_s_eq(capy_strkvmmap_add(strkvmmap, strl("foo"), strl("baz")), 0);
-    expect_s_eq(capy_strkvmmap_add(strkvmmap, strl("foo"), strl("buz")), 0);
+    expect_ok(capy_strkvmmap_add(strkvmmap, strl("foo"), strl("bar")));
+    expect_ok(capy_strkvmmap_add(strkvmmap, strl("foo"), strl("baz")));
+    expect_ok(capy_strkvmmap_add(strkvmmap, strl("foo"), strl("buz")));
 
     capy_strkvn *strkvn = capy_strkvmmap_get(strkvmmap, strl("foo"));
     expect_p_ne(strkvn, NULL);
@@ -97,7 +97,7 @@ static int test_capy_strkvmmap(void)
     expect_str_eq(strkvn->next->next->value, strl("buz"));
     expect_p_eq(strkvn->next->next->next, NULL);
 
-    expect_s_eq(capy_strkvmmap_set(strkvmmap, strl("foo"), strl("bar")), 0);
+    expect_ok(capy_strkvmmap_set(strkvmmap, strl("foo"), strl("bar")));
 
     strkvn = capy_strkvmmap_get(strkvmmap, strl("foo"));
     expect_p_ne(strkvn, NULL);
@@ -109,14 +109,14 @@ static int test_capy_strkvmmap(void)
     strkvn = capy_strkvmmap_get(strkvmmap, strl("foo"));
     expect_p_eq(strkvn, NULL);
 
-    expect_s_eq(capy_strkvmmap_add(strkvmmap, strl("bar"), strl("foo")), 0);
-    expect_s_eq(capy_strkvmmap_add(strkvmmap, strl("foo"), strl("bar")), 0);
-    expect_s_eq(capy_strkvmmap_add(strkvmmap, strl("foo"), strl("baz")), 0);
+    expect_ok(capy_strkvmmap_add(strkvmmap, strl("bar"), strl("foo")));
+    expect_ok(capy_strkvmmap_add(strkvmmap, strl("foo"), strl("bar")));
+    expect_ok(capy_strkvmmap_add(strkvmmap, strl("foo"), strl("baz")));
 
     expect_p_ne(make(arena, char, KiB(4) - capy_arena_size(arena)), NULL);
-    expect_s_eq(capy_strkvmmap_add(strkvmmap, strl("foo"), strl("fail")), ENOMEM);
-    expect_s_eq(capy_strkvmmap_add(strkvmmap, strl("baz"), strl("fail")), ENOMEM);
-    expect_s_eq(capy_strkvmmap_set(strkvmmap, strl("baz"), strl("fail")), ENOMEM);
+    expect_err(capy_strkvmmap_add(strkvmmap, strl("foo"), strl("fail")));
+    expect_err(capy_strkvmmap_add(strkvmmap, strl("baz"), strl("fail")));
+    expect_err(capy_strkvmmap_set(strkvmmap, strl("baz"), strl("fail")));
 
     return true;
 }

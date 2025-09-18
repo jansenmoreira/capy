@@ -98,7 +98,14 @@ typedef struct capy_http_request
     int close;
 } capy_http_request;
 
-typedef capy_http_status (*capy_http_handler)(capy_arena *arena, capy_http_request *request, capy_strkvmmap *headers, capy_buffer *body);
+typedef struct capy_http_response
+{
+    capy_http_status status;
+    capy_strkvmmap *headers;
+    capy_buffer *body;
+} capy_http_response;
+
+typedef capy_err (*capy_http_handler)(capy_arena *arena, capy_http_request *request, capy_http_response *response);
 
 typedef struct capy_http_route
 {
@@ -141,16 +148,19 @@ typedef struct capy_http_server_options
 
 capy_http_method capy_http_parse_method(capy_string input);
 capy_http_version capy_http_parse_version(capy_string input);
-must_check int capy_http_parse_reqline(capy_arena *arena, capy_http_request *request, capy_string input);
-capy_strkvmmap *capy_http_parse_uriparams(capy_arena *arena, capy_string path, capy_string handler_path);
-must_check int capy_http_parse_field(capy_strkvmmap *fields, capy_string line);
 
-must_check int capy_http_write_response(capy_buffer *buffer, capy_http_status status, capy_strkvmmap *headers, capy_buffer *body, int close);
-must_check int capy_http_request_validate(capy_arena *arena, capy_http_request *request);
-int capy_http_serve(capy_http_server_options options);
+must_check capy_err capy_http_parse_reqline(capy_arena *arena, capy_http_request *request, capy_string input);
+must_check capy_err capy_http_parse_field(capy_strkvmmap *fields, capy_string line);
+must_check capy_err capy_http_parse_uriparams(capy_strkvmmap *params, capy_string path, capy_string handler_path);
+must_check capy_err capy_http_parse_query(capy_strkvmmap *fields, capy_string line);
+must_check capy_err capy_http_request_validate(capy_arena *arena, capy_http_request *request);
+must_check capy_err capy_http_write_response(capy_buffer *buffer, capy_http_response *response, int close);
+
+capy_err capy_http_serve(capy_http_server_options options);
 
 capy_http_router *capy_http_router_init(capy_arena *arena, int n, capy_http_route *routes);
 capy_http_route *capy_http_route_get(capy_http_router *router, capy_http_method method, capy_string path);
-capy_http_status capy_http_router_handle(capy_arena *arena, capy_http_router *router, capy_http_request *request, capy_strkvmmap *headers, capy_buffer *body);
+
+capy_err capy_http_router_handle(capy_arena *arena, capy_http_router *router, capy_http_request *request, capy_http_response *response);
 
 #endif

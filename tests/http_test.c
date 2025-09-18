@@ -97,24 +97,25 @@ static int test_capy_http_parse_version(void)
 
 static int test_capy_http_parse_reqline(void)
 {
-    capy_arena *arena = capy_arena_init(0, GiB(1));
+    capy_arena *arena = capy_arena_init(0, KiB(4));
+
     capy_http_request *request = make(arena, capy_http_request, 1);
 
-    expect_s_eq(capy_http_parse_reqline(arena, request, strl("CONNECT localhost:8080 HTTP/1.1")), 0);
-    expect_s_eq(capy_http_parse_reqline(arena, request, strl("OPTIONS * HTTP/1.1")), 0);
-    expect_s_eq(capy_http_parse_reqline(arena, request, strl("OPTIONS /index.html HTTP/1.1")), 0);
-    expect_s_eq(capy_http_parse_reqline(arena, request, strl("GET /index.html?id=1 HTTP/1.1")), 0);
-    expect_s_eq(capy_http_parse_reqline(arena, request, strl("GET http://localhost:8080/index.html HTTP/1.1")), 0);
-    expect_s_eq(capy_http_parse_reqline(arena, request, strl("GET HTTP://LOCALHOST:80/../%4D%30/abc/./../test HTTP/1.1")), 0);
-    expect_s_eq(capy_http_parse_reqline(arena, request, strl("GET ../%4D%20/abc/./../test HTTP/1.1")), 0);
-    expect_s_eq(capy_http_parse_reqline(arena, request, strl("GET / HTTP/1.1")), 0);
+    expect_ok(capy_http_parse_reqline(arena, request, strl("CONNECT localhost:8080 HTTP/1.1")));
+    expect_ok(capy_http_parse_reqline(arena, request, strl("OPTIONS * HTTP/1.1")));
+    expect_ok(capy_http_parse_reqline(arena, request, strl("OPTIONS /index.html HTTP/1.1")));
+    expect_ok(capy_http_parse_reqline(arena, request, strl("GET /index.html?id=1 HTTP/1.1")));
+    expect_ok(capy_http_parse_reqline(arena, request, strl("GET http://localhost:8080/index.html HTTP/1.1")));
+    expect_ok(capy_http_parse_reqline(arena, request, strl("GET HTTP://LOCALHOST:80/../%4D%30/abc/./../test HTTP/1.1")));
+    expect_ok(capy_http_parse_reqline(arena, request, strl("GET ../%4D%20/abc/./../test HTTP/1.1")));
+    expect_ok(capy_http_parse_reqline(arena, request, strl("GET / HTTP/1.1")));
 
-    expect_s_eq(capy_http_parse_reqline(arena, request, strl("GET  / HTTP/1.1")), EINVAL);
-    expect_s_eq(capy_http_parse_reqline(arena, request, strl("GET /  HTTP/1.1")), EINVAL);
-    expect_s_eq(capy_http_parse_reqline(arena, request, strl("GET / HTTP/1.1 ")), EINVAL);
-    expect_s_eq(capy_http_parse_reqline(arena, request, strl("get / HTTP/1.1")), EINVAL);
-    expect_s_eq(capy_http_parse_reqline(arena, request, strl("GET /%gg/ HTTP/1.1")), EINVAL);
-    expect_s_eq(capy_http_parse_reqline(arena, request, strl("GET / http/1.1")), EINVAL);
+    expect_err(capy_http_parse_reqline(arena, request, strl("GET  / HTTP/1.1")));
+    expect_err(capy_http_parse_reqline(arena, request, strl("GET /  HTTP/1.1")));
+    expect_err(capy_http_parse_reqline(arena, request, strl("GET / HTTP/1.1 ")));
+    expect_err(capy_http_parse_reqline(arena, request, strl("get / HTTP/1.1")));
+    expect_err(capy_http_parse_reqline(arena, request, strl("GET /%gg/ HTTP/1.1")));
+    expect_err(capy_http_parse_reqline(arena, request, strl("GET / http/1.1")));
 
     capy_arena_destroy(arena);
     return true;
@@ -123,16 +124,17 @@ static int test_capy_http_parse_reqline(void)
 static int test_capy_http_parse_field(void)
 {
     capy_arena *arena = capy_arena_init(0, KiB(4));
+
     capy_strkvmmap *fields = capy_strkvmmap_init(arena, 16);
 
-    expect_s_eq(capy_http_parse_field(fields, strl("\x01: localhost:8080")), EINVAL);
-    expect_s_eq(capy_http_parse_field(fields, strl(": localhost:8080")), EINVAL);
-    expect_s_eq(capy_http_parse_field(fields, strl("Host : localhost:8080")), EINVAL);
-    expect_s_eq(capy_http_parse_field(fields, strl("Host")), EINVAL);
-    expect_s_eq(capy_http_parse_field(fields, strl("Host: \x01")), EINVAL);
-    expect_s_eq(capy_http_parse_field(fields, strl("transfer-Encoding:  deflate ; a=1 ")), 0);
-    expect_s_eq(capy_http_parse_field(fields, strl("Transfer-encoding: gzip\t; b=2 ")), 0);
-    expect_s_eq(capy_http_parse_field(fields, strl("transfer-encoding: chunked")), 0);
+    expect_err(capy_http_parse_field(fields, strl("\x01: localhost:8080")));
+    expect_err(capy_http_parse_field(fields, strl(": localhost:8080")));
+    expect_err(capy_http_parse_field(fields, strl("Host : localhost:8080")));
+    expect_err(capy_http_parse_field(fields, strl("Host")));
+    expect_err(capy_http_parse_field(fields, strl("Host: \x01")));
+    expect_ok(capy_http_parse_field(fields, strl("transfer-Encoding:  deflate ; a=1 ")));
+    expect_ok(capy_http_parse_field(fields, strl("Transfer-encoding: gzip\t; b=2 ")));
+    expect_ok(capy_http_parse_field(fields, strl("transfer-encoding: chunked")));
 
     capy_strkvn *field = capy_strkvmmap_get(fields, strl("Transfer-Encoding"));
 
@@ -149,113 +151,114 @@ static int test_capy_http_parse_field(void)
 static int test_capy_http_request_validate(void)
 {
     capy_arena *arena = capy_arena_init(0, KiB(4));
+
     capy_http_request *request = make(arena, capy_http_request, 1);
     capy_strkvmmap *fields = capy_strkvmmap_init(arena, 16);
 
     capy_strkvmmap_clear(fields);
     *request = (capy_http_request){.headers = fields};
 
-    expect_s_eq(capy_http_parse_reqline(arena, request, strl("GET /test HTTP/1.1")), 0);
-    expect_s_eq(capy_http_parse_field(request->headers, strl("Host: localhost:80")), 0);
-    expect_s_eq(capy_http_parse_field(request->headers, strl("Transfer-Encoding: chunked")), 0);
-    expect_s_eq(capy_http_request_validate(arena, request), 0);
+    expect_ok(capy_http_parse_reqline(arena, request, strl("GET /test HTTP/1.1")));
+    expect_ok(capy_http_parse_field(request->headers, strl("Host: localhost:80")));
+    expect_ok(capy_http_parse_field(request->headers, strl("Transfer-Encoding: chunked")));
+    expect_ok(capy_http_request_validate(arena, request));
     expect_u_eq(request->content_length, 0);
     expect_s_eq(request->chunked, 1);
 
     capy_strkvmmap_clear(fields);
     *request = (capy_http_request){.headers = fields};
 
-    expect_s_eq(capy_http_parse_reqline(arena, request, strl("GET http://127.0.0.1/test HTTP/1.1")), 0);
-    expect_s_eq(capy_http_parse_field(request->headers, strl("Host: localhost:80")), 0);
-    expect_s_eq(capy_http_request_validate(arena, request), 0);
+    expect_ok(capy_http_parse_reqline(arena, request, strl("GET http://127.0.0.1/test HTTP/1.1")));
+    expect_ok(capy_http_parse_field(request->headers, strl("Host: localhost:80")));
+    expect_ok(capy_http_request_validate(arena, request));
 
     capy_strkvmmap_clear(fields);
     *request = (capy_http_request){.headers = fields};
 
-    expect_s_eq(capy_http_parse_reqline(arena, request, strl("GET /test HTTP/1.1")), 0);
-    expect_s_eq(capy_http_parse_field(request->headers, strl("Host: localhost:80")), 0);
-    expect_s_eq(capy_http_parse_field(request->headers, strl("Content-Length: 100")), 0);
-    expect_s_eq(capy_http_request_validate(arena, request), 0);
+    expect_ok(capy_http_parse_reqline(arena, request, strl("GET /test HTTP/1.1")));
+    expect_ok(capy_http_parse_field(request->headers, strl("Host: localhost:80")));
+    expect_ok(capy_http_parse_field(request->headers, strl("Content-Length: 100")));
+    expect_ok(capy_http_request_validate(arena, request));
     expect_u_eq(request->content_length, 100);
     expect_s_eq(request->chunked, 0);
 
     capy_strkvmmap_clear(fields);
     *request = (capy_http_request){.headers = fields};
 
-    expect_s_eq(capy_http_parse_reqline(arena, request, strl("GET /test HTTP/1.1")), 0);
-    expect_s_eq(capy_http_parse_field(request->headers, strl("Host: localhost")), 0);
-    expect_s_eq(capy_http_request_validate(arena, request), 0);
+    expect_ok(capy_http_parse_reqline(arena, request, strl("GET /test HTTP/1.1")));
+    expect_ok(capy_http_parse_field(request->headers, strl("Host: localhost")));
+    expect_ok(capy_http_request_validate(arena, request));
 
     capy_strkvmmap_clear(fields);
     *request = (capy_http_request){.headers = fields};
 
-    expect_s_eq(capy_http_parse_reqline(arena, request, strl("GET /test HTTP/1.1")), 0);
-    expect_s_eq(capy_http_parse_field(request->headers, strl("Host: localhost:80")), 0);
-    expect_s_eq(capy_http_parse_field(request->headers, strl("Transfer-Encoding: gzip")), 0);
-    expect_s_eq(capy_http_request_validate(arena, request), EINVAL);
+    expect_ok(capy_http_parse_reqline(arena, request, strl("GET /test HTTP/1.1")));
+    expect_ok(capy_http_parse_field(request->headers, strl("Host: localhost:80")));
+    expect_ok(capy_http_parse_field(request->headers, strl("Transfer-Encoding: gzip")));
+    expect_err(capy_http_request_validate(arena, request));
 
     capy_strkvmmap_clear(fields);
     *request = (capy_http_request){.headers = fields};
 
-    expect_s_eq(capy_http_parse_reqline(arena, request, strl("GET /test HTTP/1.1")), 0);
-    expect_s_eq(capy_http_parse_field(request->headers, strl("Host: localhost:80")), 0);
-    expect_s_eq(capy_http_parse_field(request->headers, strl("Transfer-Encoding: gzip")), 0);
-    expect_s_eq(capy_http_parse_field(request->headers, strl("Transfer-Encoding: chunked")), 0);
-    expect_s_eq(capy_http_request_validate(arena, request), EINVAL);
+    expect_ok(capy_http_parse_reqline(arena, request, strl("GET /test HTTP/1.1")));
+    expect_ok(capy_http_parse_field(request->headers, strl("Host: localhost:80")));
+    expect_ok(capy_http_parse_field(request->headers, strl("Transfer-Encoding: gzip")));
+    expect_ok(capy_http_parse_field(request->headers, strl("Transfer-Encoding: chunked")));
+    expect_err(capy_http_request_validate(arena, request));
 
     capy_strkvmmap_clear(fields);
     *request = (capy_http_request){.headers = fields};
 
-    expect_s_eq(capy_http_parse_reqline(arena, request, strl("GET /test HTTP/1.1")), 0);
-    expect_s_eq(capy_http_parse_field(request->headers, strl("Host: localhost:80")), 0);
-    expect_s_eq(capy_http_parse_field(request->headers, strl("Transfer-Encoding: chunked")), 0);
-    expect_s_eq(capy_http_parse_field(request->headers, strl("Content-Length: 100")), 0);
-    expect_s_eq(capy_http_request_validate(arena, request), EINVAL);
+    expect_ok(capy_http_parse_reqline(arena, request, strl("GET /test HTTP/1.1")));
+    expect_ok(capy_http_parse_field(request->headers, strl("Host: localhost:80")));
+    expect_ok(capy_http_parse_field(request->headers, strl("Transfer-Encoding: chunked")));
+    expect_ok(capy_http_parse_field(request->headers, strl("Content-Length: 100")));
+    expect_err(capy_http_request_validate(arena, request));
 
     capy_strkvmmap_clear(fields);
     *request = (capy_http_request){.headers = fields};
 
-    expect_s_eq(capy_http_parse_reqline(arena, request, strl("GET /test HTTP/1.1")), 0);
-    expect_s_eq(capy_http_parse_field(request->headers, strl("Host: localhost:80")), 0);
-    expect_s_eq(capy_http_parse_field(request->headers, strl("Content-Length: 100")), 0);
-    expect_s_eq(capy_http_parse_field(request->headers, strl("Content-Length: 15")), 0);
-    expect_s_eq(capy_http_request_validate(arena, request), EINVAL);
+    expect_ok(capy_http_parse_reqline(arena, request, strl("GET /test HTTP/1.1")));
+    expect_ok(capy_http_parse_field(request->headers, strl("Host: localhost:80")));
+    expect_ok(capy_http_parse_field(request->headers, strl("Content-Length: 100")));
+    expect_ok(capy_http_parse_field(request->headers, strl("Content-Length: 15")));
+    expect_err(capy_http_request_validate(arena, request));
 
     request = make(arena, capy_http_request, 1);
     request->headers = capy_strkvmmap_init(arena, 16);
 
-    expect_s_eq(capy_http_parse_reqline(arena, request, strl("GET /test HTTP/1.1")), 0);
-    expect_s_eq(capy_http_parse_field(request->headers, strl("Host: localhost:80")), 0);
-    expect_s_eq(capy_http_parse_field(request->headers, strl("Content-Length: af")), 0);
-    expect_s_eq(capy_http_request_validate(arena, request), EINVAL);
+    expect_ok(capy_http_parse_reqline(arena, request, strl("GET /test HTTP/1.1")));
+    expect_ok(capy_http_parse_field(request->headers, strl("Host: localhost:80")));
+    expect_ok(capy_http_parse_field(request->headers, strl("Content-Length: af")));
+    expect_err(capy_http_request_validate(arena, request));
 
     capy_strkvmmap_clear(fields);
     *request = (capy_http_request){.headers = fields};
 
-    expect_s_eq(capy_http_parse_reqline(arena, request, strl("GET /test HTTP/1.1")), 0);
-    expect_s_eq(capy_http_request_validate(arena, request), EINVAL);
+    expect_ok(capy_http_parse_reqline(arena, request, strl("GET /test HTTP/1.1")));
+    expect_err(capy_http_request_validate(arena, request));
 
     capy_strkvmmap_clear(fields);
     *request = (capy_http_request){.headers = fields};
 
-    expect_s_eq(capy_http_parse_reqline(arena, request, strl("GET /test HTTP/1.1")), 0);
-    expect_s_eq(capy_http_parse_field(request->headers, strl("Host: localhost:aa")), 0);
-    expect_s_eq(capy_http_request_validate(arena, request), EINVAL);
+    expect_ok(capy_http_parse_reqline(arena, request, strl("GET /test HTTP/1.1")));
+    expect_ok(capy_http_parse_field(request->headers, strl("Host: localhost:aa")));
+    expect_err(capy_http_request_validate(arena, request));
 
     capy_strkvmmap_clear(fields);
     *request = (capy_http_request){.headers = fields};
 
-    expect_s_eq(capy_http_parse_reqline(arena, request, strl("GET /test HTTP/1.1")), 0);
-    expect_s_eq(capy_http_parse_field(request->headers, strl("Host: foo@localhost:8080")), 0);
-    expect_s_eq(capy_http_request_validate(arena, request), EINVAL);
+    expect_ok(capy_http_parse_reqline(arena, request, strl("GET /test HTTP/1.1")));
+    expect_ok(capy_http_parse_field(request->headers, strl("Host: foo@localhost:8080")));
+    expect_err(capy_http_request_validate(arena, request));
 
     capy_strkvmmap_clear(fields);
     *request = (capy_http_request){.headers = fields};
 
-    expect_s_eq(capy_http_parse_reqline(arena, request, strl("GET /test HTTP/1.1")), 0);
-    expect_s_eq(capy_http_parse_field(request->headers, strl("Host: localhost:80")), 0);
-    expect_s_eq(capy_http_parse_field(request->headers, strl("Host: example:80")), 0);
-    expect_s_eq(capy_http_request_validate(arena, request), EINVAL);
+    expect_ok(capy_http_parse_reqline(arena, request, strl("GET /test HTTP/1.1")));
+    expect_ok(capy_http_parse_field(request->headers, strl("Host: localhost:80")));
+    expect_ok(capy_http_parse_field(request->headers, strl("Host: example:80")));
+    expect_err(capy_http_request_validate(arena, request));
 
     capy_arena_destroy(arena);
     return true;
@@ -264,6 +267,7 @@ static int test_capy_http_request_validate(void)
 static int test_capy_http_write_response(void)
 {
     capy_arena *arena = capy_arena_init(0, KiB(4));
+
     capy_strkvmmap *fields = capy_strkvmmap_init(arena, 16);
 
     fields = capy_strkvmmap_init(arena, 16);
@@ -272,16 +276,22 @@ static int test_capy_http_write_response(void)
 
     capy_strkvmmap_clear(fields);
 
-    expect_s_eq(capy_strkvmmap_add(fields, strl("X-Foo"), strl("bar")), 0);
-    expect_s_eq(capy_strkvmmap_add(fields, strl("X-Foo"), strl("baz")), 0);
-    expect_s_eq(capy_strkvmmap_add(fields, strl("X-Foo"), strl("buz")), 0);
-    expect_s_eq(capy_strkvmmap_set(fields, strl("X-Bar"), strl("foo")), 0);
+    expect_ok(capy_strkvmmap_add(fields, strl("X-Foo"), strl("bar")));
+    expect_ok(capy_strkvmmap_add(fields, strl("X-Foo"), strl("baz")));
+    expect_ok(capy_strkvmmap_add(fields, strl("X-Foo"), strl("buz")));
+    expect_ok(capy_strkvmmap_set(fields, strl("X-Bar"), strl("foo")));
 
-    expect_s_eq(capy_buffer_wcstr(body, "foobar"), 0);
+    expect_ok(capy_buffer_wcstr(body, "foobar"));
 
     capy_buffer *buffer = capy_buffer_init(arena, 1024);
 
-    expect_s_eq(capy_http_write_response(buffer, 200, fields, body, false), 0);
+    capy_http_response response = {
+        .status = 200,
+        .body = body,
+        .headers = fields,
+    };
+
+    expect_ok(capy_http_write_response(buffer, &response, false));
 
     // char expected_response[] =
     //     "HTTP/1.1 200\r\n"
@@ -299,54 +309,54 @@ static int test_capy_http_write_response(void)
     return true;
 }
 
-static capy_http_status test_handler1(unused capy_arena *arena, unused capy_http_request *request, unused capy_strkvmmap *headers, unused capy_buffer *body)
+static capy_err test_handler1(unused capy_arena *arena, unused capy_http_request *request, unused capy_http_response *response)
 {
-    return CAPY_HTTP_OK;
+    return ok;
 }
 
-static capy_http_status test_handler2(unused capy_arena *arena, unused capy_http_request *request, unused capy_strkvmmap *headers, unused capy_buffer *body)
+static capy_err test_handler2(unused capy_arena *arena, unused capy_http_request *request, unused capy_http_response *response)
 {
-    return CAPY_HTTP_OK;
+    return ok;
 }
 
-static capy_http_status test_handler3(unused capy_arena *arena, unused capy_http_request *request, unused capy_strkvmmap *headers, unused capy_buffer *body)
+static capy_err test_handler3(unused capy_arena *arena, unused capy_http_request *request, unused capy_http_response *response)
 {
-    return CAPY_HTTP_OK;
+    return ok;
 }
 
-static capy_http_status test_handler4(unused capy_arena *arena, unused capy_http_request *request, unused capy_strkvmmap *headers, unused capy_buffer *body)
+static capy_err test_handler4(unused capy_arena *arena, unused capy_http_request *request, unused capy_http_response *response)
 {
-    return CAPY_HTTP_OK;
+    return ok;
 }
 
-static capy_http_status test_handler5(unused capy_arena *arena, unused capy_http_request *request, unused capy_strkvmmap *headers, unused capy_buffer *body)
+static capy_err test_handler5(unused capy_arena *arena, unused capy_http_request *request, unused capy_http_response *response)
 {
-    return CAPY_HTTP_OK;
+    return ok;
 }
 
-static capy_http_status test_handler6(unused capy_arena *arena, unused capy_http_request *request, unused capy_strkvmmap *headers, unused capy_buffer *body)
+static capy_err test_handler6(unused capy_arena *arena, unused capy_http_request *request, unused capy_http_response *response)
 {
-    return CAPY_HTTP_OK;
+    return ok;
 }
 
-static capy_http_status test_handler7(unused capy_arena *arena, unused capy_http_request *request, unused capy_strkvmmap *headers, unused capy_buffer *body)
+static capy_err test_handler7(unused capy_arena *arena, unused capy_http_request *request, unused capy_http_response *response)
 {
-    return CAPY_HTTP_OK;
+    return ok;
 }
 
-static capy_http_status test_handler8(unused capy_arena *arena, unused capy_http_request *request, unused capy_strkvmmap *headers, unused capy_buffer *body)
+static capy_err test_handler8(unused capy_arena *arena, unused capy_http_request *request, unused capy_http_response *response)
 {
-    return CAPY_HTTP_OK;
+    return ok;
 }
 
-static capy_http_status test_handler9(unused capy_arena *arena, unused capy_http_request *request, unused capy_strkvmmap *headers, unused capy_buffer *body)
+static capy_err test_handler9(unused capy_arena *arena, unused capy_http_request *request, unused capy_http_response *response)
 {
-    return CAPY_HTTP_OK;
+    return ok;
 }
 
 static int test_capy_http_router_init(void)
 {
-    capy_arena *arena = capy_arena_init(0, GiB(1));
+    capy_arena *arena = capy_arena_init(0, KiB(32));
 
     capy_http_router *router = NULL;
 
@@ -409,9 +419,11 @@ static int test_capy_http_router_init(void)
 
 static int test_capy_http_parse_uriparams(void)
 {
-    capy_arena *arena = capy_arena_init(0, GiB(1));
+    capy_arena *arena = capy_arena_init(0, KiB(32));
 
-    capy_strkvmmap *params = capy_http_parse_uriparams(arena, strl("foo/test/bar/fe037abd-a9b8-4881-b875-a2f667e2e4ed/baz"), strl("foo/^file/bar/^id/baz"));
+    capy_strkvmmap *params = capy_strkvmmap_init(arena, 8);
+
+    expect_ok(capy_http_parse_uriparams(params, strl("foo/test/bar/fe037abd-a9b8-4881-b875-a2f667e2e4ed/baz"), strl("foo/^file/bar/^id/baz")));
     expect_p_ne(params, NULL);
 
     capy_strkvn *param = capy_strkvmmap_get(params, strl("id"));
