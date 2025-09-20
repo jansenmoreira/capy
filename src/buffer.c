@@ -33,6 +33,21 @@ must_check capy_err capy_buffer_wbytes(capy_buffer *buf, size_t size, const char
     return ok;
 }
 
+must_check capy_err capy_buffer_wnull(capy_buffer *buf)
+{
+    void *tmp = capy_vec_insert(buf->arena, buf->data, sizeof(char), &buf->capacity, &buf->size, buf->size, 1, "\0");
+
+    if (tmp == NULL)
+    {
+        return capy_errno(ENOMEM);
+    }
+
+    buf->data = cast(char *, tmp);
+    buf->size -= 1;
+
+    return ok;
+}
+
 must_check capy_err capy_buffer_wstring(capy_buffer *buf, capy_string input)
 {
     return capy_buffer_wbytes(buf, input.size, input.data);

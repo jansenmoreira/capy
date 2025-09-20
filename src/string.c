@@ -5,22 +5,7 @@
 
 #define capy_string_empty ((capy_string){.data = NULL, .size = 0})
 
-// EXTERN INLINES
-
-extern inline char capy_char_uppercase(char c);
-extern inline char capy_char_lowercase(char c);
-extern inline capy_string capy_string_slice(capy_string s, size_t begin, size_t end);
-extern inline int capy_string_eq(capy_string a, capy_string b);
-extern inline capy_string capy_string_bytes(size_t size, const char *data);
-extern inline capy_string capy_string_cstr(const char *data);
-extern inline capy_string capy_string_shl(capy_string s, size_t size);
-extern inline capy_string capy_string_shr(capy_string s, size_t size);
-extern inline capy_string capy_string_trim(capy_string s, const char *chars);
-extern inline int capy_char_is(char c, const char *chars);
-
-// DEFINITIONS
-
-size_t capy_string_hex(capy_string input, int64_t *value)
+size_t capy_string_hex(capy_string input, uint64_t *value)
 {
     if (input.size == 0)
     {
@@ -28,20 +13,7 @@ size_t capy_string_hex(capy_string input, int64_t *value)
     }
 
     size_t bytes = 0;
-    int64_t tmp = 0;
-
-    if (input.data[0] == '-')
-    {
-        bytes = capy_string_hex(capy_string_shl(input, 1), value);
-
-        if (bytes == 0)
-        {
-            return 0;
-        }
-
-        *value *= -1;
-        return bytes + 1;
-    }
+    uint64_t tmp = 0;
 
     while (input.size)
     {
@@ -104,11 +76,7 @@ size_t capy_string_hex(capy_string input, int64_t *value)
 
             default:
             {
-                if (bytes > 0)
-                {
-                    *value = tmp;
-                }
-
+                *value = tmp;
                 return bytes;
             }
         }
@@ -304,6 +272,31 @@ capy_string capy_string_rtrim(capy_string s, const char *chars)
     return (capy_string){.data = s.data, .size = i};
 }
 
+bool capy_char_isdigit(char c)
+{
+    return (c >= '0' && c <= '9');
+}
+
+bool capy_char_ishexdigit(char c)
+{
+    return (c >= '0' && c <= '9') ||
+           (c >= 'a' && c <= 'f') ||
+           (c >= 'A' && c <= 'F');
+}
+
+bool capy_char_isalpha(char c)
+{
+    return (c >= 'a' && c <= 'z') ||
+           (c >= 'A' && c <= 'Z');
+}
+
+bool capy_char_isalphanumeric(char c)
+{
+    return (c >= 'a' && c <= 'z') ||
+           (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9');
+}
+
 char capy_char_uppercase(char c)
 {
     return ('a' <= c && c <= 'z') ? c & cast(char, 0xDF) : c;
@@ -352,4 +345,43 @@ capy_string capy_string_shr(capy_string s, size_t size)
 capy_string capy_string_trim(capy_string s, const char *chars)
 {
     return capy_string_rtrim(capy_string_ltrim(s, chars), chars);
+}
+
+uint32_t capy_unicode_utf16(uint16_t high, uint16_t low)
+{
+    high = (high - 0xD800) * 0x400;
+    low = (low - 0xDC00);
+    return (high + low) + 0x10000;
+}
+
+size_t capy_unicode_utf8encode(char *buffer, uint32_t code)
+{
+    if (code <= 0x007F)
+    {
+        buffer[0] = cast(char, code);
+        return 1;
+    }
+    else if (code <= 0x07FF)
+    {
+        buffer[0] = cast(char, 0xC0 | (code >> 6));
+        buffer[1] = cast(char, 0x80 | (code & 0x3F));
+        return 2;
+    }
+    else if (code <= 0xFFFF)
+    {
+        buffer[0] = cast(char, 0xE0 | (code >> 12));
+        buffer[1] = cast(char, 0x80 | ((code >> 6) & 0x3F));
+        buffer[2] = cast(char, 0x80 | (code & 0x3F));
+        return 3;
+    }
+    else if (code <= 0x10FFFF)
+    {
+        buffer[0] = cast(char, 0xF0 | (code >> 18));
+        buffer[1] = cast(char, 0x80 | ((code >> 12) & 0x3F));
+        buffer[2] = cast(char, 0x80 | ((code >> 6) & 0x3F));
+        buffer[3] = cast(char, 0x80 | (code & 0x3F));
+        return 4;
+    }
+
+    return 0;
 }

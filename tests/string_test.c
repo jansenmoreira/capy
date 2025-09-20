@@ -112,27 +112,21 @@ static int test_capy_string_prefix(void)
 static int test_capy_string_hex(void)
 {
     size_t bytes;
-    int64_t value;
+    uint64_t value;
 
     bytes = capy_string_hex(strl("a0b1c2d3e4f5"), &value);
     expect_u_eq(bytes, 12);
-    expect_s_eq(value, 0xa0b1c2d3e4f5);
+    expect_u_eq(value, 0xa0b1c2d3e4f5);
 
-    bytes = capy_string_hex(strl("-A9B8C7D6E5F4 "), &value);
-    expect_u_eq(bytes, 13);
-    expect_s_eq(value, -0xA9B8C7D6E5F4);
+    bytes = capy_string_hex(strl("A9B8C7D6E5F4 "), &value);
+    expect_u_eq(bytes, 12);
+    expect_u_eq(value, 0xA9B8C7D6E5F4);
 
     bytes = capy_string_hex(strl(""), &value);
     expect_u_eq(bytes, 0);
-    expect_s_eq(value, -0xA9B8C7D6E5F4);
 
     bytes = capy_string_hex(strl("-"), &value);
     expect_u_eq(bytes, 0);
-    expect_s_eq(value, -0xA9B8C7D6E5F4);
-
-    bytes = capy_string_hex(strl("-G"), &value);
-    expect_u_eq(bytes, 0);
-    expect_s_eq(value, -0xA9B8C7D6E5F4);
 
     return true;
 }

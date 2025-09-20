@@ -514,7 +514,7 @@ capy_err capy_uri_normalize(capy_arena *arena, capy_string *output, capy_string 
     {
         if (input.data[0] == '%')
         {
-            int64_t value;
+            uint64_t value;
             capy_string_hex(capy_string_slice(input, 1, 3), &value);
             char c = (char)(value);
 

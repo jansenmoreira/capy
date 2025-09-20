@@ -5,6 +5,28 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+static capy_err error_response(capy_http_response *response, capy_http_status status, const char *message)
+{
+    capy_err err;
+
+    response->status = status;
+    response->body->size = 0;
+
+    if ((err = capy_buffer_format(response->body, 0, "%s\n", message)).code)
+    {
+        return err;
+    }
+
+    capy_strkvmmap_clear(response->headers);
+
+    if ((err = capy_strkvmmap_set(response->headers, strl("Content-Type"), strl("text/plain; chartset=UTF-8"))).code)
+    {
+        return err;
+    }
+
+    return ok;
+}
+
 static capy_err explode_handler(unused capy_arena *arena, unused capy_http_request *request, unused capy_http_response *response)
 {
     capy_err err;
@@ -105,9 +127,31 @@ static capy_err echo_handler(capy_arena *arena, capy_http_request *request, capy
         return errwrap(err, "Failed to write size");
     }
 
-    if ((err = capy_buffer_wbase64url(response->body, request->content_length, request->content, true)).code)
+    capy_json_value value;
+
+    int tabsize = 3;
+
+    capy_strkvn *qtab = capy_strkvmmap_get(request->query, strl("tabsize"));
+
+    if (qtab != NULL)
     {
-        return errwrap(err, "Failed to write base64 encoded response->body");
+        tabsize = atoi(qtab->value.data);
+    }
+
+    err = capy_json_deserialize(arena, &value, request->content.data);
+
+    if (err.code == EINVAL)
+    {
+        return error_response(response, CAPY_HTTP_BAD_REQUEST, errwrap(err, "Failed to parse request body").msg);
+    }
+    else if (err.code)
+    {
+        return errwrap(err, "Failed to parse request body");
+    }
+
+    if ((err = capy_json_serialize(response->body, value, tabsize)).code)
+    {
+        return errwrap(err, "Failed to serialize JSON value to response");
     }
 
     if ((err = capy_buffer_wcstr(response->body, "\n")).code)
@@ -115,19 +159,9 @@ static capy_err echo_handler(capy_arena *arena, capy_http_request *request, capy
         return errwrap(err, "Failed to write newline");
     }
 
-    if ((err = capy_strkvmmap_set(response->headers, strl("X-Foo"), strl("bar"))).code)
+    if ((err = capy_strkvmmap_set(response->headers, strl("Content-Type"), strl("application/json"))).code)
     {
-        return errwrap(err, "Failed to set header");
-    }
-
-    if ((err = capy_strkvmmap_add(response->headers, strl("X-Foo"), strl("baz"))).code)
-    {
-        return errwrap(err, "Failed to set header");
-    }
-
-    if ((err = capy_strkvmmap_add(response->headers, strl("X-Bar"), strl("foo"))).code)
-    {
-        return errwrap(err, "Failed to set header");
+        return errwrap(err, "Failed to set Content-Type header");
     }
 
     response->status = 200;

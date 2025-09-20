@@ -2,6 +2,7 @@
 #include "base64.c"
 #include "buffer.c"
 #include "hash.c"
+#include "json.c"
 #include "logs.c"
 #include "math.c"
 #include "string.c"

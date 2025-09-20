@@ -221,8 +221,8 @@ static inline int expect_str_ne_(capy_string lhs, capy_string rhs, const char *f
 #define expect_err(err) { if (!expect_err_((err), __FILE__, __LINE__)) return false; }
 #define expect_null(ptr) { if (!expect_null_(cast(uintptr_t, (ptr)), __FILE__, __LINE__)) return false; }
 #define expect_notnull(ptr) { if (!expect_notnull_(cast(uintptr_t, (ptr)), __FILE__, __LINE__)) return false; }
-#define expect_true(v) { if (!expect_null_((v), __FILE__, __LINE__)) return false; }
-#define expect_false(v) { if (!expect_notnull_((v), __FILE__, __LINE__)) return false; }
+#define expect_true(v) { if (!expect_true_((v), __FILE__, __LINE__)) return false; }
+#define expect_false(v) { if (!expect_false_((v), __FILE__, __LINE__)) return false; }
 
 #define expect_u_eq(lhs, rhs) { if (!expect_u_eq_((lhs), (rhs), __FILE__, __LINE__)) return false; }
 #define expect_u_ne(lhs, rhs) { if (!expect_u_ne_((lhs), (rhs), __FILE__, __LINE__)) return false; }

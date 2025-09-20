@@ -4,8 +4,6 @@
 #include <threads.h>
 #include <time.h>
 
-thread_local static char log_buffer[KiB(2)];
-
 static capy_logger capy_stdout_ = {
     .file = NULL,
     .mask = 0,
@@ -30,6 +28,8 @@ static const char *levelmsg[] = {
 
 void capy_logf(capy_logger *logger, unsigned int level, const char *format, ...)
 {
+    thread_local static char log_buffer[KiB(2)];
+
     if (level & logger->mask)
     {
         ssize_t max = KiB(2);
@@ -38,13 +38,13 @@ void capy_logf(capy_logger *logger, unsigned int level, const char *format, ...)
         struct timespec timestamp;
         timespec_get(&timestamp, TIME_UTC);
 
-        n += snprintf(log_buffer + n, (size_t)max, "%s ", levelmsg[level]);
-        max = max - n;
-
         n += (ssize_t)strftime(log_buffer + n, (size_t)max, "%X", gmtime(&timestamp.tv_sec));
         max = max - n;
 
-        n += snprintf(log_buffer + n, (size_t)max, ".%03ld ", timestamp.tv_nsec / 1000000);
+        n += snprintf(log_buffer + n, (size_t)max, ".%03ld", timestamp.tv_nsec / 1000000);
+        max = max - n;
+
+        n += snprintf(log_buffer + n, (size_t)max, " [%s] ", levelmsg[level]);
         max = max - n;
 
         va_list args;

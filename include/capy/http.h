@@ -92,7 +92,8 @@ typedef struct capy_http_request
     capy_strkvmmap *trailers;
     capy_strkvmmap *params;
     capy_strkvmmap *query;
-    const char *content;
+    capy_string content;
+
     size_t content_length;
     int chunked;
     int close;

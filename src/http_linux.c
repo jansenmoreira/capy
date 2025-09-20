@@ -387,7 +387,7 @@ static inline capy_err conn_parse_chunk_size(http_conn *conn)
         return ok;
     }
 
-    int64_t value;
+    uint64_t value;
 
     // todo: validate chunck_size extensions
     if (capy_string_hex(line, &value) == 0)
@@ -569,8 +569,12 @@ static inline capy_err conn_process_request(http_conn *conn)
 {
     capy_err err;
 
-    conn->request.content = conn->content_buffer->data;
-    conn->request.content_length = conn->content_buffer->size;
+    if ((err = capy_buffer_wnull(conn->content_buffer)).code)
+    {
+        return errwrap(err, "Failed to write null terminator");
+    }
+
+    conn->request.content = capy_string_bytes(conn->content_buffer->size, conn->content_buffer->data);
 
     if ((err = capy_http_router_handle(conn->arena, conn->router, &conn->request, &conn->response)).code)
     {

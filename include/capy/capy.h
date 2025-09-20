@@ -8,6 +8,7 @@
 #include <capy/error.h>
 #include <capy/hash.h>
 #include <capy/http.h>
+#include <capy/json.h>
 #include <capy/logs.h>
 #include <capy/math.h>
 #include <capy/string.h>

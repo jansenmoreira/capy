@@ -3,6 +3,7 @@
 #include "buffer_test.c"
 #include "error_test.c"
 #include "http_test.c"
+#include "json_test.c"
 #include "string_test.c"
 #include "strmap_test.c"
 #include "uri_test.c"
@@ -23,6 +24,7 @@ int main(void)
     test_base64(&t);
     test_strmap(&t);
     test_error(&t);
+    test_json(&t);
 
     printf("\nSummary - %d of %d tests succeeded\n", t.succeded, t.succeded + t.failed);
 
