@@ -38,8 +38,6 @@ void capy_logger_set_level(capy_loglevel level)
         case CAPY_LOG_ERROR:
             logger.mask |= CAPY_LOG_ERROR;
     }
-
-    logger.mask = level;
 }
 
 void capy_logger_add_level(capy_loglevel level)

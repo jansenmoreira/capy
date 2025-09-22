@@ -123,7 +123,7 @@ void capy_logger_init(FILE *file);
 void capy_logger_set_level(capy_loglevel level);
 void capy_logger_add_level(capy_loglevel level);
 void capy_logger_time_format(const char *fmt);
-void capy_log(unsigned int level, const char *format, ...);
+void capy_log(capy_loglevel level, const char *format, ...);
 
 //
 // CHARACTERS

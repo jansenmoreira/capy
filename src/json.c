@@ -619,7 +619,7 @@ static capy_err capy_json_deserialize_(capy_arena *arena, capy_jsonval *value, c
         case '8':
         case '9':
         {
-            double number;
+            double number = 0;
 
             if ((err = capy_json_parse_number(&number, input)).code)
             {

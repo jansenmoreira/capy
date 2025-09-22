@@ -182,7 +182,7 @@ int main(int argc, char *argv[])
 
     int opt;
 
-    while ((opt = getopt(argc, argv, "vmw:c:a:p:")) != -1)
+    while ((opt = getopt(argc, argv, "vmsw:c:a:p:")) != -1)
     {
         switch (opt)
         {
@@ -204,6 +204,11 @@ int main(int argc, char *argv[])
             case 'p':
                 options.port = optarg;
                 break;
+            case 's':
+                options.protocol = CAPY_HTTPS;
+                options.certificate_chain = "extra/certificates/server_chain.pem";
+                options.certificate_key = "extra/certificates/server_key.pem";
+                break;
         }
     }
 
@@ -218,11 +223,12 @@ int main(int argc, char *argv[])
     options.routes_size = ArrLen(routes);
     options.mem_connection_max = MiB(1);
 
-    options.protocol = CAPY_HTTPS;
-    options.certificate_chain = "/workspace/ssl/fullchain.pem";
-    options.certificate_key = "/workspace/ssl/server_key.pem";
+    capy_err err = capy_http_serve(options);
 
-    capy_http_serve(options);
+    if (err.code)
+    {
+        LogErr("Server closed: %s", err.msg);
+    }
 
     return 0;
 }

@@ -1,10 +1,9 @@
-CC_FLAGS := -Iinclude -std=c11 -Werror -Wall -Wextra -Wconversion -Wpedantic -Wmissing-prototypes -Wmissing-variable-declarations -Wno-missing-field-initializers -Wno-unused-function
+CC_FLAGS := -Iinclude -std=c11 -Werror -Wall -Wextra -Wconversion -Wpedantic -Wmissing-prototypes -Wmissing-variable-declarations -Wno-missing-field-initializers -Wno-unused-function -Wno-implicit-fallthrough
 LINUX_FLAGS := -DCAPY_OS_LINUX -DCAPY_ARCH_AMD64 -D_GNU_SOURCE -D_POSIX_C_SOURCE=200809L
-MUSL_FLAGS := -DCAPY_MUSL
 LINUX_DEBUG_FLAGS := ${CC_FLAGS} ${LINUX_FLAGS} -g -fprofile-arcs -ftest-coverage
 LINUX_RELEASE_FLAGS := ${CC_FLAGS} ${LINUX_FLAGS} -DNDEBUG -O3
 
-CC := clang
+CC := gcc
 
 .PHONY: linux/debug
 linux/debug:
@@ -12,8 +11,17 @@ linux/debug:
 	mkdir -p build/debug/
 	${CC} ${LINUX_DEBUG_FLAGS} -c src/capy.c -o build/debug/capy.o
 	ar rcs build/debug/libcapy.a build/debug/capy.o
-	${CC} ${LINUX_DEBUG_FLAGS} -Lbuild/debug tests/test.c -lcrypto -lssl -lcapy -o build/debug/tests
-	${CC} ${LINUX_DEBUG_FLAGS} -Lbuild/debug examples/echo.c -lcrypto -lssl -lcapy -o build/debug/ex_echo
+	${CC} ${LINUX_DEBUG_FLAGS} -Lbuild/debug tests/test.c -lcapy -o build/debug/tests
+	${CC} ${LINUX_DEBUG_FLAGS} -Lbuild/debug examples/echo.c -lcapy -o build/debug/ex_echo
+
+.PHONY: linux/debug/ssl
+linux/debug/ssl:
+	rm -rf build/debug/
+	mkdir -p build/debug/
+	${CC} ${LINUX_DEBUG_FLAGS} -DCAPY_OPENSSL -c src/capy.c -o build/debug/capy.o
+	ar rcs build/debug/libcapy.a build/debug/capy.o
+	${CC} ${LINUX_DEBUG_FLAGS} -Lbuild/debug tests/test.c -lssl -lcrypto -lcapy -o build/debug/tests
+	${CC} ${LINUX_DEBUG_FLAGS} -Lbuild/debug examples/echo.c -lssl -lcrypto -lcapy -o build/debug/ex_echo
 
 .PHONY: linux/release
 linux/release:
@@ -28,10 +36,10 @@ linux/release:
 linux/musl:
 	rm -rf build/musl/
 	mkdir -p build/musl/
-	musl-clang -static -Wno-unused-command-line-argument ${MUSL_FLAGS} ${LINUX_RELEASE_FLAGS} -c src/capy.c -o build/musl/capy.o
+	musl-gcc -static ${LINUX_RELEASE_FLAGS} -c src/capy.c -o build/musl/capy.o
 	ar rcs build/musl/libcapy.a build/musl/capy.o
-	musl-clang -static -Wno-unused-command-line-argument ${MUSL_FLAGS} ${LINUX_RELEASE_FLAGS} -Lbuild/musl tests/test.c -lcapy -o build/musl/tests
-	musl-clang -static -Wno-unused-command-line-argument ${MUSL_FLAGS} ${LINUX_RELEASE_FLAGS} -Lbuild/musl examples/echo.c -lcapy -o build/musl/ex_echo
+	musl-gcc -static ${LINUX_RELEASE_FLAGS} -Lbuild/musl tests/test.c -lcapy -o build/musl/tests
+	musl-gcc -static ${LINUX_RELEASE_FLAGS} -Lbuild/musl examples/echo.c -lcapy -o build/musl/ex_echo
 
 .PHONY: rapidhash
 rapidhash:
@@ -49,3 +57,11 @@ coverage:
 		--exclude src/assert.c \
 		--gcov-executable "llvm-cov gcov"
 	echo file://$$(readlink -f build/debug/coverage.html)
+
+.PHONY: certificates
+certificates:
+	rm -rf extra/certificates/
+	mkdir -p extra/certificates/
+	cd extra/certificates/ && \
+	openssl genrsa > server_key.pem && \
+	openssl req -new -x509 -key server_key.pem > server_chain.pem

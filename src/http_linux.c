@@ -5,8 +5,6 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
-#include <openssl/err.h>
-#include <openssl/ssl.h>
 #include <pthread.h>
 #include <sys/epoll.h>
 #include <sys/signalfd.h>
@@ -36,9 +34,9 @@ typedef enum
     STATE_SSL_SHUTDOWN,
     STATE_CLOSE,
     STATE_BLOCK,
-} http_conn_state;
+} httpconnstate;
 
-static const char *http_conn_state_cstr[] = {
+static const char *httpconnstate_cstr[] = {
     [STATE_UNKNOWN] = "STATE_UNKNOWN",
     [STATE_RESET] = "STATE_RESET",
     [STATE_READ_REQUEST] = "STATE_READ_REQUEST",
@@ -56,15 +54,15 @@ static const char *http_conn_state_cstr[] = {
     [STATE_BLOCK] = "STATE_BLOCK",
 };
 
-typedef struct http_worker
+typedef struct httpworker
 {
     size_t id;
     pthread_t thread_id;
     int epoll_fd;
     sigset_t *mask;
-} http_worker;
+} httpworker;
 
-typedef struct http_conn
+typedef struct httpconn
 {
     int socket;
 
@@ -80,9 +78,9 @@ typedef struct http_conn
     ssize_t mem_trailers;
     ssize_t mem_response;
 
-    http_conn_state state;
-    http_conn_state after_read;
-    http_conn_state after_unblock;
+    httpconnstate state;
+    httpconnstate after_read;
+    httpconnstate after_unblock;
 
     capy_buffer *line_buffer;
 
@@ -103,10 +101,12 @@ typedef struct http_conn
 
     int want_write;
 
-    SSL *ssl;
-} http_conn;
+    struct ssl_st *ssl;
+    struct ssl_ctx_st *ssl_ctx;
+    bool ssl_fatal;
+} httpconn;
 
-typedef struct http_server
+typedef struct httpserver
 {
     capy_arena *arena;
     capy_httprouter *router;
@@ -117,104 +117,124 @@ typedef struct http_server
     int signal_fd;
     sigset_t signals;
 
-    http_worker *workers;
-    http_conn **connections;
+    httpworker *workers;
+    httpconn **connections;
     size_t active_connections;
 
     capy_httpserveropt options;
 
-    SSL_CTX *ssl_ctx;
-} http_server;
+    struct ssl_ctx_st *ssl_ctx;
+} httpserver;
 
-static capy_err http_gaierror(int err)
+static capy_err http_gai_error(int err)
 {
     if (err == 0) return Ok;
     return (capy_err){.code = err, .msg = gai_strerror(err)};
 }
 
-static capy_err http_conn_update_epoll(http_conn *conn, int epoll_fd, int op, uint32_t events)
+static capy_err httpconn_read_request_openssl(httpconn *conn);
+static capy_err httpconn_write_response_openssl(httpconn *conn);
+static capy_err httpconn_create_openssl(httpconn *conn);
+static capy_err httpconn_free_openssl(httpconn *conn);
+static capy_err httpserver_free_openssl(httpserver *server);
+static capy_err httpserver_init_openssl(httpserver *server);
+
+#ifdef CAPY_OPENSSL
+
+#include <openssl/err.h>
+#include <openssl/ssl.h>
+
+static int http_ssl_log_error(const char *buffer, size_t len, Unused void *userdata)
 {
-    struct epoll_event client_event = {
-        .events = events,
-        .data.ptr = conn,
-    };
-
-    if (epoll_ctl(epoll_fd, op, conn->socket, &client_event) == -1)
-    {
-        return ErrWrap(ErrStd(errno), "Failed to update workers epoll");
-    }
-
-    return Ok;
-}
-
-static capy_err http_conn_block(http_conn *conn, http_worker *worker)
-{
-    timespec_get(&conn->timestamp, TIME_UTC);
-
-    uint32_t event = EPOLLIN;
-
-    if (conn->want_write)
-    {
-        event = EPOLLOUT;
-    }
-
-    return http_conn_update_epoll(conn, worker->epoll_fd, EPOLL_CTL_MOD, event | EPOLLET | EPOLLONESHOT);
-}
-
-static capy_err http_conn_close(http_conn *conn)
-{
-    SSL_free(conn->ssl);
-    close(conn->socket);
-    conn->state = STATE_CLOSE;
-    conn->socket = 0;
-    return Ok;
-}
-
-static inline int http_conn_parse_msgline(http_conn *conn, capy_string *line)
-{
-    while (conn->line_cursor <= conn->line_buffer->size)
-    {
-        if (conn->line_cursor >= 2 &&
-            conn->line_buffer->data[conn->line_cursor - 2] == '\r' &&
-            conn->line_buffer->data[conn->line_cursor - 1] == '\n')
-        {
-            break;
-        }
-
-        conn->line_cursor += 1;
-    }
-
-    if (conn->line_cursor > conn->line_buffer->size)
-    {
-        return -1;
-    }
-
-    *line = capy_string_bytes(conn->line_cursor - 2, conn->line_buffer->data);
-
+    len = (len > 0) ? len - 1 : 0;
+    LogErr("%.*s", (int)len, buffer);
     return 0;
 }
 
-static inline void http_conn_shl_msg(http_conn *conn, size_t size)
+static capy_err httpconn_read_request_openssl(httpconn *conn)
 {
-    capy_buffer_shl(conn->line_buffer, size);
+    capy_err err;
 
-    if (size >= conn->line_cursor)
+    ERR_clear_error();
+
+    size_t line_limit = conn->line_buffer->capacity;
+    size_t line_size = conn->line_buffer->size;
+    size_t bytes_wanted = line_limit - line_size;
+
+    if (bytes_wanted == 0)
     {
-        conn->line_cursor = 2;
+        conn->state = STATE_BAD_REQUEST;
+        return Ok;
     }
-    else
+
+    size_t bytes_read = 0;
+
+    if (!SSL_read_ex(conn->ssl, conn->line_buffer->data + line_size, bytes_wanted, &bytes_read))
     {
-        conn->line_cursor -= size;
+        int ssl_err = SSL_get_error(conn->ssl, 0);
+
+        switch (ssl_err)
+        {
+            case SSL_ERROR_WANT_READ:
+            case SSL_ERROR_WANT_WRITE:
+            {
+                conn->after_unblock = STATE_READ_REQUEST;
+                conn->state = STATE_BLOCK;
+                conn->want_write = (ssl_err == SSL_ERROR_WANT_WRITE);
+                return Ok;
+            }
+
+            case SSL_ERROR_ZERO_RETURN:
+            {
+                conn->state = STATE_CLOSE;
+                return Ok;
+            }
+
+            case SSL_ERROR_SYSCALL:
+            {
+                conn->ssl_fatal = true;
+
+                err = ErrStd(errno);
+
+                if (err.code == ECONNRESET)
+                {
+                    conn->state = STATE_CLOSE;
+                    return Ok;
+                }
+
+                return ErrWrap(err, "Failed to read from SSL socket");
+            }
+
+            default:
+            {
+                conn->ssl_fatal = true;
+                conn->state = STATE_CLOSE;
+                return Ok;
+            }
+        }
     }
+
+    if (bytes_read == 0)
+    {
+        conn->state = STATE_CLOSE;
+        return Ok;
+    }
+
+    if ((err = capy_buffer_resize(conn->line_buffer, line_size + Cast(size_t, bytes_read))).code)
+    {
+        return err;
+    }
+
+    conn->state = conn->after_read;
+    return Ok;
 }
 
-static inline void http_conn_shl_msgline(http_conn *conn)
+static capy_err httpconn_write_response_openssl(httpconn *conn)
 {
-    http_conn_shl_msg(conn, conn->line_cursor);
-}
+    capy_err err;
 
-static inline capy_err http_conn_write_response_ssl(http_conn *conn)
-{
+    ERR_clear_error();
+
     size_t bytes_written = 0;
 
     if (!SSL_write_ex(conn->ssl, conn->response_buffer->data, conn->response_buffer->size, &bytes_written))
@@ -238,9 +258,26 @@ static inline capy_err http_conn_write_response_ssl(http_conn *conn)
                 return Ok;
             }
 
+            case SSL_ERROR_SYSCALL:
+            {
+                conn->ssl_fatal = true;
+
+                err = ErrStd(errno);
+
+                if (err.code == ECONNRESET)
+                {
+                    conn->state = STATE_CLOSE;
+                    return Ok;
+                }
+
+                return ErrWrap(err, "Failed to write to SSL socket");
+            }
+
             default:
             {
-                return ErrFmt(ssl_err, "Failed to write to SSL socket (%d)", ssl_err);
+                conn->ssl_fatal = true;
+                conn->state = STATE_CLOSE;
+                return Ok;
             }
         }
     }
@@ -259,9 +296,7 @@ static inline capy_err http_conn_write_response_ssl(http_conn *conn)
     }
     else if (conn->request.close)
     {
-        SSL_shutdown(conn->ssl);
-        conn->line_buffer->size = 0;
-        conn->state = STATE_READ_REQUEST;
+        conn->state = STATE_CLOSE;
     }
     else
     {
@@ -271,7 +306,198 @@ static inline capy_err http_conn_write_response_ssl(http_conn *conn)
     return Ok;
 }
 
-static inline capy_err http_conn_write_response(http_conn *conn)
+static capy_err httpconn_create_openssl(httpconn *conn)
+{
+    SSL *ssl = SSL_new(conn->ssl_ctx);
+    SSL_set_fd(ssl, conn->socket);
+    SSL_set_accept_state(ssl);
+    conn->ssl = ssl;
+    return Ok;
+}
+
+static capy_err httpconn_free_openssl(httpconn *conn)
+{
+    if (!conn->ssl_fatal)
+    {
+        SSL_shutdown(conn->ssl);
+    }
+
+    SSL_free(conn->ssl);
+    return Ok;
+}
+
+static capy_err httpserver_free_openssl(httpserver *server)
+{
+    SSL_CTX_free(server->ssl_ctx);
+    return Ok;
+}
+
+static capy_err httpserver_init_openssl(httpserver *server)
+{
+    server->ssl_ctx = SSL_CTX_new(TLS_server_method());
+
+    if (server->ssl_ctx == NULL)
+    {
+        ERR_print_errors_cb(http_ssl_log_error, NULL);
+        return ErrFmt(EPROTO, "Failed to create server SSL_CTX");
+    }
+
+    if (!SSL_CTX_set_min_proto_version(server->ssl_ctx, TLS1_2_VERSION))
+    {
+        ERR_print_errors_cb(http_ssl_log_error, NULL);
+        SSL_CTX_free(server->ssl_ctx);
+        return ErrFmt(EPROTO, "Failed to set the minimum TLS protocol version");
+    }
+
+    SSL_CTX_set_options(server->ssl_ctx, (SSL_OP_IGNORE_UNEXPECTED_EOF |
+                                          SSL_OP_NO_RENEGOTIATION |
+                                          SSL_OP_CIPHER_SERVER_PREFERENCE));
+
+    if (!SSL_CTX_use_certificate_chain_file(server->ssl_ctx, server->options.certificate_chain))
+    {
+        ERR_print_errors_cb(http_ssl_log_error, NULL);
+        SSL_CTX_free(server->ssl_ctx);
+        return ErrFmt(EPROTO, "Failed to load the server certificate chain file");
+    }
+
+    if (!SSL_CTX_use_PrivateKey_file(server->ssl_ctx, server->options.certificate_key, SSL_FILETYPE_PEM))
+    {
+        ERR_print_errors_cb(http_ssl_log_error, NULL);
+        SSL_CTX_free(server->ssl_ctx);
+        return ErrFmt(EPROTO, "Failed to load the server private key file");
+    }
+
+    static const unsigned char id[] = "capy-https-server";
+
+    SSL_CTX_set_session_id_context(server->ssl_ctx, id, sizeof(id));
+    SSL_CTX_set_session_cache_mode(server->ssl_ctx, SSL_SESS_CACHE_SERVER);
+    SSL_CTX_sess_set_cache_size(server->ssl_ctx, 1024);
+    SSL_CTX_set_timeout(server->ssl_ctx, 3600);
+    SSL_CTX_set_verify(server->ssl_ctx, SSL_VERIFY_NONE, NULL);
+
+    return Ok;
+}
+
+#else
+
+static capy_err httpconn_read_request_openssl(Unused httpconn *conn)
+{
+    return ErrFmt(EPROTO, "OpenSSL is not available");
+}
+
+static capy_err httpconn_write_response_openssl(Unused httpconn *conn)
+{
+    return ErrFmt(EPROTO, "OpenSSL is not available");
+}
+
+static capy_err httpconn_free_openssl(Unused httpconn *conn)
+{
+    return ErrFmt(EPROTO, "OpenSSL is not available");
+}
+
+static capy_err httpconn_create_openssl(Unused httpconn *conn)
+{
+    return ErrFmt(EPROTO, "OpenSSL is not available");
+}
+
+static capy_err httpserver_free_openssl(Unused httpserver *server)
+{
+    return ErrFmt(EPROTO, "OpenSSL is not available");
+}
+
+static capy_err httpserver_init_openssl(Unused httpserver *server)
+{
+    return ErrFmt(EPROTO, "OpenSSL is not available");
+}
+
+#endif
+
+static capy_err httpconn_update_epoll(httpconn *conn, int epoll_fd, int op, uint32_t events)
+{
+    struct epoll_event client_event = {
+        .events = events,
+        .data.ptr = conn,
+    };
+
+    if (epoll_ctl(epoll_fd, op, conn->socket, &client_event) == -1)
+    {
+        return ErrWrap(ErrStd(errno), "Failed to update workers epoll");
+    }
+
+    return Ok;
+}
+
+static capy_err httpconn_block(httpconn *conn, httpworker *worker)
+{
+    timespec_get(&conn->timestamp, TIME_UTC);
+
+    uint32_t event = EPOLLIN;
+
+    if (conn->want_write)
+    {
+        event = EPOLLOUT;
+    }
+
+    return httpconn_update_epoll(conn, worker->epoll_fd, EPOLL_CTL_MOD, event | EPOLLET | EPOLLONESHOT);
+}
+
+static capy_err httpconn_close(httpconn *conn)
+{
+    if (conn->options->protocol == CAPY_HTTPS)
+    {
+        httpconn_free_openssl(conn);
+    }
+
+    close(conn->socket);
+    conn->state = STATE_CLOSE;
+    conn->socket = 0;
+    return Ok;
+}
+
+static int httpconn_parse_msgline(httpconn *conn, capy_string *line)
+{
+    while (conn->line_cursor <= conn->line_buffer->size)
+    {
+        if (conn->line_cursor >= 2 &&
+            conn->line_buffer->data[conn->line_cursor - 2] == '\r' &&
+            conn->line_buffer->data[conn->line_cursor - 1] == '\n')
+        {
+            break;
+        }
+
+        conn->line_cursor += 1;
+    }
+
+    if (conn->line_cursor > conn->line_buffer->size)
+    {
+        return -1;
+    }
+
+    *line = capy_string_bytes(conn->line_cursor - 2, conn->line_buffer->data);
+
+    return 0;
+}
+
+static void httpconn_shl_msg(httpconn *conn, size_t size)
+{
+    capy_buffer_shl(conn->line_buffer, size);
+
+    if (size >= conn->line_cursor)
+    {
+        conn->line_cursor = 2;
+    }
+    else
+    {
+        conn->line_cursor -= size;
+    }
+}
+
+static void httpconn_shl_msgline(httpconn *conn)
+{
+    httpconn_shl_msg(conn, conn->line_cursor);
+}
+
+static capy_err httpconn_write_response(httpconn *conn)
 {
     capy_err err;
 
@@ -324,11 +550,11 @@ static inline capy_err http_conn_write_response(http_conn *conn)
     return Ok;
 }
 
-static inline capy_err http_conn_parse_reqline(http_conn *conn)
+static capy_err httpconn_parse_reqline(httpconn *conn)
 {
     capy_string line;
 
-    if (http_conn_parse_msgline(conn, &line))
+    if (httpconn_parse_msgline(conn, &line))
     {
         conn->after_read = STATE_PARSE_REQLINE;
         conn->state = STATE_READ_REQUEST;
@@ -347,13 +573,13 @@ static inline capy_err http_conn_parse_reqline(http_conn *conn)
         return ErrWrap(err, "Failed to parse request line");
     }
 
-    http_conn_shl_msgline(conn);
+    httpconn_shl_msgline(conn);
     conn->state = STATE_PARSE_HEADERS;
 
     return Ok;
 }
 
-static inline capy_err http_conn_parse_headers(http_conn *conn)
+static capy_err httpconn_parse_headers(httpconn *conn)
 {
     capy_err err;
 
@@ -361,7 +587,7 @@ static inline capy_err http_conn_parse_headers(http_conn *conn)
     {
         capy_string line;
 
-        if (http_conn_parse_msgline(conn, &line))
+        if (httpconn_parse_msgline(conn, &line))
         {
             conn->after_read = STATE_PARSE_HEADERS;
             conn->state = STATE_READ_REQUEST;
@@ -370,7 +596,7 @@ static inline capy_err http_conn_parse_headers(http_conn *conn)
 
         if (line.size == 0)
         {
-            http_conn_shl_msgline(conn);
+            httpconn_shl_msgline(conn);
             break;
         }
 
@@ -386,7 +612,7 @@ static inline capy_err http_conn_parse_headers(http_conn *conn)
             return ErrWrap(err, "Failed to parse headers");
         }
 
-        http_conn_shl_msgline(conn);
+        httpconn_shl_msgline(conn);
     }
 
     err = capy_http_validate_request(conn->arena, &conn->request);
@@ -418,7 +644,7 @@ static inline capy_err http_conn_parse_headers(http_conn *conn)
     return Ok;
 }
 
-static inline capy_err http_conn_parse_trailers(http_conn *conn)
+static capy_err httpconn_parse_trailers(httpconn *conn)
 {
     capy_err err;
 
@@ -426,7 +652,7 @@ static inline capy_err http_conn_parse_trailers(http_conn *conn)
     {
         capy_string line;
 
-        if (http_conn_parse_msgline(conn, &line))
+        if (httpconn_parse_msgline(conn, &line))
         {
             conn->after_read = STATE_PARSE_TRAILERS;
             conn->state = STATE_READ_REQUEST;
@@ -435,7 +661,7 @@ static inline capy_err http_conn_parse_trailers(http_conn *conn)
 
         if (line.size == 0)
         {
-            http_conn_shl_msgline(conn);
+            httpconn_shl_msgline(conn);
             break;
         }
 
@@ -451,18 +677,18 @@ static inline capy_err http_conn_parse_trailers(http_conn *conn)
             return ErrWrap(err, "Failed to parse trailers");
         }
 
-        http_conn_shl_msgline(conn);
+        httpconn_shl_msgline(conn);
     }
 
     conn->state = STATE_ROUTE_REQUEST;
     return Ok;
 }
 
-static inline capy_err http_conn_parse_chunksize(http_conn *conn)
+static capy_err httpconn_parse_chunksize(httpconn *conn)
 {
     capy_string line;
 
-    if (http_conn_parse_msgline(conn, &line))
+    if (httpconn_parse_msgline(conn, &line))
     {
         conn->after_read = STATE_PARSE_CHUNKSIZE;
         conn->state = STATE_READ_REQUEST;
@@ -480,7 +706,7 @@ static inline capy_err http_conn_parse_chunksize(http_conn *conn)
 
     conn->chunk_size = (size_t)(value);
 
-    http_conn_shl_msgline(conn);
+    httpconn_shl_msgline(conn);
 
     if (conn->chunk_size == 0)
     {
@@ -494,7 +720,7 @@ static inline capy_err http_conn_parse_chunksize(http_conn *conn)
     return Ok;
 }
 
-static inline capy_err http_conn_parse_chunkdata(http_conn *conn)
+static capy_err httpconn_parse_chunkdata(httpconn *conn)
 {
     capy_err err;
 
@@ -509,7 +735,7 @@ static inline capy_err http_conn_parse_chunkdata(http_conn *conn)
             return ErrWrap(err, "Failed to read chunk data");
         }
 
-        http_conn_shl_msg(conn, msg_size);
+        httpconn_shl_msg(conn, msg_size);
 
         conn->chunk_size -= msg_size;
 
@@ -533,72 +759,13 @@ static inline capy_err http_conn_parse_chunkdata(http_conn *conn)
         return ErrWrap(err, "Failed to read chunk data");
     }
 
-    http_conn_shl_msg(conn, conn->chunk_size + 2);
+    httpconn_shl_msg(conn, conn->chunk_size + 2);
 
     conn->state = STATE_PARSE_CHUNKSIZE;
     return Ok;
 }
 
-static capy_err http_conn_read_request_ssl(http_conn *conn)
-{
-    capy_err err;
-
-    size_t line_limit = conn->line_buffer->capacity;
-    size_t line_size = conn->line_buffer->size;
-    size_t bytes_wanted = line_limit - line_size;
-
-    if (bytes_wanted == 0)
-    {
-        conn->state = STATE_BAD_REQUEST;
-        return Ok;
-    }
-
-    size_t bytes_read = 0;
-
-    if (!SSL_read_ex(conn->ssl, conn->line_buffer->data + line_size, bytes_wanted, &bytes_read))
-    {
-        int ssl_err = SSL_get_error(conn->ssl, 0);
-
-        switch (ssl_err)
-        {
-            case SSL_ERROR_WANT_READ:
-            case SSL_ERROR_WANT_WRITE:
-            {
-                conn->after_unblock = STATE_READ_REQUEST;
-                conn->state = STATE_BLOCK;
-                conn->want_write = (ssl_err == SSL_ERROR_WANT_WRITE);
-                return Ok;
-            }
-
-            case SSL_ERROR_ZERO_RETURN:
-            {
-                conn->state = STATE_CLOSE;
-                return Ok;
-            }
-
-            default:
-            {
-                return ErrFmt(ssl_err, "Failed to read from SSL socket (%d)", ssl_err);
-            }
-        }
-    }
-
-    if (bytes_read == 0)
-    {
-        conn->state = STATE_CLOSE;
-        return Ok;
-    }
-
-    if ((err = capy_buffer_resize(conn->line_buffer, line_size + Cast(size_t, bytes_read))).code)
-    {
-        return err;
-    }
-
-    conn->state = conn->after_read;
-    return Ok;
-}
-
-static capy_err http_conn_read_request(http_conn *conn)
+static capy_err httpconn_read_request(httpconn *conn)
 {
     capy_err err;
 
@@ -650,7 +817,7 @@ static capy_err http_conn_read_request(http_conn *conn)
     return Ok;
 }
 
-static inline capy_err http_conn_parse_reqbody(http_conn *conn)
+static capy_err httpconn_parse_reqbody(httpconn *conn)
 {
     capy_err err;
 
@@ -665,7 +832,7 @@ static inline capy_err http_conn_parse_reqbody(http_conn *conn)
             return ErrWrap(err, "Failed to read content data");
         }
 
-        http_conn_shl_msg(conn, message_size);
+        httpconn_shl_msg(conn, message_size);
 
         conn->chunk_size -= message_size;
 
@@ -681,13 +848,13 @@ static inline capy_err http_conn_parse_reqbody(http_conn *conn)
         return ErrWrap(err, "Failed to read content data");
     }
 
-    http_conn_shl_msg(conn, conn->chunk_size);
+    httpconn_shl_msg(conn, conn->chunk_size);
 
     conn->state = STATE_ROUTE_REQUEST;
     return Ok;
 }
 
-static inline capy_err http_conn_prepare_badrequest(http_conn *conn)
+static capy_err httpconn_prepare_badrequest(httpconn *conn)
 {
     capy_err err;
 
@@ -707,7 +874,7 @@ static inline capy_err http_conn_prepare_badrequest(http_conn *conn)
     return Ok;
 }
 
-static inline capy_err http_conn_route_request(http_conn *conn)
+static capy_err httpconn_route_request(httpconn *conn)
 {
     capy_err err;
 
@@ -732,7 +899,7 @@ static inline capy_err http_conn_route_request(http_conn *conn)
     return Ok;
 }
 
-static capy_err http_conn_reset(http_conn *conn)
+static capy_err httpconn_reset(httpconn *conn)
 {
     capy_err err;
 
@@ -771,7 +938,7 @@ static capy_err http_conn_reset(http_conn *conn)
     return Ok;
 }
 
-static inline void http_conn_trace(http_conn *conn, http_worker *worker)
+static void httpconn_trace(httpconn *conn, httpworker *worker)
 {
     struct timespec timestamp;
     timespec_get(&timestamp, TIME_UTC);
@@ -787,12 +954,12 @@ static inline void http_conn_trace(http_conn *conn, http_worker *worker)
     size_t to_write = (conn->response_buffer) ? conn->response_buffer->size : 0;
 
     LogDbg("worker: %-24s | WK:%-4zu SK:%-4d MH:%-8zu MC:%-8zu MT:%-8zu MR:%-8zu MA:%-8zu RS:%-8zu WS:%-8zu | %3" PRIi64 " %s",
-           http_conn_state_cstr[conn->state], worker->id, conn->socket,
+           httpconnstate_cstr[conn->state], worker->id, conn->socket,
            conn->mem_headers, conn->mem_content, conn->mem_trailers, conn->mem_response, mem_total,
            to_read, to_write, elapsed, elapsed_unit);
 }
 
-static inline capy_err http_conn_step(http_conn *conn, http_worker *worker)
+static capy_err httpconn_step(httpconn *conn, httpworker *worker)
 {
     capy_assert(conn != NULL);
 
@@ -805,7 +972,7 @@ static inline capy_err http_conn_step(http_conn *conn, http_worker *worker)
 
     for (;;)
     {
-        http_conn_trace(conn, worker);
+        httpconn_trace(conn, worker);
 
         ssize_t begin = (ssize_t)capy_arena_size(conn->arena);
 
@@ -813,7 +980,7 @@ static inline capy_err http_conn_step(http_conn *conn, http_worker *worker)
         {
             case STATE_RESET:
             {
-                err = http_conn_reset(conn);
+                err = httpconn_reset(conn);
             }
             break;
 
@@ -821,67 +988,67 @@ static inline capy_err http_conn_step(http_conn *conn, http_worker *worker)
             {
                 if (conn->options->protocol == CAPY_HTTPS)
                 {
-                    err = http_conn_read_request_ssl(conn);
+                    err = httpconn_read_request_openssl(conn);
                 }
                 else
                 {
-                    err = http_conn_read_request(conn);
+                    err = httpconn_read_request(conn);
                 }
             }
             break;
 
             case STATE_PARSE_REQLINE:
             {
-                err = http_conn_parse_reqline(conn);
+                err = httpconn_parse_reqline(conn);
                 conn->mem_headers += (ssize_t)capy_arena_size(conn->arena) - begin;
             }
             break;
 
             case STATE_PARSE_HEADERS:
             {
-                err = http_conn_parse_headers(conn);
+                err = httpconn_parse_headers(conn);
                 conn->mem_headers += (ssize_t)capy_arena_size(conn->arena) - begin;
             }
             break;
 
             case STATE_PARSE_CONTENT:
             {
-                err = http_conn_parse_reqbody(conn);
+                err = httpconn_parse_reqbody(conn);
                 conn->mem_content += (ssize_t)capy_arena_size(conn->arena) - begin;
             }
             break;
 
             case STATE_PARSE_CHUNKSIZE:
             {
-                err = http_conn_parse_chunksize(conn);
+                err = httpconn_parse_chunksize(conn);
                 conn->mem_content += (ssize_t)capy_arena_size(conn->arena) - begin;
             }
             break;
 
             case STATE_PARSE_CHUNKDATA:
             {
-                err = http_conn_parse_chunkdata(conn);
+                err = httpconn_parse_chunkdata(conn);
                 conn->mem_content += (ssize_t)capy_arena_size(conn->arena) - begin;
             }
             break;
 
             case STATE_PARSE_TRAILERS:
             {
-                err = http_conn_parse_trailers(conn);
+                err = httpconn_parse_trailers(conn);
                 conn->mem_trailers += (ssize_t)capy_arena_size(conn->arena) - begin;
             }
             break;
 
             case STATE_ROUTE_REQUEST:
             {
-                err = http_conn_route_request(conn);
+                err = httpconn_route_request(conn);
                 conn->mem_response += (ssize_t)capy_arena_size(conn->arena) - begin;
             }
             break;
 
             case STATE_BAD_REQUEST:
             {
-                err = http_conn_prepare_badrequest(conn);
+                err = httpconn_prepare_badrequest(conn);
                 conn->mem_response += (ssize_t)capy_arena_size(conn->arena) - begin;
             }
             break;
@@ -890,24 +1057,24 @@ static inline capy_err http_conn_step(http_conn *conn, http_worker *worker)
             {
                 if (conn->options->protocol == CAPY_HTTPS)
                 {
-                    err = http_conn_write_response_ssl(conn);
+                    err = httpconn_write_response_openssl(conn);
                 }
                 else
                 {
-                    err = http_conn_write_response(conn);
+                    err = httpconn_write_response(conn);
                 }
             }
             break;
 
             case STATE_BLOCK:
             {
-                return http_conn_block(conn, worker);
+                return httpconn_block(conn, worker);
             }
             break;
 
             case STATE_CLOSE:
             {
-                return http_conn_close(conn);
+                return httpconn_close(conn);
             }
 
             default:
@@ -919,7 +1086,7 @@ static inline capy_err http_conn_step(http_conn *conn, http_worker *worker)
         if (err.code)
         {
             LogErr("While processing request: %s", err.msg);
-            return http_conn_close(conn);
+            return httpconn_close(conn);
         }
     }
 }
@@ -928,7 +1095,7 @@ static void *conn_worker(void *data)
 {
     capy_err err;
 
-    http_worker *worker = data;
+    httpworker *worker = data;
 
     struct epoll_event events[1];
 
@@ -956,13 +1123,13 @@ static void *conn_worker(void *data)
                 return 0;
             }
 
-            http_conn *conn = events[i].data.ptr;
+            httpconn *conn = events[i].data.ptr;
 
             pthread_mutex_lock(&conn->mut);
 
             if (conn->socket)
             {
-                if ((err = http_conn_step(conn, worker)).code)
+                if ((err = httpconn_step(conn, worker)).code)
                 {
                     LogErr("While processing request: %s", err.msg);
                     abort();
@@ -974,7 +1141,7 @@ static void *conn_worker(void *data)
     }
 }
 
-static capy_httpserveropt http_server_options_with_defaults(capy_httpserveropt options)
+static capy_httpserveropt httpserver_options_with_defaults(capy_httpserveropt options)
 {
     if (!options.workers)
     {
@@ -1009,7 +1176,7 @@ static capy_httpserveropt http_server_options_with_defaults(capy_httpserveropt o
     return options;
 }
 
-static capy_err http_server_bind(http_server *server)
+static capy_err httpserver_bind(httpserver *server)
 {
     struct addrinfo hints = {
         .ai_family = AF_INET,
@@ -1019,7 +1186,7 @@ static capy_err http_server_bind(http_server *server)
 
     struct addrinfo *addresses;
 
-    capy_err err = http_gaierror(getaddrinfo(server->options.host, server->options.port, &hints, &addresses));
+    capy_err err = http_gai_error(getaddrinfo(server->options.host, server->options.port, &hints, &addresses));
 
     if (err.code)
     {
@@ -1059,7 +1226,7 @@ static capy_err http_server_bind(http_server *server)
     return err;
 }
 
-static capy_err http_server_create_signal_fd(http_server *server)
+static capy_err httpserver_create_signal_fd(httpserver *server)
 {
     sigemptyset(&server->signals);
     sigaddset(&server->signals, SIGINT);
@@ -1076,7 +1243,7 @@ static capy_err http_server_create_signal_fd(http_server *server)
     return Ok;
 }
 
-static capy_err http_server_create_epoll(http_server *server)
+static capy_err httpserver_create_epoll(httpserver *server)
 {
     struct epoll_event event;
 
@@ -1110,7 +1277,7 @@ static capy_err http_server_create_epoll(http_server *server)
     return Ok;
 }
 
-static capy_err http_server_create_workers_epoll(http_server *server)
+static capy_err httpserver_create_workers_epoll(httpserver *server)
 {
     struct epoll_event event;
 
@@ -1134,9 +1301,9 @@ static capy_err http_server_create_workers_epoll(http_server *server)
     return Ok;
 }
 
-static capy_err http_server_create_connections(http_server *server)
+static capy_err httpserver_create_connections(httpserver *server)
 {
-    server->connections = Make(server->arena, http_conn *, server->options.connections);
+    server->connections = Make(server->arena, httpconn *, server->options.connections);
 
     if (server->connections == NULL)
     {
@@ -1153,7 +1320,7 @@ static capy_err http_server_create_connections(http_server *server)
             return ErrStd(ENOMEM);
         }
 
-        http_conn *conn = Make(arena, http_conn, 1);
+        httpconn *conn = Make(arena, httpconn, 1);
 
         conn->arena = arena;
         conn->router = server->router;
@@ -1171,9 +1338,9 @@ static capy_err http_server_create_connections(http_server *server)
     return Ok;
 }
 
-static capy_err http_server_create_workers(http_server *server)
+static capy_err httpserver_create_workers(httpserver *server)
 {
-    server->workers = Make(server->arena, http_worker, server->options.workers);
+    server->workers = Make(server->arena, httpworker, server->options.workers);
 
     if (server->workers == NULL)
     {
@@ -1182,7 +1349,7 @@ static capy_err http_server_create_workers(http_server *server)
 
     for (size_t i = 0; i < server->options.workers; i++)
     {
-        server->workers[i] = (http_worker){
+        server->workers[i] = (httpworker){
             .id = i,
             .epoll_fd = server->workers_epoll_fd,
             .mask = &server->signals,
@@ -1199,50 +1366,7 @@ static capy_err http_server_create_workers(http_server *server)
     return Ok;
 }
 
-static capy_err http_server_init_ssl(http_server *server)
-{
-    static const char cache_id[] = "capy-https-server";
-
-    server->ssl_ctx = SSL_CTX_new(TLS_server_method());
-
-    if (server->ssl_ctx == NULL)
-    {
-        return ErrFmt(EINVAL, "Failed to create server SSL_CTX");
-    }
-
-    if (!SSL_CTX_set_min_proto_version(server->ssl_ctx, TLS1_2_VERSION))
-    {
-        SSL_CTX_free(server->ssl_ctx);
-        return ErrFmt(EINVAL, "Failed to set the minimum TLS protocol version");
-    }
-
-    uint64_t opts = SSL_OP_IGNORE_UNEXPECTED_EOF | SSL_OP_NO_RENEGOTIATION | SSL_OP_CIPHER_SERVER_PREFERENCE;
-
-    SSL_CTX_set_options(server->ssl_ctx, opts);
-
-    if (SSL_CTX_use_certificate_chain_file(server->ssl_ctx, server->options.certificate_chain) <= 0)
-    {
-        SSL_CTX_free(server->ssl_ctx);
-        return ErrFmt(EINVAL, "Failed to load the server certificate chain file");
-    }
-
-    if (SSL_CTX_use_PrivateKey_file(server->ssl_ctx, server->options.certificate_key, SSL_FILETYPE_PEM) <= 0)
-    {
-        SSL_CTX_free(server->ssl_ctx);
-        return ErrFmt(EINVAL, "Failed to load the server private key file");
-    }
-
-    SSL_CTX_set_session_id_context(server->ssl_ctx, (void *)cache_id, sizeof(cache_id));
-    SSL_CTX_set_session_cache_mode(server->ssl_ctx, SSL_SESS_CACHE_SERVER);
-
-    SSL_CTX_sess_set_cache_size(server->ssl_ctx, 1024);
-    SSL_CTX_set_timeout(server->ssl_ctx, 3600);
-    SSL_CTX_set_verify(server->ssl_ctx, SSL_VERIFY_NONE, NULL);
-
-    return Ok;
-}
-
-static void http_server_update_connections(http_server *server)
+static void httpserver_update_connections(httpserver *server)
 {
     struct timespec ts;
     timespec_get(&ts, TIME_UTC);
@@ -1251,7 +1375,7 @@ static void http_server_update_connections(http_server *server)
 
     for (size_t i = 0; i < total; i++)
     {
-        http_conn *conn = server->connections[i];
+        httpconn *conn = server->connections[i];
 
         if (pthread_mutex_trylock(&conn->mut) == EBUSY)
         {
@@ -1263,7 +1387,7 @@ static void http_server_update_connections(http_server *server)
             if (difftime(ts.tv_sec, conn->timestamp.tv_sec) > 15)
             {
                 LogInf("server: connection (%d) closed due to inactivity", conn->socket);
-                http_conn_close(conn);
+                httpconn_close(conn);
             }
         }
 
@@ -1274,7 +1398,7 @@ static void http_server_update_connections(http_server *server)
 
     for (size_t i = 0; i < total; i++)
     {
-        http_conn *conn = server->connections[i];
+        httpconn *conn = server->connections[i];
 
         if (conn->socket == 0)
         {
@@ -1290,7 +1414,7 @@ static void http_server_update_connections(http_server *server)
     server->active_connections = active;
 }
 
-static void http_server_destroy(http_server *server)
+static void httpserver_destroy(httpserver *server)
 {
     for (size_t i = 0; i < server->options.workers; i++)
     {
@@ -1299,18 +1423,22 @@ static void http_server_destroy(http_server *server)
 
     for (size_t i = 0; i < server->options.connections; i++)
     {
-        http_conn *conn = server->connections[i];
+        httpconn *conn = server->connections[i];
 
         if (conn->socket != 0)
         {
-            http_conn_close(conn);
+            httpconn_close(conn);
         }
 
         pthread_mutex_destroy(&conn->mut);
         capy_arena_destroy(conn->arena);
     }
 
-    SSL_CTX_free(server->ssl_ctx);
+    if (server->options.protocol == CAPY_HTTPS)
+    {
+        httpserver_free_openssl(server);
+    }
+
     close(server->signal_fd);
     close(server->fd);
     close(server->epoll_fd);
@@ -1337,45 +1465,45 @@ capy_err capy_http_serve(capy_httpserveropt options)
         return ErrFmt(ENOMEM, "Failed to create router");
     }
 
-    http_server server = {
+    httpserver server = {
         .router = router,
         .arena = arena,
-        .options = http_server_options_with_defaults(options),
+        .options = httpserver_options_with_defaults(options),
     };
 
-    if ((err = http_server_bind(&server)).code)
+    if ((err = httpserver_bind(&server)).code)
     {
         return ErrWrap(err, "Failed to bind server");
     }
 
-    if ((err = http_server_create_signal_fd(&server)).code)
+    if ((err = httpserver_create_signal_fd(&server)).code)
     {
         return ErrWrap(err, "Failed to create signal file descriptors");
     }
 
-    if ((err = http_server_create_epoll(&server)).code)
+    if ((err = httpserver_create_epoll(&server)).code)
     {
         return ErrWrap(err, "Failed to create listen epoll");
     }
 
-    if ((err = http_server_create_workers_epoll(&server)).code)
+    if ((err = httpserver_create_workers_epoll(&server)).code)
     {
         return ErrWrap(err, "Failed to create listen epoll");
     }
 
-    if ((err = http_server_create_connections(&server)).code)
+    if ((err = httpserver_create_connections(&server)).code)
     {
         return ErrWrap(err, "Failed to create connection pool");
     }
 
-    if ((err = http_server_create_workers(&server)).code)
+    if ((err = httpserver_create_workers(&server)).code)
     {
         return ErrWrap(err, "Failed to create workers pool");
     }
 
     if (options.protocol == CAPY_HTTPS)
     {
-        if ((err = http_server_init_ssl(&server)).code)
+        if ((err = httpserver_init_openssl(&server)).code)
         {
             return ErrWrap(err, "Failed to initialize SSL context");
         }
@@ -1386,8 +1514,9 @@ capy_err capy_http_serve(capy_httpserveropt options)
         return ErrWrap(ErrStd(errno), "Failed to listen");
     }
 
-    LogInf("server: listening at %s:%s (workers = %lu, connections = %lu)",
+    LogInf("server: listening at %s:%s (protocol = %s, workers = %lu, connections = %lu)",
            server.options.host, server.options.port,
+           (options.protocol == CAPY_HTTPS) ? "https" : "http",
            server.options.workers, server.options.connections);
 
     void *address_buffer = &(struct sockaddr_storage){0};
@@ -1417,7 +1546,7 @@ capy_err capy_http_serve(capy_httpserveropt options)
             return ErrWrap(err, "Failed to receive events from epoll");
         }
 
-        http_server_update_connections(&server);
+        httpserver_update_connections(&server);
 
         for (int i = 0; i < events_count; i++)
         {
@@ -1470,28 +1599,29 @@ capy_err capy_http_serve(capy_httpserveropt options)
                 return ErrWrap(ErrStd(errno), "Failed to set TCP_NODELAY value");
             }
 
-            http_conn *conn = server.connections[server.active_connections++];
+            httpconn *conn = server.connections[server.active_connections++];
 
             conn->socket = conn_fd;
             conn->state = STATE_RESET;
+            conn->ssl_ctx = server.ssl_ctx;
             timespec_get(&conn->timestamp, TIME_UTC);
 
             if (options.protocol == CAPY_HTTPS)
             {
-                SSL *ssl = SSL_new(server.ssl_ctx);
-                SSL_set_fd(ssl, conn->socket);
-                SSL_set_accept_state(ssl);
-                conn->ssl = ssl;
+                if ((err = httpconn_create_openssl(conn)).code)
+                {
+                    return err;
+                }
             }
 
-            if ((err = http_conn_update_epoll(conn, server.workers_epoll_fd, EPOLL_CTL_ADD, EPOLLIN | EPOLLET | EPOLLONESHOT)).code)
+            if ((err = httpconn_update_epoll(conn, server.workers_epoll_fd, EPOLL_CTL_ADD, EPOLLIN | EPOLLET | EPOLLONESHOT)).code)
             {
                 return err;
             }
         }
     }
 
-    http_server_destroy(&server);
+    httpserver_destroy(&server);
 
     LogInf("server: shutting down");
 

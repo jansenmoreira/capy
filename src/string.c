@@ -347,9 +347,10 @@ capy_string capy_string_trim(capy_string s, const char *chars)
 
 uint32_t capy_unicode_utf16(uint16_t high, uint16_t low)
 {
-    high = (high - 0xD800) * 0x400;
-    low = (low - 0xDC00);
-    return (high + low) + 0x10000;
+    uint32_t result = 0;
+    result += (Cast(uint32_t, high) - 0xD800) * 0x400;
+    result += Cast(uint32_t, low) - 0xDC00;
+    return result + 0x10000;
 }
 
 size_t capy_unicode_utf8encode(char *buffer, uint32_t code)
