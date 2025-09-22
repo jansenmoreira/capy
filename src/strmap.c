@@ -1,9 +1,7 @@
-#include <capy/hash.h>
+#include <capy/capy.h>
 #include <capy/macros.h>
-#include <capy/strmap.h>
-#include <errno.h>
 
-static const char *DELETED = cast(const char *, -1);
+static const char *DELETED = Cast(const char *, -1);
 
 void *capy_strmap_get(void *items, size_t element_size, size_t capacity, capy_string key)
 {
@@ -19,7 +17,7 @@ void *capy_strmap_get(void *items, size_t element_size, size_t capacity, capy_st
     {
         char *item = data + (element_size * k);
 
-        capy_string *item_key = cast(capy_string *, item);
+        capy_string *item_key = Cast(capy_string *, item);
 
         if (item_key->data == DELETED)
         {
@@ -45,7 +43,7 @@ void *capy_strmap_set(capy_arena *arena, void *items,
     const char *kvdata = kv;
     char *data = items;
 
-    capy_string *key = cast(capy_string *, kvdata);
+    capy_string *key = Cast(capy_string *, kvdata);
 
     char *dest = capy_strmap_get(items, element_size, *capacity, *key);
 
@@ -71,7 +69,7 @@ void *capy_strmap_set(capy_arena *arena, void *items,
         {
             char *item = data + (i * element_size);
 
-            capy_string *item_key = cast(capy_string *, item);
+            capy_string *item_key = Cast(capy_string *, item);
 
             if (item_key->data != DELETED && item_key->size != 0)
             {
@@ -91,7 +89,7 @@ void *capy_strmap_set(capy_arena *arena, void *items,
     {
         char *item = data + (element_size * k);
 
-        capy_string *item_key = cast(capy_string *, item);
+        capy_string *item_key = Cast(capy_string *, item);
 
         if (item_key->data == DELETED)
         {
@@ -117,18 +115,20 @@ void *capy_strmap_set(capy_arena *arena, void *items,
     return data;
 }
 
-void capy_strmap_delete(void *items, size_t element_size, size_t capacity, size_t *size, capy_string key)
+size_t capy_strmap_delete(void *items, size_t element_size, size_t capacity, size_t size, capy_string key)
 {
     void *item = capy_strmap_get(items, element_size, capacity, key);
 
     if (item != NULL)
     {
-        capy_string *key = cast(capy_string *, item);
+        capy_string *key = Cast(capy_string *, item);
 
         key->data = DELETED;
         key->size = 0;
-        *size -= 1;
+        size -= 1;
     }
+
+    return size;
 }
 
 // capy_strset
@@ -142,7 +142,7 @@ capy_strset *capy_strset_init(capy_arena *arena, size_t capacity)
         set->size = 0;
         set->capacity = capacity;
         set->arena = arena;
-        set->items = recast(capy_string *, set + 1);
+        set->items = ReinterpretCast(capy_string *, set + 1);
     }
 
     return set;
@@ -153,23 +153,23 @@ int capy_strset_has(capy_strset *s, capy_string key)
     return capy_strmap_get(s->items, sizeof(capy_string), s->capacity, key) != NULL;
 }
 
-must_check capy_err capy_strset_add(capy_strset *s, capy_string key)
+MustCheck capy_err capy_strset_add(capy_strset *s, capy_string key)
 {
     void *data = capy_strmap_set(s->arena, s->items, sizeof(capy_string), &s->capacity, &s->size, &key);
 
     if (data == NULL)
     {
-        return capy_errno(ENOMEM);
+        return ErrStd(ENOMEM);
     }
 
     s->items = data;
 
-    return ok;
+    return Ok;
 }
 
 void capy_strset_delete(capy_strset *s, capy_string key)
 {
-    capy_strmap_delete(s->items, sizeof(capy_string), s->capacity, &s->size, key);
+    s->size = capy_strmap_delete(s->items, sizeof(capy_string), s->capacity, s->size, key);
 }
 
 // capy_strkvmap
@@ -183,7 +183,7 @@ capy_strkvmap *capy_strkvmap_init(capy_arena *arena, size_t capacity)
         m->size = 0;
         m->capacity = capacity;
         m->arena = arena;
-        m->items = recast(capy_strkv *, m + 1);
+        m->items = ReinterpretCast(capy_strkv *, m + 1);
     }
 
     return m;
@@ -194,7 +194,7 @@ capy_strkv *capy_strkvmap_get(capy_strkvmap *m, capy_string key)
     return capy_strmap_get(m->items, sizeof(capy_strkv), m->capacity, key);
 }
 
-must_check capy_err capy_strkvmap_set(capy_strkvmap *m, capy_string key, capy_string value)
+MustCheck capy_err capy_strkvmap_set(capy_strkvmap *m, capy_string key, capy_string value)
 {
     capy_strkv pair = {.key = key, .value = value};
 
@@ -202,42 +202,42 @@ must_check capy_err capy_strkvmap_set(capy_strkvmap *m, capy_string key, capy_st
 
     if (items == NULL)
     {
-        return capy_errno(ENOMEM);
+        return ErrStd(ENOMEM);
     }
 
     m->items = items;
 
-    return ok;
+    return Ok;
 }
 
 void capy_strkvmap_delete(capy_strkvmap *m, capy_string key)
 {
-    capy_strmap_delete(m->items, sizeof(capy_strkv), m->capacity, &m->size, key);
+    m->size = capy_strmap_delete(m->items, sizeof(capy_strkv), m->capacity, m->size, key);
 }
 
-// capy_strkvmmap
+// capy_strkvnmap
 
-capy_strkvmmap *capy_strkvmmap_init(capy_arena *arena, size_t capacity)
+capy_strkvnmap *capy_strkvnmap_init(capy_arena *arena, size_t capacity)
 {
-    capy_strkvmmap *mm = capy_arena_alloc(arena, sizeof(capy_strkvmmap) + (sizeof(capy_strkvn) * capacity), 8, true);
+    capy_strkvnmap *mm = capy_arena_alloc(arena, sizeof(capy_strkvnmap) + (sizeof(capy_strkvn) * capacity), 8, true);
 
     if (mm != NULL)
     {
         mm->size = 0;
         mm->capacity = capacity;
         mm->arena = arena;
-        mm->items = recast(capy_strkvn *, mm + 1);
+        mm->items = ReinterpretCast(capy_strkvn *, mm + 1);
     }
 
     return mm;
 }
 
-capy_strkvn *capy_strkvmmap_get(capy_strkvmmap *mm, capy_string key)
+capy_strkvn *capy_strkvnmap_get(capy_strkvnmap *mm, capy_string key)
 {
     return capy_strmap_get(mm->items, sizeof(capy_strkvn), mm->capacity, key);
 }
 
-must_check capy_err capy_strkvmmap_set(capy_strkvmmap *mm, capy_string key, capy_string value)
+MustCheck capy_err capy_strkvnmap_set(capy_strkvnmap *mm, capy_string key, capy_string value)
 {
     capy_strkvn *item = capy_strmap_get(mm->items, sizeof(capy_strkvn), mm->capacity, key);
 
@@ -245,7 +245,7 @@ must_check capy_err capy_strkvmmap_set(capy_strkvmmap *mm, capy_string key, capy
     {
         item->value = value;
         item->next = NULL;
-        return ok;
+        return Ok;
     }
 
     capy_strkvn pair = {
@@ -258,17 +258,17 @@ must_check capy_err capy_strkvmmap_set(capy_strkvmmap *mm, capy_string key, capy
 
     if (items == NULL)
     {
-        return capy_errno(ENOMEM);
+        return ErrStd(ENOMEM);
     }
 
-    mm->items = cast(capy_strkvn *, items);
+    mm->items = Cast(capy_strkvn *, items);
 
-    return ok;
+    return Ok;
 }
 
-must_check capy_err capy_strkvmmap_add(capy_strkvmmap *mm, capy_string key, capy_string value)
+MustCheck capy_err capy_strkvnmap_add(capy_strkvnmap *mm, capy_string key, capy_string value)
 {
-    capy_strkvn *item = capy_strmap_get(cast(uint8_t *, mm->items), sizeof(capy_strkvn), mm->capacity, key);
+    capy_strkvn *item = capy_strmap_get(Cast(uint8_t *, mm->items), sizeof(capy_strkvn), mm->capacity, key);
 
     if (item == NULL)
     {
@@ -282,12 +282,12 @@ must_check capy_err capy_strkvmmap_add(capy_strkvmmap *mm, capy_string key, capy
 
         if (items == NULL)
         {
-            return capy_errno(ENOMEM);
+            return ErrStd(ENOMEM);
         }
 
-        mm->items = cast(capy_strkvn *, items);
+        mm->items = Cast(capy_strkvn *, items);
 
-        return ok;
+        return Ok;
     }
 
     while (item->next != NULL)
@@ -295,11 +295,11 @@ must_check capy_err capy_strkvmmap_add(capy_strkvmmap *mm, capy_string key, capy
         item = item->next;
     }
 
-    item->next = make(mm->arena, capy_strkvn, 1);
+    item->next = Make(mm->arena, capy_strkvn, 1);
 
     if (item->next == NULL)
     {
-        return capy_errno(ENOMEM);
+        return ErrStd(ENOMEM);
     }
 
     item = item->next;
@@ -307,15 +307,15 @@ must_check capy_err capy_strkvmmap_add(capy_strkvmmap *mm, capy_string key, capy
     item->key = key;
     item->value = value;
 
-    return ok;
+    return Ok;
 }
 
-void capy_strkvmmap_delete(capy_strkvmmap *mm, capy_string key)
+void capy_strkvnmap_delete(capy_strkvnmap *mm, capy_string key)
 {
-    capy_strmap_delete(mm->items, sizeof(capy_strkvn), mm->capacity, &mm->size, key);
+    mm->size = capy_strmap_delete(mm->items, sizeof(capy_strkvn), mm->capacity, mm->size, key);
 }
 
-void capy_strkvmmap_clear(capy_strkvmmap *mm)
+void capy_strkvnmap_clear(capy_strkvnmap *mm)
 {
     mm->size = 0;
     memset(mm->items, 0, mm->capacity * sizeof(capy_strkvn));

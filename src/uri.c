@@ -1,6 +1,5 @@
 #include <capy/capy.h>
 #include <capy/macros.h>
-#include <errno.h>
 
 #define URI_GEN_DELIM 0x01
 #define URI_SUB_DELIM 0x02
@@ -484,7 +483,7 @@ static capy_string uri_path_merge(capy_arena *arena, capy_string base, capy_stri
     }
 
     size_t size = base.size + 1 + reference.size;
-    char *buffer = make(arena, char, size + 1);
+    char *buffer = Make(arena, char, size + 1);
 
     strncpy(buffer, base.data, base.size);
     buffer[base.size] = '/';
@@ -498,14 +497,14 @@ capy_err capy_uri_normalize(capy_arena *arena, capy_string *output, capy_string 
     if (input.size == 0)
     {
         *output = (capy_string){.size = 0};
-        return ok;
+        return Ok;
     }
 
-    char *buffer = make(arena, char, input.size + 1);
+    char *buffer = Make(arena, char, input.size + 1);
 
     if (buffer == NULL)
     {
-        return capy_errno(ENOMEM);
+        return ErrStd(ENOMEM);
     }
 
     size_t size = 0;
@@ -515,7 +514,7 @@ capy_err capy_uri_normalize(capy_arena *arena, capy_string *output, capy_string 
         if (input.data[0] == '%')
         {
             uint64_t value;
-            capy_string_hex(capy_string_slice(input, 1, 3), &value);
+            capy_string_parse_hexdigits(&value, capy_string_slice(input, 1, 3));
             char c = (char)(value);
 
             if (uri_char_categories(c) & URI_UNRESERVED)
@@ -542,15 +541,15 @@ capy_err capy_uri_normalize(capy_arena *arena, capy_string *output, capy_string 
     }
 
     *output = (capy_string){.data = buffer, .size = size};
-    return ok;
+    return Ok;
 }
 
 capy_string capy_uri_path_removedots(capy_arena *arena, capy_string path)
 {
-    capy_string path_self = strl("./");
-    capy_string path_parent = strl("../");
-    capy_string path_dot = strl(".");
-    capy_string path_dots = strl("..");
+    capy_string path_self = Str("./");
+    capy_string path_parent = Str("../");
+    capy_string path_dot = Str(".");
+    capy_string path_dots = Str("..");
 
     if (path.size == 0)
     {
@@ -559,7 +558,7 @@ capy_string capy_uri_path_removedots(capy_arena *arena, capy_string path)
 
     capy_string input = path;
 
-    char *output = make(arena, char, path.size + 1);
+    char *output = Make(arena, char, path.size + 1);
     size_t output_size = 0;
 
     while (input.size)
@@ -830,7 +829,7 @@ capy_string capy_uri_string(capy_arena *arena, capy_uri uri)
                         uri.fragment.size +
                         6;
 
-    char *buffer = make(arena, char, buffer_max);
+    char *buffer = Make(arena, char, buffer_max);
     size_t buffer_size = 0;
 
     if (uri.flags & CAPY_URI_SCHEME)

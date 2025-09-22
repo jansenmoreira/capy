@@ -5,20 +5,20 @@ static int test_capy_string_copy(void)
 {
     capy_arena *arena = capy_arena_init(0, KiB(4));
 
-    capy_string input = strl("The quick brown fox jumps over the lazy dog");
+    capy_string input = Str("The quick brown fox jumps over the lazy dog");
     capy_string output;
 
-    expect_ok(capy_string_copy(arena, &output, input));
-    expect_p_ne(output.data, input.data);
-    expect_str_eq(output, input);
+    ExpectOk(capy_string_copy(arena, &output, input));
+    ExpectNePtr(output.data, input.data);
+    ExpectEqStr(output, input);
 
-    expect_p_ne(make(arena, char, 4000), NULL);
-    expect_err(capy_string_copy(arena, &output, input));
+    ExpectNotNull(Make(arena, char, 4000));
+    ExpectErr(capy_string_copy(arena, &output, input));
 
     input.size = 0;
-    expect_ok(capy_string_copy(arena, &output, input));
-    expect_p_eq(output.data, NULL);
-    expect_u_eq(output.size, 0);
+    ExpectOk(capy_string_copy(arena, &output, input));
+    ExpectNull(output.data);
+    ExpectEqU(output.size, 0);
 
     capy_arena_destroy(arena);
     return true;
@@ -28,20 +28,20 @@ static int test_capy_string_lower(void)
 {
     capy_arena *arena = capy_arena_init(0, KiB(4));
 
-    capy_string expected = strl("+azaz09{}");
-    capy_string input = strl("+AZaz09{}");
+    capy_string expected = Str("+azaz09{}");
+    capy_string input = Str("+AZaz09{}");
     capy_string output;
 
-    expect_ok(capy_string_lower(arena, &output, input));
-    expect_str_eq(output, expected);
+    ExpectOk(capy_string_lower(arena, &output, input));
+    ExpectEqStr(output, expected);
 
-    expect_p_ne(make(arena, char, 4040), NULL);
-    expect_err(capy_string_lower(arena, &output, input));
+    ExpectNotNull(Make(arena, char, 4040));
+    ExpectErr(capy_string_lower(arena, &output, input));
 
     input.size = 0;
-    expect_ok(capy_string_lower(arena, &output, input));
-    expect_p_eq(output.data, NULL);
-    expect_u_eq(output.size, 0);
+    ExpectOk(capy_string_lower(arena, &output, input));
+    ExpectNull(output.data);
+    ExpectEqU(output.size, 0);
 
     capy_arena_destroy(arena);
     return true;
@@ -51,20 +51,20 @@ static int test_capy_string_upper(void)
 {
     capy_arena *arena = capy_arena_init(0, KiB(4));
 
-    capy_string expected = strl("+AZAZ09{}");
-    capy_string input = strl("+AZaz09{}");
+    capy_string expected = Str("+AZAZ09{}");
+    capy_string input = Str("+AZaz09{}");
     capy_string output;
 
-    expect_ok(capy_string_upper(arena, &output, input));
-    expect_str_eq(output, expected);
+    ExpectOk(capy_string_upper(arena, &output, input));
+    ExpectEqStr(output, expected);
 
-    expect_p_ne(make(arena, char, 4040), NULL);
-    expect_err(capy_string_upper(arena, &output, input));
+    ExpectNotNull(Make(arena, char, 4040));
+    ExpectErr(capy_string_upper(arena, &output, input));
 
     input.size = 0;
-    expect_ok(capy_string_upper(arena, &output, input));
-    expect_p_eq(output.data, NULL);
-    expect_u_eq(output.size, 0);
+    ExpectOk(capy_string_upper(arena, &output, input));
+    ExpectNull(output.data);
+    ExpectEqU(output.size, 0);
 
     capy_arena_destroy(arena);
     return true;
@@ -74,19 +74,19 @@ static int test_capy_string_join(void)
 {
     capy_arena *arena = capy_arena_init(0, KiB(4));
 
-    capy_string expected = strl("one two three");
-    capy_string input[] = {strli("one"), strli("two"), strli("three")};
+    capy_string expected = Str("one two three");
+    capy_string input[] = {StrIni("one"), StrIni("two"), StrIni("three")};
     capy_string output;
 
-    expect_ok(capy_string_join(arena, &output, " ", 3, input));
-    expect_str_eq(output, expected);
+    ExpectOk(capy_string_join(arena, &output, " ", 3, input));
+    ExpectEqStr(output, expected);
 
-    expect_p_ne(make(arena, char, 4040), NULL);
-    expect_err(capy_string_join(arena, &output, " ", 3, input));
+    ExpectNotNull(Make(arena, char, 4040));
+    ExpectErr(capy_string_join(arena, &output, " ", 3, input));
 
-    expect_ok(capy_string_join(arena, &output, " ", 0, input));
-    expect_p_eq(output.data, NULL);
-    expect_u_eq(output.size, 0);
+    ExpectOk(capy_string_join(arena, &output, " ", 0, input));
+    ExpectNull(output.data);
+    ExpectEqU(output.size, 0);
 
     capy_arena_destroy(arena);
     return true;
@@ -94,18 +94,18 @@ static int test_capy_string_join(void)
 
 static int test_capy_string_trim(void)
 {
-    expect_str_eq(capy_string_trim(strl(""), " "), strl(""));
-    expect_str_eq(capy_string_trim(strl("  "), " "), strl(""));
-    expect_str_eq(capy_string_trim(strl("  a "), " "), strl("a"));
-    expect_str_eq(capy_string_trim(strl("a   "), " "), strl("a"));
+    ExpectEqStr(capy_string_trim(Str(""), " "), Str(""));
+    ExpectEqStr(capy_string_trim(Str("  "), " "), Str(""));
+    ExpectEqStr(capy_string_trim(Str("  a "), " "), Str("a"));
+    ExpectEqStr(capy_string_trim(Str("a   "), " "), Str("a"));
     return true;
 }
 
 static int test_capy_string_prefix(void)
 {
-    expect_str_eq(capy_string_prefix(strl("foobar"), strl("foo")), strl("foo"));
-    expect_str_eq(capy_string_prefix(strl("foo"), strl("foobar")), strl("foo"));
-    expect_str_eq(capy_string_prefix(strl("foobar"), strl("bar")), strl(""));
+    ExpectEqStr(capy_string_prefix(Str("foobar"), Str("foo")), Str("foo"));
+    ExpectEqStr(capy_string_prefix(Str("foo"), Str("foobar")), Str("foo"));
+    ExpectEqStr(capy_string_prefix(Str("foobar"), Str("bar")), Str(""));
     return true;
 }
 
@@ -114,19 +114,19 @@ static int test_capy_string_hex(void)
     size_t bytes;
     uint64_t value;
 
-    bytes = capy_string_hex(strl("a0b1c2d3e4f5"), &value);
-    expect_u_eq(bytes, 12);
-    expect_u_eq(value, 0xa0b1c2d3e4f5);
+    bytes = capy_string_parse_hexdigits(&value, Str("a0b1c2d3e4f5"));
+    ExpectEqU(bytes, 12);
+    ExpectEqU(value, 0xa0b1c2d3e4f5);
 
-    bytes = capy_string_hex(strl("A9B8C7D6E5F4 "), &value);
-    expect_u_eq(bytes, 12);
-    expect_u_eq(value, 0xA9B8C7D6E5F4);
+    bytes = capy_string_parse_hexdigits(&value, Str("A9B8C7D6E5F4 "));
+    ExpectEqU(bytes, 12);
+    ExpectEqU(value, 0xA9B8C7D6E5F4);
 
-    bytes = capy_string_hex(strl(""), &value);
-    expect_u_eq(bytes, 0);
+    bytes = capy_string_parse_hexdigits(&value, Str(""));
+    ExpectEqU(bytes, 0);
 
-    bytes = capy_string_hex(strl("-"), &value);
-    expect_u_eq(bytes, 0);
+    bytes = capy_string_parse_hexdigits(&value, Str("-"));
+    ExpectEqU(bytes, 0);
 
     return true;
 }
@@ -143,9 +143,9 @@ static int test_capy_string_eq(void)
     capy_string s3 = {.data = a3, .size = 3};
     capy_string s4 = {.data = a4, .size = 0};
 
-    expect_s_eq(capy_string_eq(s1, s2), true);
-    expect_s_eq(capy_string_eq(s1, s3), false);
-    expect_s_eq(capy_string_eq(s1, s4), false);
+    ExpectTrue(capy_string_eq(s1, s2));
+    ExpectFalse(capy_string_eq(s1, s3));
+    ExpectFalse(capy_string_eq(s1, s4));
 
     return true;
 }
@@ -154,17 +154,17 @@ static int test_capy_string_cstr(void)
 {
     const char *cstr = "foo";
     capy_string s1 = capy_string_cstr(cstr);
-    expect_p_eq(s1.data, cstr);
-    expect_u_eq(s1.size, 3);
+    ExpectEqPtr(s1.data, cstr);
+    ExpectEqU(s1.size, 3);
     return true;
 }
 
 static int test_capy_string_slice(void)
 {
-    capy_string input = strl("foobar");
-    expect_str_eq(capy_string_slice(input, 1, 3), strl("oo"));
-    expect_str_eq(capy_string_shl(input, 3), strl("bar"));
-    expect_str_eq(capy_string_shr(input, 3), strl("foo"));
+    capy_string input = Str("foobar");
+    ExpectEqStr(capy_string_slice(input, 1, 3), Str("oo"));
+    ExpectEqStr(capy_string_shl(input, 3), Str("bar"));
+    ExpectEqStr(capy_string_shr(input, 3), Str("foo"));
     return true;
 }
 

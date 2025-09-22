@@ -1,5 +1,5 @@
+#include <capy/capy.h>
 #include <capy/macros.h>
-#include <capy/math.h>
 
 size_t align_to(size_t v, size_t n)
 {
@@ -30,8 +30,8 @@ size_t next_pow2(size_t v)
 
 int64_t timespec_diff(struct timespec a, struct timespec b)
 {
-    int64_t ns = cast(int64_t, a.tv_sec - b.tv_sec) * 1000000000;
-    ns += cast(int64_t, a.tv_nsec - b.tv_nsec);
+    int64_t ns = Cast(int64_t, a.tv_sec - b.tv_sec) * 1000000000;
+    ns += Cast(int64_t, a.tv_nsec - b.tv_nsec);
     return ns;
 }
 

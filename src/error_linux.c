@@ -1,5 +1,3 @@
-#include <errno.h>
-
 #include "error.c"
 
 static const capy_err errno_table[] = {
@@ -138,16 +136,16 @@ static const capy_err errno_table[] = {
     [EHWPOISON] = {EHWPOISON, "Memory page has hardware error"},
 };
 
-capy_err capy_errno(int err)
+capy_err capy_err_errno(int err)
 {
     if (err == 0)
     {
-        return ok;
+        return Ok;
     }
 
     if (err < 0 || err > EHWPOISON)
     {
-        return errfmt(err, "Unknown error %d", err);
+        return ErrFmt(err, "Unknown error %d", err);
     }
 
     return errno_table[err];

@@ -1,8 +1,5 @@
 #include <capy/capy.h>
 #include <capy/macros.h>
-#include <errno.h>
-#include <stdarg.h>
-#include <stdio.h>
 
 capy_buffer *capy_buffer_init(capy_arena *arena, size_t capacity)
 {
@@ -13,95 +10,67 @@ capy_buffer *capy_buffer_init(capy_arena *arena, size_t capacity)
         buf->size = 0;
         buf->capacity = capacity;
         buf->arena = arena;
-        buf->data = recast(char *, buf + 1);
+        buf->data = ReinterpretCast(char *, buf + 1);
     }
 
     return buf;
 }
 
-must_check capy_err capy_buffer_wbytes(capy_buffer *buf, size_t size, const char *bytes)
+MustCheck capy_err capy_buffer_write_bytes(capy_buffer *buf, size_t size, const char *bytes)
 {
     void *tmp = capy_vec_insert(buf->arena, buf->data, sizeof(char), &buf->capacity, &buf->size, buf->size, size, bytes);
 
     if (tmp == NULL)
     {
-        return capy_errno(ENOMEM);
+        return ErrStd(ENOMEM);
     }
 
-    buf->data = cast(char *, tmp);
+    buf->data = Cast(char *, tmp);
 
-    return ok;
+    return Ok;
 }
 
-must_check capy_err capy_buffer_wnull(capy_buffer *buf)
+MustCheck capy_err capy_buffer_write_null(capy_buffer *buf)
 {
     void *tmp = capy_vec_insert(buf->arena, buf->data, sizeof(char), &buf->capacity, &buf->size, buf->size, 1, "\0");
 
     if (tmp == NULL)
     {
-        return capy_errno(ENOMEM);
+        return ErrStd(ENOMEM);
     }
 
-    buf->data = cast(char *, tmp);
+    buf->data = Cast(char *, tmp);
     buf->size -= 1;
 
-    return ok;
+    return Ok;
 }
 
-must_check capy_err capy_buffer_wstring(capy_buffer *buf, capy_string input)
+MustCheck capy_err capy_buffer_write_string(capy_buffer *buf, capy_string input)
 {
-    return capy_buffer_wbytes(buf, input.size, input.data);
+    return capy_buffer_write_bytes(buf, input.size, input.data);
 }
 
-must_check capy_err capy_buffer_wcstr(capy_buffer *buf, const char *cstr)
+MustCheck capy_err capy_buffer_write_cstr(capy_buffer *buf, const char *cstr)
 {
-    return capy_buffer_wbytes(buf, strlen(cstr), cstr);
+    return capy_buffer_write_bytes(buf, strlen(cstr), cstr);
 }
 
-must_check capy_err capy_buffer_resize(capy_buffer *buf, size_t size)
+MustCheck capy_err capy_buffer_resize(capy_buffer *buf, size_t size)
 {
-    void *tmp = capy_vec_reserve(buf->arena, buf->data, sizeof(char), &buf->capacity, size);
+    void *tmp = capy_vec_insert(buf->arena, buf->data, sizeof(char), &buf->capacity, &buf->size, buf->size, size, NULL);
 
     if (tmp == NULL)
     {
-        return capy_errno(ENOMEM);
+        return ErrStd(ENOMEM);
     }
 
-    buf->data = cast(char *, tmp);
+    buf->data = Cast(char *, tmp);
     buf->size = size;
 
-    return ok;
+    return Ok;
 }
 
-capy_err capy_buffer_format_noalloc(capy_buffer *buf, const char *fmt, ...)
-{
-    int n;
-
-    size_t max = buf->capacity - buf->size;
-
-    va_list args;
-    va_start(args, fmt);
-    n = vsnprintf(buf->data + buf->size, max + 1, fmt, args);
-    va_end(args);
-
-    if (n < 0)
-    {
-        return capy_errno(errno);
-    }
-
-    if (cast(size_t, n) < max)
-    {
-        buf->size += cast(size_t, n);
-    }
-    else
-    {
-        buf->size += max;
-    }
-
-    return ok;
-}
-
-must_check capy_err capy_buffer_format(capy_buffer *buf, size_t max, const char *fmt, ...)
+MustCheck capy_err capy_buffer_write_fmt(capy_buffer *buf, size_t max, const char *fmt, ...)
 {
     int n;
 
@@ -114,10 +83,10 @@ must_check capy_err capy_buffer_format(capy_buffer *buf, size_t max, const char 
 
         if (n < 0)
         {
-            return capy_errno(errno);
+            return ErrStd(errno);
         }
 
-        max = cast(size_t, n) + 1;
+        max = Cast(size_t, n) + 1;
     }
 
     size_t index = buf->size;
@@ -125,10 +94,10 @@ must_check capy_err capy_buffer_format(capy_buffer *buf, size_t max, const char 
 
     if (tmp == NULL)
     {
-        return capy_errno(ENOMEM);
+        return ErrStd(ENOMEM);
     }
 
-    buf->data = cast(char *, tmp);
+    buf->data = Cast(char *, tmp);
 
     va_list args;
     va_start(args, fmt);
@@ -137,18 +106,18 @@ must_check capy_err capy_buffer_format(capy_buffer *buf, size_t max, const char 
 
     if (n < 0)
     {
-        return capy_errno(errno);
+        return ErrStd(errno);
     }
 
-    if (cast(size_t, n) < max)
+    if (Cast(size_t, n) < max)
     {
-        buf->size = index + cast(size_t, n);
+        buf->size = index + Cast(size_t, n);
     }
 
-    return ok;
+    return Ok;
 }
 
 void capy_buffer_shl(capy_buffer *buf, size_t size)
 {
-    capy_vec_delete(buf->data, sizeof(char), &buf->size, 0, size);
+    buf->size = capy_vec_delete(buf->data, sizeof(char), buf->size, 0, size);
 }

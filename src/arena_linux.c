@@ -1,8 +1,5 @@
 #include <capy/capy.h>
 #include <capy/macros.h>
-#include <errno.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <sys/mman.h>
 #include <unistd.h>
 
@@ -21,7 +18,7 @@ struct capy_arena
 
 capy_arena *capy_arena_init(size_t min, size_t max)
 {
-    size_t page_size = cast(size_t, sysconf(_SC_PAGE_SIZE));
+    size_t page_size = Cast(size_t, sysconf(_SC_PAGE_SIZE));
 
     max = align_to(max, page_size);
     min = (min != 0) ? align_to(min, page_size) : page_size;
@@ -38,7 +35,7 @@ capy_arena *capy_arena_init(size_t min, size_t max)
         return NULL;
     }
 
-    capy_logmem("capy_arena_init: ptr=%p capacity=%zu", (void *)arena, min);
+    LogMem("capy_arena_init: ptr=%p capacity=%zu", (void *)arena, min);
 
     arena->size = 40;
     arena->capacity = min;
@@ -55,10 +52,10 @@ capy_err capy_arena_destroy(capy_arena *arena)
 
     if (munmap(arena, arena->max) == -1)
     {
-        return capy_errno(errno);
+        return ErrStd(errno);
     }
 
-    return ok;
+    return Ok;
 }
 
 void *capy_arena_realloc(capy_arena *arena, void *data, size_t size, size_t new_size, int zeroinit)
@@ -69,7 +66,7 @@ void *capy_arena_realloc(capy_arena *arena, void *data, size_t size, size_t new_
 
     void *tmp;
 
-    char *end = cast(char *, data) + size;
+    char *end = Cast(char *, data) + size;
 
     if (end == capy_arena_end(arena))
     {
@@ -82,7 +79,7 @@ void *capy_arena_realloc(capy_arena *arena, void *data, size_t size, size_t new_
     }
     else
     {
-        tmp = capy_arena_alloc(arena, new_size, 8, false);
+        tmp = capy_arena_alloc(arena, new_size, 8, zeroinit);
 
         if (tmp == NULL)
         {
@@ -117,14 +114,14 @@ void *capy_arena_alloc(capy_arena *arena, size_t size, size_t align, int zeroini
             return NULL;
         }
 
-        capy_logmem("capy_arena_alloc: ptr=%p from=%zu to=%zu", (void *)arena, arena->capacity, capacity);
+        LogMem("capy_arena_alloc: ptr=%p from=%zu to=%zu", (void *)arena, arena->capacity, capacity);
 
         arena->capacity = capacity;
     }
 
     arena->size = end;
 
-    char *data = cast(char *, arena) + begin;
+    char *data = Cast(char *, arena) + begin;
 
     if (zeroinit)
     {
@@ -136,10 +133,10 @@ void *capy_arena_alloc(capy_arena *arena, size_t size, size_t align, int zeroini
 
 capy_err capy_arena_free(capy_arena *arena, void *addr)
 {
-    capy_assert(cast(uintptr_t, addr) >= cast(uintptr_t, arena) + sizeof(capy_arena));
-    capy_assert(cast(uintptr_t, addr) <= cast(uintptr_t, arena) + arena->size);
+    capy_assert(Cast(uintptr_t, addr) >= Cast(uintptr_t, arena) + sizeof(capy_arena));
+    capy_assert(Cast(uintptr_t, addr) <= Cast(uintptr_t, arena) + arena->size);
 
-    arena->size = cast(size_t, cast(char *, addr) - cast(char *, arena));
+    arena->size = Cast(size_t, Cast(char *, addr) - Cast(char *, arena));
 
     if (arena->capacity > arena->min)
     {
@@ -154,36 +151,22 @@ capy_err capy_arena_free(capy_arena *arena, void *addr)
                 capacity = arena->min;
             }
 
-            char *tail = cast(char *, arena) + capacity;
+            char *tail = Cast(char *, arena) + capacity;
 
             size_t tail_size = arena->capacity - capacity;
 
             if (mprotect(tail, tail_size, PROT_NONE))
             {
-                return capy_errno(errno);
+                return ErrStd(errno);
             }
 
-            capy_logmem("capy_arena_free: ptr=%p from=%zu to=%zu", (void *)arena, arena->capacity, capacity);
+            LogMem("capy_arena_free: ptr=%p from=%zu to=%zu", (void *)arena, arena->capacity, capacity);
 
             arena->capacity = capacity;
         }
     }
 
-    return ok;
-}
-
-capy_err capy_arena_reserve(capy_arena *arena, size_t size, size_t align)
-{
-    size_t tmp = arena->size;
-
-    if (capy_arena_alloc(arena, size, align, false) == NULL)
-    {
-        return capy_errno(ENOMEM);
-    }
-
-    arena->size = tmp;
-
-    return ok;
+    return Ok;
 }
 
 size_t capy_arena_size(capy_arena *arena)
@@ -195,5 +178,5 @@ size_t capy_arena_size(capy_arena *arena)
 void *capy_arena_end(capy_arena *arena)
 {
     capy_assert(arena != NULL);
-    return cast(char *, arena) + arena->size;
+    return Cast(char *, arena) + arena->size;
 }

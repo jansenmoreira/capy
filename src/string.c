@@ -1,11 +1,9 @@
 #include <capy/capy.h>
 #include <capy/macros.h>
-#include <ctype.h>
-#include <errno.h>
 
 #define capy_string_empty ((capy_string){.data = NULL, .size = 0})
 
-size_t capy_string_hex(capy_string input, uint64_t *value)
+size_t capy_string_parse_hexdigits(uint64_t *value, capy_string input)
 {
     if (input.size == 0)
     {
@@ -89,42 +87,42 @@ size_t capy_string_hex(capy_string input, uint64_t *value)
     return bytes;
 }
 
-must_check capy_err capy_string_copy(capy_arena *arena, capy_string *output, capy_string input)
+MustCheck capy_err capy_string_copy(capy_arena *arena, capy_string *output, capy_string input)
 {
     capy_assert(output != NULL);
 
     if (input.size == 0)
     {
         *output = capy_string_empty;
-        return ok;
+        return Ok;
     }
 
-    char *buffer = make(arena, char, input.size + 1);
+    char *buffer = Make(arena, char, input.size + 1);
 
     if (buffer == NULL)
     {
-        return capy_errno(ENOMEM);
+        return ErrStd(ENOMEM);
     }
 
     memcpy(buffer, input.data, input.size);
     *output = capy_string_bytes(input.size, buffer);
 
-    return ok;
+    return Ok;
 }
 
-must_check capy_err capy_string_lower(capy_arena *arena, capy_string *output, capy_string input)
+MustCheck capy_err capy_string_lower(capy_arena *arena, capy_string *output, capy_string input)
 {
     if (input.size == 0)
     {
         *output = capy_string_empty;
-        return ok;
+        return Ok;
     }
 
-    char *data = make(arena, char, input.size);
+    char *data = Make(arena, char, input.size);
 
     if (data == NULL)
     {
-        return capy_errno(ENOMEM);
+        return ErrStd(ENOMEM);
     }
 
     for (size_t i = 0; i < input.size; i++)
@@ -134,22 +132,22 @@ must_check capy_err capy_string_lower(capy_arena *arena, capy_string *output, ca
 
     *output = capy_string_bytes(input.size, data);
 
-    return ok;
+    return Ok;
 }
 
-must_check capy_err capy_string_upper(capy_arena *arena, capy_string *output, capy_string input)
+MustCheck capy_err capy_string_upper(capy_arena *arena, capy_string *output, capy_string input)
 {
     if (input.size == 0)
     {
         *output = capy_string_empty;
-        return ok;
+        return Ok;
     }
 
-    char *data = make(arena, char, input.size);
+    char *data = Make(arena, char, input.size);
 
     if (data == NULL)
     {
-        return capy_errno(ENOMEM);
+        return ErrStd(ENOMEM);
     }
 
     for (size_t i = 0; i < input.size; i++)
@@ -159,10 +157,10 @@ must_check capy_err capy_string_upper(capy_arena *arena, capy_string *output, ca
 
     *output = capy_string_bytes(input.size, data);
 
-    return ok;
+    return Ok;
 }
 
-must_check capy_err capy_string_join(capy_arena *arena, capy_string *output, const char *delimiter, int n, capy_string *list)
+MustCheck capy_err capy_string_join(capy_arena *arena, capy_string *output, const char *delimiter, int n, capy_string *list)
 {
     size_t size = 0;
     size_t delimiter_size = strlen(delimiter);
@@ -180,14 +178,14 @@ must_check capy_err capy_string_join(capy_arena *arena, capy_string *output, con
     if (size == 0)
     {
         *output = capy_string_empty;
-        return ok;
+        return Ok;
     }
 
-    char *buffer = make(arena, char, size + 1);
+    char *buffer = Make(arena, char, size + 1);
 
     if (buffer == NULL)
     {
-        return capy_errno(ENOMEM);
+        return ErrStd(ENOMEM);
     }
 
     char *cursor = buffer;
@@ -206,7 +204,7 @@ must_check capy_err capy_string_join(capy_arena *arena, capy_string *output, con
 
     *output = capy_string_bytes(size, buffer);
 
-    return ok;
+    return Ok;
 }
 
 capy_string capy_string_prefix(capy_string a, capy_string b)
@@ -299,15 +297,15 @@ bool capy_char_isalphanumeric(char c)
 
 char capy_char_uppercase(char c)
 {
-    return ('a' <= c && c <= 'z') ? c & cast(char, 0xDF) : c;
+    return ('a' <= c && c <= 'z') ? c & Cast(char, 0xDF) : c;
 }
 
 char capy_char_lowercase(char c)
 {
-    return ('A' <= c && c <= 'Z') ? c | cast(char, 0x20) : c;
+    return ('A' <= c && c <= 'Z') ? c | Cast(char, 0x20) : c;
 }
 
-int capy_string_eq(capy_string a, capy_string b)
+bool capy_string_eq(capy_string a, capy_string b)
 {
     return (a.size == b.size) ? memcmp(a.data, b.data, b.size) == 0 : 0;
 }
@@ -358,28 +356,28 @@ size_t capy_unicode_utf8encode(char *buffer, uint32_t code)
 {
     if (code <= 0x007F)
     {
-        buffer[0] = cast(char, code);
+        buffer[0] = Cast(char, code);
         return 1;
     }
     else if (code <= 0x07FF)
     {
-        buffer[0] = cast(char, 0xC0 | (code >> 6));
-        buffer[1] = cast(char, 0x80 | (code & 0x3F));
+        buffer[0] = Cast(char, 0xC0 | (code >> 6));
+        buffer[1] = Cast(char, 0x80 | (code & 0x3F));
         return 2;
     }
     else if (code <= 0xFFFF)
     {
-        buffer[0] = cast(char, 0xE0 | (code >> 12));
-        buffer[1] = cast(char, 0x80 | ((code >> 6) & 0x3F));
-        buffer[2] = cast(char, 0x80 | (code & 0x3F));
+        buffer[0] = Cast(char, 0xE0 | (code >> 12));
+        buffer[1] = Cast(char, 0x80 | ((code >> 6) & 0x3F));
+        buffer[2] = Cast(char, 0x80 | (code & 0x3F));
         return 3;
     }
     else if (code <= 0x10FFFF)
     {
-        buffer[0] = cast(char, 0xF0 | (code >> 18));
-        buffer[1] = cast(char, 0x80 | ((code >> 12) & 0x3F));
-        buffer[2] = cast(char, 0x80 | ((code >> 6) & 0x3F));
-        buffer[3] = cast(char, 0x80 | (code & 0x3F));
+        buffer[0] = Cast(char, 0xF0 | (code >> 18));
+        buffer[1] = Cast(char, 0x80 | ((code >> 12) & 0x3F));
+        buffer[2] = Cast(char, 0x80 | ((code >> 6) & 0x3F));
+        buffer[3] = Cast(char, 0x80 | (code & 0x3F));
         return 4;
     }
 

@@ -2,53 +2,60 @@
 #define CAPY_MACROS_H
 
 #include <capy/capy.h>
+#include <errno.h>
+#include <limits.h>
+#include <signal.h>
+#include <stdarg.h>
+#include <stdlib.h>
+#include <threads.h>
 
-#define arrlen(v) (sizeof(v) / sizeof(v[0]))
-#define arr(T, ...) ((T[]){__VA_ARGS__})
+#define ArrLen(v) (sizeof(v) / sizeof(v[0]))
+#define Arr(T, ...) ((T[]){__VA_ARGS__})
 
-#define arrcmp2(m, c0, c1) \
+#define ArrCmp2(m, c0, c1) \
     ((m)[0] == (c0) && (m)[1] == (c1))
 
-#define arrcmp3(m, c0, c1, c2) \
+#define ArrCmp3(m, c0, c1, c2) \
     ((m)[0] == (c0) && (m)[1] == (c1) && (m)[2] == (c2))
 
-#define arrcmp4(m, c0, c1, c2, c3) \
+#define ArrCmp4(m, c0, c1, c2, c3) \
     ((m)[0] == (c0) && (m)[1] == (c1) && (m)[2] == (c2) && (m)[3] == (c3))
 
-#define arrcmp5(m, c0, c1, c2, c3, c4) \
+#define ArrCmp5(m, c0, c1, c2, c3, c4) \
     ((m)[0] == (c0) && (m)[1] == (c1) && (m)[2] == (c2) && (m)[3] == (c3) && (m)[4] == (c4))
 
-#define arrcmp6(m, c0, c1, c2, c3, c4, c5) \
+#define ArrCmp6(m, c0, c1, c2, c3, c4, c5) \
     ((m)[0] == (c0) && (m)[1] == (c1) && (m)[2] == (c2) && (m)[3] == (c3) && (m)[4] == (c4) && (m)[5] == (c5))
 
-#define arrcmp7(m, c0, c1, c2, c3, c4, c5, c6) \
+#define ArrCmp7(m, c0, c1, c2, c3, c4, c5, c6) \
     ((m)[0] == (c0) && (m)[1] == (c1) && (m)[2] == (c2) && (m)[3] == (c3) && (m)[4] == (c4) && (m)[5] == (c5) && (m)[6] == (c6))
 
-#define strli(s) {.data = (s), .size = sizeof(s) - 1}
-#define strl(s) ((capy_string)strli(s))
+#define StrIni(s) {.data = (s), .size = sizeof(s) - 1}
+#define Str(s) ((capy_string)StrIni(s))
 
 #define KiB(v) ((v) * 1024)
-#define MiB(v) (KiB(v) * 1024)
-#define GiB(v) (MiB(v) * 1024)
-#define TiB(v) (GiB(v) * 1024)
+#define MiB(v) ((v) * 1024 * 1024)
+#define GiB(v) ((v) * 1024 * 1024 * 1024)
+#define TiB(v) ((v) * 1024 * 1024 * 1024 * 1024)
 
-#define make(arena, T, size) \
+#define Make(arena, T, size) \
     (capy_arena_alloc((arena), sizeof(T) * (size), alignof(T), true))
 
-#define umake(arena, T, size) \
+#define MakeNZ(arena, T, size) \
     (capy_arena_alloc((arena), sizeof(T) * (size), alignof(T), false))
 
-#define cast(T, v) ((T)(v))
-#define recast(T, v) ((T)((void *)(v)))
+#define Cast(T, v) ((T)(v))
+#define ReinterpretCast(T, v) ((T)((void *)(v)))
 
-#define errwrap capy_errwrap
-#define errfmt capy_errfmt
-#define ok ((capy_err){.code = 0})
+#define ErrStd capy_err_errno
+#define ErrWrap capy_err_wrap
+#define ErrFmt capy_err_fmt
+#define Ok ((capy_err){.code = 0})
 
-#define logmem capy_logmem
-#define logdbg capy_logdbg
-#define loginf capy_loginf
-#define logwrn capy_logwrn
-#define logerr capy_logerr
+#define LogMem(...) capy_log(CAPY_LOG_MEM, __VA_ARGS__)
+#define LogDbg(...) capy_log(CAPY_LOG_DEBUG, __VA_ARGS__)
+#define LogInf(...) capy_log(CAPY_LOG_INFO, __VA_ARGS__)
+#define LogWrn(...) capy_log(CAPY_LOG_WARNING, __VA_ARGS__)
+#define LogErr(...) capy_log(CAPY_LOG_ERROR, __VA_ARGS__)
 
 #endif

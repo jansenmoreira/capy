@@ -1,8 +1,5 @@
-#include <capy/assert.h>
-#include <capy/error.h>
+#include <capy/capy.h>
 #include <capy/macros.h>
-#include <stdarg.h>
-#include <threads.h>
 
 #define CAPY_EBUFSIZE 512
 
@@ -24,7 +21,7 @@ static char *capy_err_buf(void)
     }
 }
 
-capy_err capy_errfmt(int code, const char *fmt, ...)
+capy_err capy_err_fmt(int code, const char *fmt, ...)
 {
     char *buffer = capy_err_buf();
 
@@ -36,7 +33,7 @@ capy_err capy_errfmt(int code, const char *fmt, ...)
     return (capy_err){.code = code, .msg = buffer};
 }
 
-capy_err capy_errwrap(capy_err err, const char *msg)
+capy_err capy_err_wrap(capy_err err, const char *msg)
 {
-    return capy_errfmt(err.code, "%s: %s", msg, err.msg);
+    return capy_err_fmt(err.code, "%s: %s", msg, err.msg);
 }

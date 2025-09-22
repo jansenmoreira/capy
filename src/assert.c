@@ -1,6 +1,5 @@
-#include <capy/assert.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <capy/capy.h>
+#include <capy/macros.h>
 
 void capy_assert_(int condition, const char *file, int line, const char *expression)
 {

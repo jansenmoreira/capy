@@ -12,8 +12,17 @@ linux/debug:
 	mkdir -p build/debug/
 	${CC} ${LINUX_DEBUG_FLAGS} -c src/capy.c -o build/debug/capy.o
 	ar rcs build/debug/libcapy.a build/debug/capy.o
-	${CC} ${LINUX_DEBUG_FLAGS} -Lbuild/debug tests/test.c -lcapy -o build/debug/tests
-	${CC} ${LINUX_DEBUG_FLAGS} -Lbuild/debug examples/echo.c -lcapy -o build/debug/ex_echo
+	${CC} ${LINUX_DEBUG_FLAGS} -Lbuild/debug tests/test.c -lcrypto -lssl -lcapy -o build/debug/tests
+	${CC} ${LINUX_DEBUG_FLAGS} -Lbuild/debug examples/echo.c -lcrypto -lssl -lcapy -o build/debug/ex_echo
+
+.PHONY: linux/release
+linux/release:
+	rm -rf build/release/
+	mkdir -p build/release/
+	${CC} ${LINUX_RELEASE_FLAGS} -c src/capy.c -o build/release/capy.o
+	ar rcs build/release/libcapy.a build/release/capy.o
+	${CC} ${LINUX_RELEASE_FLAGS} -Lbuild/release tests/test.c -lcrypto -lssl -lcapy -o build/release/tests
+	${CC} ${LINUX_RELEASE_FLAGS} -Lbuild/release examples/echo.c -lcrypto -lssl -lcapy -o build/release/ex_echo
 
 .PHONY: linux/musl
 linux/musl:
@@ -23,15 +32,6 @@ linux/musl:
 	ar rcs build/musl/libcapy.a build/musl/capy.o
 	musl-clang -static -Wno-unused-command-line-argument ${MUSL_FLAGS} ${LINUX_RELEASE_FLAGS} -Lbuild/musl tests/test.c -lcapy -o build/musl/tests
 	musl-clang -static -Wno-unused-command-line-argument ${MUSL_FLAGS} ${LINUX_RELEASE_FLAGS} -Lbuild/musl examples/echo.c -lcapy -o build/musl/ex_echo
-
-.PHONY: linux/release
-linux/release:
-	rm -rf build/release/
-	mkdir -p build/release/
-	${CC} ${LINUX_RELEASE_FLAGS} -c src/capy.c -o build/release/capy.o
-	ar rcs build/release/libcapy.a build/release/capy.o
-	${CC} ${LINUX_RELEASE_FLAGS} -Lbuild/release tests/test.c -lcapy -o build/release/tests
-	${CC} ${LINUX_RELEASE_FLAGS} -Lbuild/release examples/echo.c -lcapy -o build/release/ex_echo
 
 .PHONY: rapidhash
 rapidhash:
