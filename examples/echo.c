@@ -1,8 +1,4 @@
-#include <capy/capy.h>
 #include <capy/macros.h>
-#include <errno.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <unistd.h>
 
 static capy_err error_response(capy_httpresp *response, capy_httpstatus status, const char *message)
@@ -12,14 +8,18 @@ static capy_err error_response(capy_httpresp *response, capy_httpstatus status, 
     response->status = status;
     response->body->size = 0;
 
-    if ((err = capy_buffer_write_fmt(response->body, 0, "%s\n", message)).code)
+    err = capy_buffer_write_fmt(response->body, 0, "%s\n", message);
+
+    if (err.code)
     {
         return err;
     }
 
     capy_strkvnmap_clear(response->headers);
 
-    if ((err = capy_strkvnmap_set(response->headers, Str("Content-Type"), Str("text/plain; chartset=UTF-8"))).code)
+    err = capy_strkvnmap_set(response->headers, Str("Content-Type"), Str("text/plain; chartset=UTF-8"));
+
+    if (err.code)
     {
         return err;
     }
@@ -31,7 +31,9 @@ static capy_err explode_handler(Unused capy_arena *arena, Unused capy_httpreq *r
 {
     capy_err err;
 
-    if ((err = capy_buffer_write_fmt(response->body, 0, "%*s", 1024, " ")).code)
+    err = capy_buffer_write_fmt(response->body, 0, "%*s", 1024, " ");
+
+    if (err.code)
     {
         return err;
     }
@@ -78,7 +80,9 @@ static capy_err params_handler(Unused capy_arena *arena, capy_httpreq *request, 
 
         while (param != NULL)
         {
-            if ((err = capy_buffer_write_fmt(response->body, 0, "%s: %s\n", param->key.data, param->value.data)).code)
+            err = capy_buffer_write_fmt(response->body, 0, "%s: %s\n", param->key.data, param->value.data);
+
+            if (err.code)
             {
                 return ErrWrap(err, "Failed to write query params");
             }
@@ -97,7 +101,9 @@ static capy_err echo_handler(capy_arena *arena, capy_httpreq *request, capy_http
 
     capy_string uri = capy_uri_string(arena, request->uri);
 
-    if ((err = capy_buffer_write_fmt(response->body, 0, "uri: %s\n", uri.data)).code)
+    err = capy_buffer_write_fmt(response->body, 0, "uri: %s\n", uri.data);
+
+    if (err.code)
     {
         return ErrWrap(err, "Failed to produce URI");
     }
@@ -113,7 +119,9 @@ static capy_err echo_handler(capy_arena *arena, capy_httpreq *request, capy_http
 
         while (header != NULL)
         {
-            if ((err = capy_buffer_write_fmt(response->body, 0, "%s: %s\n", header->key.data, header->value.data)).code)
+            err = capy_buffer_write_fmt(response->body, 0, "%s: %s\n", header->key.data, header->value.data);
+
+            if (err.code)
             {
                 return ErrWrap(err, "Failed to write header");
             }
@@ -122,7 +130,9 @@ static capy_err echo_handler(capy_arena *arena, capy_httpreq *request, capy_http
         }
     }
 
-    if ((err = capy_buffer_write_fmt(response->body, 0, "size: %lu\n", request->content_length)).code)
+    err = capy_buffer_write_fmt(response->body, 0, "size: %lu\n", request->content_length);
+
+    if (err.code)
     {
         return ErrWrap(err, "Failed to write size");
     }
@@ -149,17 +159,23 @@ static capy_err echo_handler(capy_arena *arena, capy_httpreq *request, capy_http
         return ErrWrap(err, "Failed to parse request body");
     }
 
-    if ((err = capy_json_serialize(response->body, value, tabsize)).code)
+    err = capy_json_serialize(response->body, value, tabsize);
+
+    if (err.code)
     {
         return ErrWrap(err, "Failed to serialize JSON value to response");
     }
 
-    if ((err = capy_buffer_write_cstr(response->body, "\n")).code)
+    err = capy_buffer_write_cstr(response->body, "\n");
+
+    if (err.code)
     {
         return ErrWrap(err, "Failed to write newline");
     }
 
-    if ((err = capy_strkvnmap_set(response->headers, Str("Content-Type"), Str("application/json"))).code)
+    err = capy_strkvnmap_set(response->headers, Str("Content-Type"), Str("application/json"));
+
+    if (err.code)
     {
         return ErrWrap(err, "Failed to set Content-Type header");
     }

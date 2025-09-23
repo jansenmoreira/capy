@@ -28,31 +28,32 @@ void *capy_vec_insert(capy_arena *arena, void *items,
         size_t tmp_capacity = next_pow2(new_size);
         tmp = capy_arena_realloc(arena, tmp, (*capacity) * element_size, tmp_capacity * element_size, false);
 
-        if (tmp == NULL)
+        if (tmp != NULL)
         {
-            return NULL;
+            *capacity = tmp_capacity;
+        }
+    }
+
+    if (tmp != NULL)
+    {
+        char *data = Cast(char *, tmp);
+
+        if (tail_size > 0)
+        {
+            memmove(data + (element_size * (position + count)),
+                    data + (element_size * (position)),
+                    element_size * tail_size);
         }
 
-        *capacity = tmp_capacity;
+        if (values != NULL)
+        {
+            memcpy(data + (element_size * position),
+                   values,
+                   element_size * count);
+        }
+
+        *size = new_size;
     }
-
-    char *data = Cast(char *, tmp);
-
-    if (tail_size > 0)
-    {
-        memmove(data + (element_size * (position + count)),
-                data + (element_size * (position)),
-                element_size * tail_size);
-    }
-
-    if (values != NULL)
-    {
-        memcpy(data + (element_size * position),
-               values,
-               element_size * count);
-    }
-
-    *size = new_size;
 
     return tmp;
 }

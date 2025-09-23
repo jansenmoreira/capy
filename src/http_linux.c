@@ -220,7 +220,9 @@ static capy_err httpconn_read_request_openssl(httpconn *conn)
         return Ok;
     }
 
-    if ((err = capy_buffer_resize(conn->line_buffer, line_size + Cast(size_t, bytes_read))).code)
+    err = capy_buffer_resize(conn->line_buffer, line_size + Cast(size_t, bytes_read));
+
+    if (err.code)
     {
         return err;
     }
@@ -308,10 +310,22 @@ static capy_err httpconn_write_response_openssl(httpconn *conn)
 
 static capy_err httpconn_create_openssl(httpconn *conn)
 {
-    SSL *ssl = SSL_new(conn->ssl_ctx);
-    SSL_set_fd(ssl, conn->socket);
-    SSL_set_accept_state(ssl);
-    conn->ssl = ssl;
+    conn->ssl = SSL_new(conn->ssl_ctx);
+
+    if (conn->ssl == NULL)
+    {
+        ERR_print_errors_cb(http_ssl_log_error, NULL);
+        return ErrFmt(EPROTO, "Failed to create SSL object");
+    }
+
+    if (!SSL_set_fd(conn->ssl, conn->socket))
+    {
+        ERR_print_errors_cb(http_ssl_log_error, NULL);
+        return ErrFmt(EPROTO, "Failed to connect SSL object to connection socket");
+    }
+
+    SSL_set_accept_state(conn->ssl);
+
     return Ok;
 }
 
@@ -808,7 +822,9 @@ static capy_err httpconn_read_request(httpconn *conn)
         return ErrWrap(err, "Failed to read socket");
     }
 
-    if ((err = capy_buffer_resize(conn->line_buffer, line_size + Cast(size_t, bytes_read))).code)
+    err = capy_buffer_resize(conn->line_buffer, line_size + Cast(size_t, bytes_read));
+
+    if (err.code)
     {
         return err;
     }
@@ -861,12 +877,16 @@ static capy_err httpconn_prepare_badrequest(httpconn *conn)
     conn->request.close = true;
     conn->response.status = CAPY_HTTP_BAD_REQUEST;
 
-    if ((err = http_response_status(&conn->response)).code)
+    err = http_response_status(&conn->response);
+
+    if (err.code)
     {
         return ErrWrap(err, "Failed to generate BAD_REQUEST");
     }
 
-    if (capy_http_write_response(conn->response_buffer, &conn->response, true).code)
+    err = capy_http_write_response(conn->response_buffer, &conn->response, true);
+
+    if (err.code)
     {
         return ErrWrap(err, "Failed to write to response_buffer");
     }
@@ -876,21 +896,25 @@ static capy_err httpconn_prepare_badrequest(httpconn *conn)
 
 static capy_err httpconn_route_request(httpconn *conn)
 {
-    capy_err err;
+    capy_err err = capy_buffer_write_null(conn->content_buffer);
 
-    if ((err = capy_buffer_write_null(conn->content_buffer)).code)
+    if (err.code)
     {
         return ErrWrap(err, "Failed to write null terminator");
     }
 
     conn->request.content = capy_string_bytes(conn->content_buffer->size, conn->content_buffer->data);
 
-    if ((err = capy_http_router_handle(conn->arena, conn->router, &conn->request, &conn->response)).code)
+    err = capy_http_router_handle(conn->arena, conn->router, &conn->request, &conn->response);
+
+    if (err.code)
     {
         return ErrWrap(err, "Failed to handle request");
     }
 
-    if ((err = capy_http_write_response(conn->response_buffer, &conn->response, conn->request.close)).code)
+    err = capy_http_write_response(conn->response_buffer, &conn->response, conn->request.close);
+
+    if (err.code)
     {
         return ErrWrap(err, "Failed to write to response_buffer");
     }
@@ -901,9 +925,9 @@ static capy_err httpconn_route_request(httpconn *conn)
 
 static capy_err httpconn_reset(httpconn *conn)
 {
-    capy_err err;
+    capy_err err = capy_arena_free(conn->arena, conn->marker_init);
 
-    if ((err = capy_arena_free(conn->arena, conn->marker_init)).code)
+    if (err.code)
     {
         return err;
     }
@@ -1129,7 +1153,9 @@ static void *conn_worker(void *data)
 
             if (conn->socket)
             {
-                if ((err = httpconn_step(conn, worker)).code)
+                err = httpconn_step(conn, worker);
+
+                if (err.code)
                 {
                     LogErr("While processing request: %s", err.msg);
                     abort();
@@ -1326,6 +1352,7 @@ static capy_err httpserver_create_connections(httpserver *server)
         conn->router = server->router;
         conn->state = STATE_CLOSE;
         conn->options = &server->options;
+        conn->ssl_ctx = server->ssl_ctx;
         conn->line_buffer = capy_buffer_init(arena, server->options.line_buffer_size);
         conn->line_buffer->arena = NULL;
         conn->marker_init = capy_arena_end(arena);
@@ -1471,42 +1498,56 @@ capy_err capy_http_serve(capy_httpserveropt options)
         .options = httpserver_options_with_defaults(options),
     };
 
-    if ((err = httpserver_bind(&server)).code)
+    err = httpserver_bind(&server);
+
+    if (err.code)
     {
         return ErrWrap(err, "Failed to bind server");
     }
 
-    if ((err = httpserver_create_signal_fd(&server)).code)
+    err = httpserver_create_signal_fd(&server);
+
+    if (err.code)
     {
         return ErrWrap(err, "Failed to create signal file descriptors");
     }
 
-    if ((err = httpserver_create_epoll(&server)).code)
+    err = httpserver_create_epoll(&server);
+
+    if (err.code)
     {
         return ErrWrap(err, "Failed to create listen epoll");
     }
 
-    if ((err = httpserver_create_workers_epoll(&server)).code)
+    err = httpserver_create_workers_epoll(&server);
+
+    if (err.code)
     {
         return ErrWrap(err, "Failed to create listen epoll");
-    }
-
-    if ((err = httpserver_create_connections(&server)).code)
-    {
-        return ErrWrap(err, "Failed to create connection pool");
-    }
-
-    if ((err = httpserver_create_workers(&server)).code)
-    {
-        return ErrWrap(err, "Failed to create workers pool");
     }
 
     if (options.protocol == CAPY_HTTPS)
     {
-        if ((err = httpserver_init_openssl(&server)).code)
+        err = httpserver_init_openssl(&server);
+
+        if (err.code)
         {
             return ErrWrap(err, "Failed to initialize SSL context");
         }
+    }
+
+    err = httpserver_create_connections(&server);
+
+    if (err.code)
+    {
+        return ErrWrap(err, "Failed to create connection pool");
+    }
+
+    err = httpserver_create_workers(&server);
+
+    if (err.code)
+    {
+        return ErrWrap(err, "Failed to create workers pool");
     }
 
     if (listen(server.fd, 10) == -1)
@@ -1603,18 +1644,21 @@ capy_err capy_http_serve(capy_httpserveropt options)
 
             conn->socket = conn_fd;
             conn->state = STATE_RESET;
-            conn->ssl_ctx = server.ssl_ctx;
             timespec_get(&conn->timestamp, TIME_UTC);
 
             if (options.protocol == CAPY_HTTPS)
             {
-                if ((err = httpconn_create_openssl(conn)).code)
+                err = httpconn_create_openssl(conn);
+
+                if (err.code)
                 {
-                    return err;
+                    continue;
                 }
             }
 
-            if ((err = httpconn_update_epoll(conn, server.workers_epoll_fd, EPOLL_CTL_ADD, EPOLLIN | EPOLLET | EPOLLONESHOT)).code)
+            err = httpconn_update_epoll(conn, server.workers_epoll_fd, EPOLL_CTL_ADD, EPOLLIN | EPOLLET | EPOLLONESHOT);
+
+            if (err.code)
             {
                 return err;
             }

@@ -18,10 +18,10 @@ void capy_logger_init(FILE *file)
     logger.file = file;
     logger.timefmt = "%F %T";
     setvbuf(stdout, NULL, _IOLBF, 0);
-    capy_logger_set_level(CAPY_LOG_INFO);
+    capy_logger_min_level(CAPY_LOG_INFO);
 }
 
-void capy_logger_set_level(capy_loglevel level)
+void capy_logger_min_level(capy_loglevel level)
 {
     logger.mask = 0;
 

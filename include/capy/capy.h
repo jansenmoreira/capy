@@ -21,12 +21,14 @@ void nanoseconds_normalize(int64_t *ns, const char **unit);
 
 #ifdef __GNUC__
 
+#define Format(i) __attribute__((format(printf, (i), (i) + 1)))
 #define MustCheck __attribute__((warn_unused_result))
 #define Unused __attribute__((unused))
 #define Ignore (void)!
 
 #else
 
+#define Format(i)
 #define MustCheck
 #define Unused
 #define Ignore
@@ -46,7 +48,7 @@ typedef struct capy_err
     const char *msg;
 } capy_err;
 
-capy_err capy_err_fmt(int code, const char *fmt, ...);
+Format(2) capy_err capy_err_fmt(int code, const char *fmt, ...);
 capy_err capy_err_errno(int err);
 capy_err capy_err_wrap(capy_err err, const char *msg);
 
@@ -112,18 +114,18 @@ void capy_assert_(int condition, const char *file, int line, const char *express
 
 typedef enum capy_loglevel
 {
-    CAPY_LOG_MEM = 0x01,
-    CAPY_LOG_DEBUG = 0x02,
-    CAPY_LOG_INFO = 0x10,
-    CAPY_LOG_WARNING = 0x20,
-    CAPY_LOG_ERROR = 0x40,
+    CAPY_LOG_MEM = 1 << 0,
+    CAPY_LOG_DEBUG = 1 << 1,
+    CAPY_LOG_INFO = 1 << 4,
+    CAPY_LOG_WARNING = 1 << 5,
+    CAPY_LOG_ERROR = 1 << 6,
 } capy_loglevel;
 
 void capy_logger_init(FILE *file);
-void capy_logger_set_level(capy_loglevel level);
+void capy_logger_min_level(capy_loglevel level);
 void capy_logger_add_level(capy_loglevel level);
 void capy_logger_time_format(const char *fmt);
-void capy_log(capy_loglevel level, const char *format, ...);
+Format(2) void capy_log(capy_loglevel level, const char *fmt, ...);
 
 //
 // CHARACTERS
@@ -283,7 +285,7 @@ MustCheck capy_err capy_buffer_write_null(capy_buffer *buffer);
 // If `max` is 0, a dry-run call to `snprintf` will be made to compute how many bytes are needed.
 // Then the Buffer grows to fit the needed space and makes an effective call to `snprintf`.
 // If allocation fails, returns a non-zero error code.
-MustCheck capy_err capy_buffer_write_fmt(capy_buffer *buffer, size_t max, const char *fmt, ...);
+Format(3) MustCheck capy_err capy_buffer_write_fmt(capy_buffer *buffer, size_t max, const char *fmt, ...);
 
 // Resizes the Buffer, allocating memory if needed.
 // If allocation fails, returns a non-zero error code.
@@ -380,10 +382,13 @@ MustCheck capy_err capy_buffer_write_base64std(capy_buffer *buffer, size_t n, co
 // URI
 //
 
-#define CAPY_URI_SCHEME 0x1
-#define CAPY_URI_AUTHORITY 0x2
-#define CAPY_URI_QUERY 0x4
-#define CAPY_URI_FRAGMENT 0x8
+typedef enum capy_uriflags
+{
+    CAPY_URI_SCHEME = 1 << 0,
+    CAPY_URI_AUTHORITY = 1 << 1,
+    CAPY_URI_QUERY = 1 << 2,
+    CAPY_URI_FRAGMENT = 1 << 3,
+} capy_uriflags;
 
 typedef struct capy_uri
 {
@@ -468,7 +473,7 @@ typedef enum capy_httpstatus
 
 typedef enum capy_httpmethod
 {
-    CAPY_HTTP_METHOD_UNK = 0,
+    CAPY_HTTP_METHOD_UNK,
     CAPY_HTTP_CONNECT,
     CAPY_HTTP_DELETE,
     CAPY_HTTP_GET,
@@ -482,7 +487,7 @@ typedef enum capy_httpmethod
 
 typedef enum capy_httpversion
 {
-    CAPY_HTTP_VERSION_UNK = 0,
+    CAPY_HTTP_VERSION_UNK,
     CAPY_HTTP_09,
     CAPY_HTTP_10,
     CAPY_HTTP_11,
@@ -577,18 +582,18 @@ typedef struct capy_json_value
         double number;
         bool boolean;
         const char *string;
-        struct capy_json_object *object;
-        struct capy_json_array *array;
+        struct capy_jsonobj *object;
+        struct capy_jsonarr *array;
     };
 } capy_jsonval;
 
-typedef struct capy_json_keyval
+typedef struct capy_jsonkv
 {
     capy_string key;
     capy_jsonval value;
 } capy_jsonkv;
 
-typedef struct capy_json_object
+typedef struct capy_jsonobj
 {
     size_t size;
     size_t capacity;
@@ -596,7 +601,7 @@ typedef struct capy_json_object
     capy_jsonkv *items;
 } capy_jsonobj;
 
-typedef struct capy_json_array
+typedef struct capy_jsonarr
 {
     size_t size;
     size_t capacity;

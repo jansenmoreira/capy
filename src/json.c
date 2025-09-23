@@ -127,9 +127,9 @@ static capy_err capy_json_serialize_(capy_buffer *buffer, capy_jsonval value, in
 
         case CAPY_JSON_OBJECT:
         {
-            capy_err err;
+            capy_err err = capy_buffer_write_bytes(buffer, 1, "{");
 
-            if ((err = capy_buffer_write_bytes(buffer, 1, "{")).code)
+            if (err.code)
             {
                 return err;
             }
@@ -149,7 +149,9 @@ static capy_err capy_json_serialize_(capy_buffer *buffer, capy_jsonval value, in
 
                 if (!first)
                 {
-                    if ((err = capy_buffer_write_bytes(buffer, 1, ",")).code)
+                    err = capy_buffer_write_bytes(buffer, 1, ",");
+
+                    if (err.code)
                     {
                         return err;
                     }
@@ -157,26 +159,34 @@ static capy_err capy_json_serialize_(capy_buffer *buffer, capy_jsonval value, in
 
                 if (tabsize > 0)
                 {
-                    if ((err = capy_buffer_write_fmt(buffer, 0, "\n%*s", tabs * tabsize, "")).code)
+                    err = capy_buffer_write_fmt(buffer, 0, "\n%*s", tabs * tabsize, "");
+
+                    if (err.code)
                     {
                         return err;
                     }
                 }
 
-                if ((err = capy_buffer_write_fmt(buffer, 0, "\"%s\":", keyval.key)).code)
+                err = capy_buffer_write_fmt(buffer, 0, "\"%.*s\":", (int)keyval.key.size, keyval.key.data);
+
+                if (err.code)
                 {
                     return err;
                 }
 
                 if (tabsize > 0)
                 {
-                    if ((err = capy_buffer_write_bytes(buffer, 1, " ")).code)
+                    err = capy_buffer_write_bytes(buffer, 1, " ");
+
+                    if (err.code)
                     {
                         return err;
                     }
                 }
 
-                if ((err = capy_json_serialize_(buffer, keyval.value, tabsize, tabs)).code)
+                err = capy_json_serialize_(buffer, keyval.value, tabsize, tabs);
+
+                if (err.code)
                 {
                     return err;
                 }
@@ -188,13 +198,17 @@ static capy_err capy_json_serialize_(capy_buffer *buffer, capy_jsonval value, in
 
             if (tabsize > 0 && value.object != NULL)
             {
-                if ((err = capy_buffer_write_fmt(buffer, 0, "\n%*s", tabs * tabsize, "")).code)
+                err = capy_buffer_write_fmt(buffer, 0, "\n%*s", tabs * tabsize, "");
+
+                if (err.code)
                 {
                     return err;
                 }
             }
 
-            if ((err = capy_buffer_write_bytes(buffer, 1, "}")).code)
+            err = capy_buffer_write_bytes(buffer, 1, "}");
+
+            if (err.code)
             {
                 return err;
             }
@@ -205,7 +219,9 @@ static capy_err capy_json_serialize_(capy_buffer *buffer, capy_jsonval value, in
         {
             capy_err err;
 
-            if ((err = capy_buffer_write_bytes(buffer, 1, "[")).code)
+            err = capy_buffer_write_bytes(buffer, 1, "[");
+
+            if (err.code)
             {
                 return err;
             }
@@ -218,7 +234,9 @@ static capy_err capy_json_serialize_(capy_buffer *buffer, capy_jsonval value, in
 
                 if (i != 0)
                 {
-                    if ((err = capy_buffer_write_bytes(buffer, 1, ",")).code)
+                    err = capy_buffer_write_bytes(buffer, 1, ",");
+
+                    if (err.code)
                     {
                         return err;
                     }
@@ -226,13 +244,17 @@ static capy_err capy_json_serialize_(capy_buffer *buffer, capy_jsonval value, in
 
                 if (tabsize > 0)
                 {
-                    if ((err = capy_buffer_write_fmt(buffer, 0, "\n%*s", tabs * tabsize, "")).code)
+                    err = capy_buffer_write_fmt(buffer, 0, "\n%*s", tabs * tabsize, "");
+
+                    if (err.code)
                     {
                         return err;
                     }
                 }
 
-                if ((err = capy_json_serialize_(buffer, el, tabsize, tabs)).code)
+                err = capy_json_serialize_(buffer, el, tabsize, tabs);
+
+                if (err.code)
                 {
                     return err;
                 }
@@ -242,13 +264,17 @@ static capy_err capy_json_serialize_(capy_buffer *buffer, capy_jsonval value, in
 
             if (tabsize > 0 && value.array != NULL)
             {
-                if ((err = capy_buffer_write_fmt(buffer, 0, "\n%*s", tabs * tabsize, "")).code)
+                err = capy_buffer_write_fmt(buffer, 0, "\n%*s", tabs * tabsize, "");
+
+                if (err.code)
                 {
                     return err;
                 }
             }
 
-            if ((err = capy_buffer_write_bytes(buffer, 1, "]")).code)
+            err = capy_buffer_write_bytes(buffer, 1, "]");
+
+            if (err.code)
             {
                 return err;
             }
@@ -425,7 +451,7 @@ static capy_err capy_json_parse_string(capy_arena *arena, const char **cstr, cap
 
                     if (input->size < 6 || capy_string_parse_hexdigits(&v, capy_string_slice(*input, 2, 6)) != 4)
                     {
-                        return ErrFmt(EINVAL, "bad Unicode escape \"%.*s\"", input->size, input->data);
+                        return ErrFmt(EINVAL, "bad Unicode escape \"%.*s\"", (int)input->size, input->data);
                     }
 
                     *input = capy_string_shl(*input, 6);
@@ -598,7 +624,9 @@ static capy_err capy_json_deserialize_(capy_arena *arena, capy_jsonval *value, c
         {
             const char *string;
 
-            if ((err = capy_json_parse_string(arena, &string, input)).code)
+            err = capy_json_parse_string(arena, &string, input);
+
+            if (err.code)
             {
                 return err;
             }
@@ -621,7 +649,9 @@ static capy_err capy_json_deserialize_(capy_arena *arena, capy_jsonval *value, c
         {
             double number = 0;
 
-            if ((err = capy_json_parse_number(&number, input)).code)
+            err = capy_json_parse_number(&number, input);
+
+            if (err.code)
             {
                 return err;
             }
@@ -653,12 +683,16 @@ static capy_err capy_json_deserialize_(capy_arena *arena, capy_jsonval *value, c
                 {
                     capy_jsonval element;
 
-                    if ((err = capy_json_deserialize_(arena, &element, input)).code)
+                    err = capy_json_deserialize_(arena, &element, input);
+
+                    if (err.code)
                     {
                         return err;
                     }
 
-                    if ((err = capy_json_array_push(arr.array, element)).code)
+                    err = capy_json_array_push(arr.array, element);
+
+                    if (err.code)
                     {
                         return err;
                     }
@@ -730,7 +764,9 @@ static capy_err capy_json_deserialize_(capy_arena *arena, capy_jsonval *value, c
 
                     const char *key;
 
-                    if ((err = capy_json_parse_string(arena, &key, input)).code)
+                    err = capy_json_parse_string(arena, &key, input);
+
+                    if (err.code)
                     {
                         return err;
                     }
@@ -752,12 +788,16 @@ static capy_err capy_json_deserialize_(capy_arena *arena, capy_jsonval *value, c
 
                     capy_jsonval element;
 
-                    if ((err = capy_json_deserialize_(arena, &element, input)).code)
+                    err = capy_json_deserialize_(arena, &element, input);
+
+                    if (err.code)
                     {
                         return err;
                     }
 
-                    if ((err = capy_json_object_set(obj.object, key, element)).code)
+                    err = capy_json_object_set(obj.object, key, element);
+
+                    if (err.code)
                     {
                         return err;
                     }

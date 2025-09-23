@@ -1,50 +1,76 @@
-CC_FLAGS := -Iinclude -std=c11 -Werror -Wall -Wextra -Wconversion -Wpedantic -Wmissing-prototypes -Wmissing-variable-declarations -Wno-missing-field-initializers -Wno-unused-function -Wno-implicit-fallthrough
-LINUX_FLAGS := -DCAPY_OS_LINUX -DCAPY_ARCH_AMD64 -D_GNU_SOURCE -D_POSIX_C_SOURCE=200809L
-LINUX_DEBUG_FLAGS := ${CC_FLAGS} ${LINUX_FLAGS} -g -fprofile-arcs -ftest-coverage
-LINUX_RELEASE_FLAGS := ${CC_FLAGS} ${LINUX_FLAGS} -DNDEBUG -O3
+FLAGS_CC := \
+	-Iinclude \
+	-std=c11 \
+	-Werror \
+	-Wall \
+	-Wextra \
+	-Wconversion \
+	-Wpedantic \
+	-Wmissing-prototypes \
+	-Wmissing-variable-declarations \
+	-Wno-missing-field-initializers \
+	-Wno-unused-function \
+	-Wno-implicit-fallthrough
+
+FLAGS_LINUX := \
+	-DCAPY_OS_LINUX \
+	-DCAPY_ARCH_AMD64 \
+	-D_GNU_SOURCE \
+	-D_POSIX_C_SOURCE=200809L
+
+LIBS := \
+	-lcapy
 
 CC := gcc
 
-.PHONY: linux/debug
-linux/debug:
-	rm -rf build/debug/
-	mkdir -p build/debug/
-	${CC} ${LINUX_DEBUG_FLAGS} -c src/capy.c -o build/debug/capy.o
-	ar rcs build/debug/libcapy.a build/debug/capy.o
-	${CC} ${LINUX_DEBUG_FLAGS} -Lbuild/debug tests/test.c -lcapy -o build/debug/tests
-	${CC} ${LINUX_DEBUG_FLAGS} -Lbuild/debug examples/echo.c -lcapy -o build/debug/ex_echo
 
-.PHONY: linux/debug/ssl
-linux/debug/ssl:
-	rm -rf build/debug/
-	mkdir -p build/debug/
-	${CC} ${LINUX_DEBUG_FLAGS} -DCAPY_OPENSSL -c src/capy.c -o build/debug/capy.o
-	ar rcs build/debug/libcapy.a build/debug/capy.o
-	${CC} ${LINUX_DEBUG_FLAGS} -Lbuild/debug tests/test.c -lssl -lcrypto -lcapy -o build/debug/tests
-	${CC} ${LINUX_DEBUG_FLAGS} -Lbuild/debug examples/echo.c -lssl -lcrypto -lcapy -o build/debug/ex_echo
+.PHONY: linux/build
+linux/build:
+	rm -rf ${TARGET}
+	mkdir -p ${TARGET}
+	${CC} ${FLAGS} -c src/capy.c -o ${TARGET}/capy.o
+	ar rcs ${TARGET}/libcapy.a ${TARGET}/capy.o
+	${CC} ${FLAGS} tests/test.c    -L${TARGET} ${LIBS} -o ${TARGET}/tests
+	${CC} ${FLAGS} examples/echo.c -L${TARGET} ${LIBS} -o ${TARGET}/ex_echo
+
+
+.PHONY: linux/debug
+linux/debug: FLAGS  := ${FLAGS_CC} ${FLAGS_LINUX} -g -fprofile-arcs -ftest-coverage
+linux/debug: TARGET := build/debug
+linux/debug: linux/build
+
 
 .PHONY: linux/release
-linux/release:
-	rm -rf build/release/
-	mkdir -p build/release/
-	${CC} ${LINUX_RELEASE_FLAGS} -c src/capy.c -o build/release/capy.o
-	ar rcs build/release/libcapy.a build/release/capy.o
-	${CC} ${LINUX_RELEASE_FLAGS} -Lbuild/release tests/test.c -lcrypto -lssl -lcapy -o build/release/tests
-	${CC} ${LINUX_RELEASE_FLAGS} -Lbuild/release examples/echo.c -lcrypto -lssl -lcapy -o build/release/ex_echo
+linux/release: FLAGS  := ${FLAGS_CC} ${FLAGS_LINUX} -DNDEBUG -O3
+linux/release: TARGET := build/release
+linux/release: linux/build
+
+
+.PHONY: linux/debug/ssl
+linux/debug/ssl: FLAGS  := ${FLAGS_CC} ${FLAGS_LINUX} -DCAPY_OPENSSL -g -fprofile-arcs -ftest-coverage
+linux/debug/ssl: TARGET := build/debug
+linux/debug/ssl: LIBS   += -lssl -lcrypto
+linux/debug/ssl: linux/build
+
+
+.PHONY: linux/release/ssl
+linux/release/ssl: FLAGS  := ${FLAGS_CC} ${FLAGS_LINUX} -DCAPY_OPENSSL -DNDEBUG -O3
+linux/release/ssl: TARGET := build/release
+linux/release/ssl: LIBS   += -lssl -lcrypto
+linux/release/ssl: linux/build
+
 
 .PHONY: linux/musl
-linux/musl:
-	rm -rf build/musl/
-	mkdir -p build/musl/
-	musl-gcc -static ${LINUX_RELEASE_FLAGS} -c src/capy.c -o build/musl/capy.o
-	ar rcs build/musl/libcapy.a build/musl/capy.o
-	musl-gcc -static ${LINUX_RELEASE_FLAGS} -Lbuild/musl tests/test.c -lcapy -o build/musl/tests
-	musl-gcc -static ${LINUX_RELEASE_FLAGS} -Lbuild/musl examples/echo.c -lcapy -o build/musl/ex_echo
+linux/musl: FLAGS  := ${FLAGS_CC} ${FLAGS_LINUX} -DNDEBUG -O3 -static -Wno-unused-command-line-argument
+linux/musl: TARGET := build/musl
+linux/musl: CC     := musl-clang
+linux/musl: linux/build
 
-.PHONY: rapidhash
-rapidhash:
-	cd src/ && \
-	curl -fsSLO https://github.com/Nicoshev/rapidhash/raw/refs/heads/master/rapidhash.h
+
+compile_flags.txt: FLAGS := ${FLAGS_CC} ${FLAGS_LINUX} -DCAPY_OPENSSL
+compile_flags.txt:
+	echo "${FLAGS}" | tr ' ' '\n' > compile_flags.txt
+
 
 .PHONY: coverage
 coverage:
@@ -57,6 +83,7 @@ coverage:
 		--exclude src/assert.c \
 		--gcov-executable "llvm-cov gcov"
 	echo file://$$(readlink -f build/debug/coverage.html)
+
 
 .PHONY: certificates
 certificates:
