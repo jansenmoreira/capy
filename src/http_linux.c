@@ -5,6 +5,8 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <openssl/err.h>
+#include <openssl/ssl.h>
 #include <pthread.h>
 #include <sys/epoll.h>
 #include <sys/signalfd.h>
@@ -131,18 +133,6 @@ static capy_err http_gai_error(int err)
     if (err == 0) return Ok;
     return (capy_err){.code = err, .msg = gai_strerror(err)};
 }
-
-static capy_err httpconn_read_request_openssl(httpconn *conn);
-static capy_err httpconn_write_response_openssl(httpconn *conn);
-static capy_err httpconn_create_openssl(httpconn *conn);
-static capy_err httpconn_free_openssl(httpconn *conn);
-static capy_err httpserver_free_openssl(httpserver *server);
-static capy_err httpserver_init_openssl(httpserver *server);
-
-#ifdef CAPY_OPENSSL
-
-#include <openssl/err.h>
-#include <openssl/ssl.h>
 
 static int http_ssl_log_error(const char *buffer, size_t len, Unused void *userdata)
 {
@@ -391,40 +381,6 @@ static capy_err httpserver_init_openssl(httpserver *server)
 
     return Ok;
 }
-
-#else
-
-static capy_err httpconn_read_request_openssl(Unused httpconn *conn)
-{
-    return ErrFmt(EPROTO, "OpenSSL is not available");
-}
-
-static capy_err httpconn_write_response_openssl(Unused httpconn *conn)
-{
-    return ErrFmt(EPROTO, "OpenSSL is not available");
-}
-
-static capy_err httpconn_free_openssl(Unused httpconn *conn)
-{
-    return ErrFmt(EPROTO, "OpenSSL is not available");
-}
-
-static capy_err httpconn_create_openssl(Unused httpconn *conn)
-{
-    return ErrFmt(EPROTO, "OpenSSL is not available");
-}
-
-static capy_err httpserver_free_openssl(Unused httpserver *server)
-{
-    return ErrFmt(EPROTO, "OpenSSL is not available");
-}
-
-static capy_err httpserver_init_openssl(Unused httpserver *server)
-{
-    return ErrFmt(EPROTO, "OpenSSL is not available");
-}
-
-#endif
 
 static capy_err httpconn_update_epoll(httpconn *conn, int epoll_fd, int op, uint32_t events)
 {

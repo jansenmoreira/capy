@@ -6,7 +6,7 @@
         {
             "label": "build",
             "type": "shell",
-            "command": "make -s linux/debug/ssl",
+            "command": "make podman/linux/debug",
             "presentation": {
                 "echo": true,
                 "reveal": "silent",
@@ -22,7 +22,7 @@
         {
             "label": "build/release",
             "type": "shell",
-            "command": "make -s linux/release",
+            "command": "make podman/linux/release",
             "presentation": {
                 "echo": true,
                 "reveal": "silent",
@@ -37,7 +37,7 @@
         {
             "label": "coverage",
             "type": "shell",
-            "command": "make -s coverage",
+            "command": "make coverage",
             "presentation": {
                 "echo": true,
                 "reveal": "silent",

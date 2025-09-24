@@ -7,21 +7,22 @@ FLAGS_CC := \
 	-Wconversion \
 	-Wpedantic \
 	-Wmissing-prototypes \
-	-Wmissing-variable-declarations \
+	-Wmissing-declarations \
 	-Wno-missing-field-initializers \
 	-Wno-unused-function \
 	-Wno-implicit-fallthrough
 
 FLAGS_LINUX := \
 	-DCAPY_OS_LINUX \
-	-DCAPY_ARCH_AMD64 \
-	-D_GNU_SOURCE \
-	-D_POSIX_C_SOURCE=200809L
+	-D_GNU_SOURCE
 
 LIBS := \
 	-lcapy
 
 CC := gcc
+
+
+all: linux/release
 
 
 .PHONY: linux/build
@@ -37,37 +38,34 @@ linux/build:
 .PHONY: linux/debug
 linux/debug: FLAGS  := ${FLAGS_CC} ${FLAGS_LINUX} -g -fprofile-arcs -ftest-coverage
 linux/debug: TARGET := build/debug
+linux/debug: LIBS   += -lssl -lcrypto
 linux/debug: linux/build
 
 
 .PHONY: linux/release
 linux/release: FLAGS  := ${FLAGS_CC} ${FLAGS_LINUX} -DNDEBUG -O3
 linux/release: TARGET := build/release
+linux/release: LIBS   += -lssl -lcrypto
 linux/release: linux/build
 
 
-.PHONY: linux/debug/ssl
-linux/debug/ssl: FLAGS  := ${FLAGS_CC} ${FLAGS_LINUX} -DCAPY_OPENSSL -g -fprofile-arcs -ftest-coverage
-linux/debug/ssl: TARGET := build/debug
-linux/debug/ssl: LIBS   += -lssl -lcrypto
-linux/debug/ssl: linux/build
+.PHONY:
+podman/linux:
+	podman image build --tag capy:linux .
+	podman run -it -v ./:/capy capy:linux /bin/bash -c "make $(TARGET)"
 
 
-.PHONY: linux/release/ssl
-linux/release/ssl: FLAGS  := ${FLAGS_CC} ${FLAGS_LINUX} -DCAPY_OPENSSL -DNDEBUG -O3
-linux/release/ssl: TARGET := build/release
-linux/release/ssl: LIBS   += -lssl -lcrypto
-linux/release/ssl: linux/build
+.PHONY:
+podman/linux/debug: TARGET := linux/debug
+podman/linux/debug: podman/linux
 
 
-.PHONY: linux/musl
-linux/musl: FLAGS  := ${FLAGS_CC} ${FLAGS_LINUX} -DNDEBUG -O3 -static -Wno-unused-command-line-argument
-linux/musl: TARGET := build/musl
-linux/musl: CC     := musl-clang
-linux/musl: linux/build
+.PHONY:
+podman/linux/release: TARGET := linux/release
+podman/linux/release: podman/linux
 
 
-compile_flags.txt: FLAGS := ${FLAGS_CC} ${FLAGS_LINUX} -DCAPY_OPENSSL
+compile_flags.txt: FLAGS := ${FLAGS_CC} ${FLAGS_LINUX}
 compile_flags.txt:
 	echo "${FLAGS}" | tr ' ' '\n' > compile_flags.txt
 
@@ -93,9 +91,11 @@ certificates:
 	openssl genrsa > server_key.pem && \
 	openssl req -new -x509 -key server_key.pem > server_chain.pem
 
+
 .PHONY: update/rapidhash
 update/rapidhash:
 	mkdir -p include/rapidhash
 	cd include/rapidhash && \
 	curl -fsSLO https://github.com/Nicoshev/rapidhash/raw/refs/heads/master/rapidhash.h && \
 	curl -fsSLO https://github.com/Nicoshev/rapidhash/raw/refs/heads/master/LICENSE
+
