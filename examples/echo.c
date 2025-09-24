@@ -71,14 +71,7 @@ static capy_err params_handler(Unused capy_arena *arena, capy_httpreq *request, 
 
     for (size_t i = 0; i < request->query->capacity; i++)
     {
-        capy_strkvn *param = request->query->items + i;
-
-        if (param->key.size == 0)
-        {
-            continue;
-        }
-
-        while (param != NULL)
+        for (capy_strkvn *param = capy_strkvnmap_at(request->query, i); param != NULL; param = param->next)
         {
             err = capy_buffer_write_fmt(response->body, 0, "%s: %s\n", param->key.data, param->value.data);
 
@@ -86,8 +79,6 @@ static capy_err params_handler(Unused capy_arena *arena, capy_httpreq *request, 
             {
                 return ErrWrap(err, "Failed to write query params");
             }
-
-            param = param->next;
         }
     }
 
@@ -110,14 +101,7 @@ static capy_err echo_handler(capy_arena *arena, capy_httpreq *request, capy_http
 
     for (size_t i = 0; i < request->headers->capacity; i++)
     {
-        capy_strkvn *header = request->headers->items + i;
-
-        if (header->key.size == 0)
-        {
-            continue;
-        }
-
-        while (header != NULL)
+        for (capy_strkvn *header = capy_strkvnmap_at(request->headers, i); header != NULL; header = header->next)
         {
             err = capy_buffer_write_fmt(response->body, 0, "%s: %s\n", header->key.data, header->value.data);
 
@@ -125,8 +109,6 @@ static capy_err echo_handler(capy_arena *arena, capy_httpreq *request, capy_http
             {
                 return ErrWrap(err, "Failed to write header");
             }
-
-            header = header->next;
         }
     }
 

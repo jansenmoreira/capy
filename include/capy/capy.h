@@ -347,6 +347,10 @@ typedef struct capy_strkvn
     struct capy_strkvn *next;
 } capy_strkvn;
 
+// Multimap of a string key to a string value.
+// Used for implementing headers, query parameters, URI parameters, etc., for the HTTP Protocol.
+// A linked list is used here because, in most cases, only a single value is passed.
+// The `next` member is a pointer to another `strkvn` struct, which allows for iterating over all values in a simple `for` loop.
 typedef struct capy_strkvnmap
 {
     size_t size;
@@ -361,6 +365,7 @@ MustCheck capy_err capy_strkvnmap_set(capy_strkvnmap *mm, capy_string key, capy_
 MustCheck capy_err capy_strkvnmap_add(capy_strkvnmap *mm, capy_string key, capy_string value);
 void capy_strkvnmap_delete(capy_strkvnmap *mm, capy_string key);
 void capy_strkvnmap_clear(capy_strkvnmap *mm);
+capy_strkvn *capy_strkvnmap_at(capy_strkvnmap *mm, size_t index);
 
 //
 // Base64

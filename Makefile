@@ -92,3 +92,10 @@ certificates:
 	cd extra/certificates/ && \
 	openssl genrsa > server_key.pem && \
 	openssl req -new -x509 -key server_key.pem > server_chain.pem
+
+.PHONY: update/rapidhash
+update/rapidhash:
+	mkdir -p include/rapidhash
+	cd include/rapidhash && \
+	curl -fsSLO https://github.com/Nicoshev/rapidhash/raw/refs/heads/master/rapidhash.h && \
+	curl -fsSLO https://github.com/Nicoshev/rapidhash/raw/refs/heads/master/LICENSE

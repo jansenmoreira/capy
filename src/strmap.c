@@ -239,15 +239,6 @@ capy_strkvn *capy_strkvnmap_get(capy_strkvnmap *mm, capy_string key)
 
 MustCheck capy_err capy_strkvnmap_set(capy_strkvnmap *mm, capy_string key, capy_string value)
 {
-    capy_strkvn *item = capy_strmap_get(mm->items, sizeof(capy_strkvn), mm->capacity, key);
-
-    if (item != NULL)
-    {
-        item->value = value;
-        item->next = NULL;
-        return Ok;
-    }
-
     capy_strkvn pair = {
         .key = key,
         .value = value,
@@ -270,44 +261,29 @@ MustCheck capy_err capy_strkvnmap_add(capy_strkvnmap *mm, capy_string key, capy_
 {
     capy_strkvn *item = capy_strmap_get(Cast(uint8_t *, mm->items), sizeof(capy_strkvn), mm->capacity, key);
 
-    if (item == NULL)
+    if (item != NULL)
     {
-        capy_strkvn pair = {
-            .key = key,
-            .value = value,
-            .next = NULL,
-        };
+        capy_strkvn *next = Make(mm->arena, capy_strkvn, 1);
 
-        void *items = capy_strmap_set(mm->arena, mm->items, sizeof(capy_strkvn), &mm->capacity, &mm->size, &pair);
-
-        if (items == NULL)
+        if (next == NULL)
         {
             return ErrStd(ENOMEM);
         }
 
-        mm->items = Cast(capy_strkvn *, items);
+        next->key = key;
+        next->value = value;
+
+        while (item->next != NULL)
+        {
+            item = item->next;
+        }
+
+        item->next = next;
 
         return Ok;
     }
 
-    while (item->next != NULL)
-    {
-        item = item->next;
-    }
-
-    item->next = Make(mm->arena, capy_strkvn, 1);
-
-    if (item->next == NULL)
-    {
-        return ErrStd(ENOMEM);
-    }
-
-    item = item->next;
-
-    item->key = key;
-    item->value = value;
-
-    return Ok;
+    return capy_strkvnmap_set(mm, key, value);
 }
 
 void capy_strkvnmap_delete(capy_strkvnmap *mm, capy_string key)
@@ -319,4 +295,16 @@ void capy_strkvnmap_clear(capy_strkvnmap *mm)
 {
     mm->size = 0;
     memset(mm->items, 0, mm->capacity * sizeof(capy_strkvn));
+}
+
+capy_strkvn *capy_strkvnmap_at(capy_strkvnmap *mm, size_t index)
+{
+    capy_strkvn *item = mm->items + index;
+
+    if (item->key.size == 0)
+    {
+        return NULL;
+    }
+
+    return item;
 }

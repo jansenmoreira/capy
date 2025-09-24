@@ -645,14 +645,7 @@ capy_err capy_http_write_response(capy_buffer *buffer, capy_httpresp *response, 
 
     for (size_t i = 0; i < response->headers->capacity; i++)
     {
-        capy_strkvn *header = response->headers->items + i;
-
-        if (header->key.size == 0)
-        {
-            continue;
-        }
-
-        while (header != NULL)
+        for (capy_strkvn *header = capy_strkvnmap_at(response->headers, i); header != NULL; header = header->next)
         {
             err = capy_buffer_write_fmt(buffer, 0, "%s: %s\r\n", header->key.data, header->value.data);
 
@@ -660,8 +653,6 @@ capy_err capy_http_write_response(capy_buffer *buffer, capy_httpresp *response, 
             {
                 return err;
             }
-
-            header = header->next;
         }
     }
 
