@@ -87,7 +87,7 @@ size_t capy_string_parse_hexdigits(uint64_t *value, capy_string input)
     return bytes;
 }
 
-MustCheck capy_err capy_string_copy(capy_arena *arena, capy_string *output, capy_string input)
+capy_err capy_string_copy(capy_arena *arena, capy_string *output, capy_string input)
 {
     capy_assert(output != NULL);
 
@@ -110,7 +110,7 @@ MustCheck capy_err capy_string_copy(capy_arena *arena, capy_string *output, capy
     return Ok;
 }
 
-MustCheck capy_err capy_string_lower(capy_arena *arena, capy_string *output, capy_string input)
+capy_err capy_string_lower(capy_arena *arena, capy_string *output, capy_string input)
 {
     if (input.size == 0)
     {
@@ -135,7 +135,7 @@ MustCheck capy_err capy_string_lower(capy_arena *arena, capy_string *output, cap
     return Ok;
 }
 
-MustCheck capy_err capy_string_upper(capy_arena *arena, capy_string *output, capy_string input)
+capy_err capy_string_upper(capy_arena *arena, capy_string *output, capy_string input)
 {
     if (input.size == 0)
     {
@@ -160,7 +160,7 @@ MustCheck capy_err capy_string_upper(capy_arena *arena, capy_string *output, cap
     return Ok;
 }
 
-MustCheck capy_err capy_string_join(capy_arena *arena, capy_string *output, const char *delimiter, int n, capy_string *list)
+capy_err capy_string_join(capy_arena *arena, capy_string *output, const char *delimiter, int n, capy_string *list)
 {
     size_t size = 0;
     size_t delimiter_size = strlen(delimiter);

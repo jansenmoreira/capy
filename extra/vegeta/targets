@@ -1,13 +1,13 @@
-GET https://127.0.0.1:8080/test/
+GET http://127.0.0.1:8080/test/
 X-User-Id: foo
 
-POST https://127.0.0.1:8080/
+POST http://127.0.0.1:8080/
 @extra/vegeta/sample1.json
 
-POST https://127.0.0.1:8080/
+POST http://127.0.0.1:8080/
 @extra/vegeta/sample2.json
 
-POST https://127.0.0.1:8080/
+POST http://127.0.0.1:8080/
 @extra/vegeta/sample3.json
 
 # PUT http://127.0.0.1:8080/fail/

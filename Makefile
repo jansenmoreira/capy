@@ -19,7 +19,7 @@ FLAGS_LINUX := \
 LIBS := \
 	-lcapy
 
-CC := gcc
+CC := clang
 
 
 all: linux/release
@@ -33,6 +33,7 @@ linux/build:
 	ar rcs ${TARGET}/libcapy.a ${TARGET}/capy.o
 	${CC} ${FLAGS} tests/test.c    -L${TARGET} ${LIBS} -o ${TARGET}/tests
 	${CC} ${FLAGS} examples/echo.c -L${TARGET} ${LIBS} -o ${TARGET}/ex_echo
+	echo "${FLAGS_CC} ${FLAGS_LINUX}" | tr ' ' '\n' > compile_flags.txt
 
 
 .PHONY: linux/debug
@@ -52,7 +53,7 @@ linux/release: linux/build
 .PHONY:
 podman/linux:
 	podman image build --tag capy:linux .
-	podman run -it -v ./:/capy capy:linux /bin/bash -c "make $(TARGET)"
+	podman run -it -v ./:/capy capy:linux /bin/bash -c "make $(TARGET) CC=gcc"
 
 
 .PHONY:
@@ -63,11 +64,6 @@ podman/linux/debug: podman/linux
 .PHONY:
 podman/linux/release: TARGET := linux/release
 podman/linux/release: podman/linux
-
-
-compile_flags.txt: FLAGS := ${FLAGS_CC} ${FLAGS_LINUX}
-compile_flags.txt:
-	echo "${FLAGS}" | tr ' ' '\n' > compile_flags.txt
 
 
 .PHONY: coverage

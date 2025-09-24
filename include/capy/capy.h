@@ -223,27 +223,22 @@ uint64_t capy_hash(const void *key, uint64_t length);
 // Helper functions to manage generic Vectors
 //
 
-// Inserts `count` values from `values` at index `position` in `items`.
-// The size of each element is `element_size`.
+typedef struct capy_vec
+{
+    size_t size;
+    size_t capacity;
+    size_t element_size;
+    char *items;
+} capy_vec;
+
+// Inserts `count` values from `values` at index `position` in `vec.items`.
 // If needed, reallocates the `items` memory block using `arena`.
 // If `values` is `NULL`, the function will only reserve `count` elements at `position`.
-// Returns a pointer to the updated `items`.
-// Returns the number of elements in `size`.
-// Returns the vector capacity in `capacity`.
-// If allocation fails, returns `NULL`.
-MustCheck void *capy_vec_insert(capy_arena *arena,
-                                void *items,
-                                size_t element_size,
-                                InOut size_t *capacity,
-                                InOut size_t *size,
-                                size_t position,
-                                size_t count,
-                                const void *values);
+// If allocation fails, returns `ENOMEM`.
+MustCheck capy_err capy_vec_insert(capy_arena *arena, capy_vec *vec, size_t position, size_t count, const void *values);
 
-// Deletes `count` elements at index `position` in `items`.
-// The size of each element is `element_size`.
-// Returns the size of the vector.
-size_t capy_vec_delete(void *items, size_t element_size, size_t size, size_t position, size_t count);
+// Deletes `count` elements at index `position` in `vec.items`.
+capy_err capy_vec_delete(capy_vec *vec, size_t position, size_t count);
 
 //
 // Byte Buffer
@@ -253,12 +248,17 @@ size_t capy_vec_delete(void *items, size_t element_size, size_t size, size_t pos
 // A buffer will grow to fit new writes using an `arena`. The number of bytes written is stored in `size`.
 // As long as `size` is less than `capacity`, the buffer will not need to allocate more memory.
 // The resulting data is stored in `data`, but the address of the data can change after a new allocation is made.
-typedef struct capy_buffer
+typedef union capy_buffer
 {
-    size_t size;
-    size_t capacity;
-    capy_arena *arena;
-    char *data;
+    capy_vec vec;
+    struct
+    {
+        size_t size;
+        size_t capacity;
+        size_t element_size;
+        char *data;
+        capy_arena *arena;
+    };
 } capy_buffer;
 
 // Initializes a Buffer with `arena` as the memory allocator and allocates `capacity` bytes of space.
@@ -287,10 +287,6 @@ MustCheck capy_err capy_buffer_write_null(capy_buffer *buffer);
 // If allocation fails, returns a non-zero error code.
 Format(3) MustCheck capy_err capy_buffer_write_fmt(capy_buffer *buffer, size_t max, const char *fmt, ...);
 
-// Resizes the Buffer, allocating memory if needed.
-// If allocation fails, returns a non-zero error code.
-MustCheck capy_err capy_buffer_resize(capy_buffer *buffer, size_t size);
-
 // Deletes the `size` leftmost bytes from the Buffer.
 void capy_buffer_shl(capy_buffer *buffer, size_t size);
 
@@ -298,22 +294,29 @@ void capy_buffer_shl(capy_buffer *buffer, size_t size);
 // String Map
 //
 
-MustCheck void *capy_strmap_set(capy_arena *arena,
-                                void *data,
-                                size_t element_size,
-                                InOut size_t *capacity,
-                                InOut size_t *size,
-                                const void *entry);
-
-void *capy_strmap_get(void *data, size_t element_size, size_t capacity, capy_string key);
-size_t capy_strmap_delete(void *items, size_t element_size, size_t capacity, size_t size, capy_string key);
-
-typedef struct capy_strset
+typedef struct capy_strmap
 {
     size_t size;
     size_t capacity;
-    capy_arena *arena;
-    capy_string *items;
+    size_t element_size;
+    char *items;
+} capy_strmap;
+
+MustCheck capy_err capy_strmap_set(capy_arena *arena, capy_strmap *map, const void *entry);
+void *capy_strmap_get(capy_strmap *map, capy_string key);
+void capy_strmap_delete(capy_strmap *map, capy_string key);
+
+typedef union capy_strset
+{
+    capy_strmap strmap;
+    struct
+    {
+        size_t size;
+        size_t capacity;
+        size_t element_size;
+        capy_string *items;
+        capy_arena *arena;
+    };
 } capy_strset;
 
 MustCheck capy_strset *capy_strset_init(capy_arena *arena, size_t capacity);
@@ -327,12 +330,17 @@ typedef struct capy_strkv
     capy_string value;
 } capy_strkv;
 
-typedef struct capy_strkvmap
+typedef union capy_strkvmap
 {
-    size_t size;
-    size_t capacity;
-    capy_arena *arena;
-    capy_strkv *items;
+    capy_strmap strmap;
+    struct
+    {
+        size_t size;
+        size_t capacity;
+        size_t element_size;
+        capy_strkv *items;
+        capy_arena *arena;
+    };
 } capy_strkvmap;
 
 MustCheck capy_strkvmap *capy_strkvmap_init(capy_arena *arena, size_t capacity);
@@ -351,12 +359,17 @@ typedef struct capy_strkvn
 // Used for implementing headers, query parameters, URI parameters, etc., for the HTTP Protocol.
 // A linked list is used here because, in most cases, only a single value is passed.
 // The `next` member is a pointer to another `strkvn` struct, which allows for iterating over all values in a simple `for` loop.
-typedef struct capy_strkvnmap
+typedef union capy_strkvnmap
 {
-    size_t size;
-    size_t capacity;
-    capy_arena *arena;
-    capy_strkvn *items;
+    capy_strmap strmap;
+    struct
+    {
+        size_t size;
+        size_t capacity;
+        size_t element_size;
+        capy_strkvn *items;
+        capy_arena *arena;
+    };
 } capy_strkvnmap;
 
 MustCheck capy_strkvnmap *capy_strkvnmap_init(capy_arena *arena, size_t capacity);
@@ -571,8 +584,8 @@ capy_err capy_http_serve(capy_httpserveropt options);
 
 typedef enum capy_jsonkind
 {
+    CAPY_JSON_NULL = 0,
     CAPY_JSON_BOOL,
-    CAPY_JSON_NULL,
     CAPY_JSON_NUMBER,
     CAPY_JSON_STRING,
     CAPY_JSON_OBJECT,
@@ -587,8 +600,8 @@ typedef struct capy_json_value
         double number;
         bool boolean;
         const char *string;
-        struct capy_jsonobj *object;
-        struct capy_jsonarr *array;
+        union capy_jsonobj *object;
+        union capy_jsonarr *array;
     };
 } capy_jsonval;
 
@@ -598,20 +611,30 @@ typedef struct capy_jsonkv
     capy_jsonval value;
 } capy_jsonkv;
 
-typedef struct capy_jsonobj
+typedef union capy_jsonobj
 {
-    size_t size;
-    size_t capacity;
-    capy_arena *arena;
-    capy_jsonkv *items;
+    capy_strmap strmap;
+    struct
+    {
+        size_t size;
+        size_t capacity;
+        size_t element_size;
+        capy_jsonkv *items;
+        capy_arena *arena;
+    };
 } capy_jsonobj;
 
-typedef struct capy_jsonarr
+typedef union capy_jsonarr
 {
-    size_t size;
-    size_t capacity;
-    capy_arena *arena;
-    capy_jsonval *data;
+    capy_vec vec;
+    struct
+    {
+        size_t size;
+        size_t capacity;
+        size_t element_size;
+        capy_jsonval *data;
+        capy_arena *arena;
+    };
 } capy_jsonarr;
 
 capy_jsonval capy_json_null(void);

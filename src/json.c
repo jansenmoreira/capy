@@ -25,15 +25,20 @@ capy_jsonval capy_json_object(capy_arena *arena)
 {
     size_t capacity = 8;
 
-    capy_jsonobj *obj = capy_arena_alloc(arena, sizeof(capy_jsonobj) + (sizeof(capy_jsonkv) * capacity), 8, true);
+    char *addr = capy_arena_alloc(arena, sizeof(capy_jsonobj) + (sizeof(capy_jsonkv) * capacity), 8, true);
 
-    if (obj != NULL)
+    if (addr == NULL)
     {
-        obj->size = 0;
-        obj->capacity = capacity;
-        obj->arena = arena;
-        obj->items = ReinterpretCast(capy_jsonkv *, obj + 1);
+        return (capy_jsonval){.kind = CAPY_JSON_OBJECT, .object = NULL};
     }
+
+    capy_jsonobj *obj = Cast(capy_jsonobj *, addr);
+
+    obj->size = 0;
+    obj->capacity = capacity;
+    obj->element_size = sizeof(capy_jsonkv);
+    obj->arena = arena;
+    obj->items = Cast(capy_jsonkv *, addr + sizeof(capy_jsonobj));
 
     return (capy_jsonval){.kind = CAPY_JSON_OBJECT, .object = obj};
 }
@@ -41,53 +46,39 @@ capy_jsonval capy_json_object(capy_arena *arena)
 capy_err capy_json_object_set(capy_jsonobj *object, const char *key, capy_jsonval value)
 {
     capy_jsonkv kv = {.key = capy_string_cstr(key), .value = value};
-
-    void *items = capy_strmap_set(object->arena, object->items, sizeof(capy_jsonkv), &object->capacity, &object->size, &kv);
-
-    if (items == NULL)
-    {
-        return ErrStd(ENOMEM);
-    }
-
-    object->items = items;
-
-    return Ok;
+    return capy_strmap_set(object->arena, &object->strmap, &kv);
 }
 
 capy_jsonval *capy_json_object_get(capy_jsonobj *object, const char *key)
 {
-    return capy_strmap_get(object->items, sizeof(capy_string), object->capacity, capy_string_cstr(key));
+    return capy_strmap_get(&object->strmap, capy_string_cstr(key));
 }
 
 capy_jsonval capy_json_array(capy_arena *arena)
 {
     size_t capacity = 8;
 
-    capy_jsonarr *buf = capy_arena_alloc(arena, sizeof(capy_buffer) + (capacity * sizeof(capy_jsonval)), 8, false);
+    char *addr = capy_arena_alloc(arena, sizeof(capy_jsonarr) + (capacity * sizeof(capy_jsonval)), 8, false);
 
-    if (buf != NULL)
+    if (addr == NULL)
     {
-        buf->size = 0;
-        buf->capacity = capacity;
-        buf->arena = arena;
-        buf->data = ReinterpretCast(capy_jsonval *, buf + 1);
+        return (capy_jsonval){.kind = CAPY_JSON_ARRAY, .array = NULL};
     }
 
-    return (capy_jsonval){.kind = CAPY_JSON_ARRAY, .array = buf};
+    capy_jsonarr *arr = Cast(capy_jsonarr *, addr);
+
+    arr->size = 0;
+    arr->capacity = capacity;
+    arr->element_size = sizeof(capy_jsonval);
+    arr->arena = arena;
+    arr->data = Cast(capy_jsonval *, addr + sizeof(capy_jsonarr));
+
+    return (capy_jsonval){.kind = CAPY_JSON_ARRAY, .array = arr};
 }
 
 capy_err capy_json_array_push(capy_jsonarr *array, capy_jsonval value)
 {
-    void *tmp = capy_vec_insert(array->arena, array->data, sizeof(capy_jsonval), &array->capacity, &array->size, array->size, 1, &value);
-
-    if (tmp == NULL)
-    {
-        return ErrStd(ENOMEM);
-    }
-
-    array->data = Cast(capy_jsonval *, tmp);
-
-    return Ok;
+    return capy_vec_insert(array->arena, &array->vec, array->size, 1, &value);
 }
 
 static capy_err capy_json_serialize_(capy_buffer *buffer, capy_jsonval value, int tabsize, int tabs)

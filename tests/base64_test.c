@@ -80,35 +80,35 @@ static int test_capy_buffer_base64(void)
 
     capy_buffer *buffer = capy_buffer_init(arena, 1024);
 
-    ExpectOk(capy_buffer_resize(buffer, 0));
+    buffer->size = 0;
     ExpectOk(capy_buffer_write_base64url(buffer, 6, "foobar", false));
     ExpectEqMem(buffer->data, "Zm9vYmFy", buffer->size);
 
-    ExpectOk(capy_buffer_resize(buffer, 0));
+    buffer->size = 0;
     ExpectOk(capy_buffer_write_base64url(buffer, 6, "abcdef", false));
     ExpectEqMem(buffer->data, "YWJjZGVm", buffer->size);
 
-    ExpectOk(capy_buffer_resize(buffer, 0));
+    buffer->size = 0;
     ExpectOk(capy_buffer_write_base64url(buffer, 7, "foobarb", false));
     ExpectEqMem(buffer->data, "Zm9vYmFyYg", buffer->size);
 
-    ExpectOk(capy_buffer_resize(buffer, 0));
+    buffer->size = 0;
     ExpectOk(capy_buffer_write_base64url(buffer, 7, "foobarb", true));
     ExpectEqMem(buffer->data, "Zm9vYmFyYg==", buffer->size);
 
-    ExpectOk(capy_buffer_resize(buffer, 0));
+    buffer->size = 0;
     ExpectOk(capy_buffer_write_base64url(buffer, 8, "foobarbz", false));
     ExpectEqMem(buffer->data, "Zm9vYmFyYno", buffer->size);
 
-    ExpectOk(capy_buffer_resize(buffer, 0));
+    buffer->size = 0;
     ExpectOk(capy_buffer_write_base64url(buffer, 8, "foobarbz", true));
     ExpectEqMem(buffer->data, "Zm9vYmFyYno=", buffer->size);
 
-    ExpectOk(capy_buffer_resize(buffer, 0));
+    buffer->size = 0;
     ExpectOk(capy_buffer_write_base64url(buffer, 3, "\x00\x1F\xBF", false));
     ExpectEqMem(buffer->data, "AB-_", buffer->size);
 
-    ExpectOk(capy_buffer_resize(buffer, 0));
+    buffer->size = 0;
     ExpectOk(capy_buffer_write_base64std(buffer, 3, "\x00\x1F\xBF", false));
     ExpectEqMem(buffer->data, "AB+/", buffer->size);
 

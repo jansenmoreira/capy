@@ -91,12 +91,12 @@ capy_err capy_string_base64(capy_arena *arena, capy_string *output, capy_string 
     return Ok;
 }
 
-MustCheck capy_err capy_string_base64url(capy_arena *arena, capy_string *output, capy_string input, int padding)
+capy_err capy_string_base64url(capy_arena *arena, capy_string *output, capy_string input, int padding)
 {
     return capy_string_base64(arena, output, input, base64_url_enc, padding);
 }
 
-MustCheck capy_err capy_string_base64std(capy_arena *arena, capy_string *output, capy_string input, int padding)
+capy_err capy_string_base64std(capy_arena *arena, capy_string *output, capy_string input, int padding)
 {
     return capy_string_base64(arena, output, input, base64_std_enc, padding);
 }
@@ -106,7 +106,7 @@ capy_err capy_buffer_write_base64(capy_buffer *buffer, size_t n, const char *inp
     size_t s = align_to(n, 3) / 3 * 4;
     size_t index = buffer->size;
 
-    capy_err err = capy_buffer_resize(buffer, index + s + 1);
+    capy_err err = capy_buffer_write_bytes(buffer, s + 1, NULL);
 
     if (!err.code)
     {
@@ -118,12 +118,12 @@ capy_err capy_buffer_write_base64(capy_buffer *buffer, size_t n, const char *inp
     return err;
 }
 
-MustCheck capy_err capy_buffer_write_base64url(capy_buffer *buffer, size_t n, const char *input, int padding)
+capy_err capy_buffer_write_base64url(capy_buffer *buffer, size_t n, const char *input, int padding)
 {
     return capy_buffer_write_base64(buffer, n, input, base64_url_enc, padding);
 }
 
-MustCheck capy_err capy_buffer_write_base64std(capy_buffer *buffer, size_t n, const char *input, int padding)
+capy_err capy_buffer_write_base64std(capy_buffer *buffer, size_t n, const char *input, int padding)
 {
     return capy_buffer_write_base64(buffer, n, input, base64_std_enc, padding);
 }

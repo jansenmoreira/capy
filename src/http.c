@@ -206,14 +206,19 @@ static const char *http_months[] = {
     "Dec",
 };
 
-typedef struct capy_httproutermap
+typedef union capy_httproutermap
 {
-    size_t size;
-    size_t capacity;
-    struct capy_http_router *items;
+    capy_strmap strmap;
+    struct
+    {
+        size_t size;
+        size_t capacity;
+        size_t element_size;
+        struct capy_httprouter *items;
+    };
 } capy_httproutermap;
 
-typedef struct capy_http_router
+typedef struct capy_httprouter
 {
     capy_string segment;
     capy_httproutermap *segments;
@@ -316,37 +321,31 @@ static capy_err http_canonical_field_name(capy_arena *arena, capy_string *output
 
 static capy_httproutermap *capy_http_router_map_init(capy_arena *arena, size_t capacity)
 {
-    capy_httproutermap *map = capy_arena_alloc(arena, sizeof(capy_httproutermap) + (sizeof(capy_httprouter) * capacity), 8, true);
+    char *addr = capy_arena_alloc(arena, sizeof(capy_httproutermap) + (sizeof(capy_httprouter) * capacity), 8, true);
 
-    if (map == NULL)
+    if (addr == NULL)
     {
         return NULL;
     }
 
+    capy_httproutermap *map = Cast(capy_httproutermap *, addr);
+
     map->size = 0;
     map->capacity = capacity;
-    map->items = ReinterpretCast(capy_httprouter *, map + 1);
+    map->element_size = sizeof(capy_httprouter);
+    map->items = Cast(capy_httprouter *, addr + sizeof(capy_httproutermap));
 
     return map;
 }
 
 static capy_httprouter *capy_http_router_map_get(capy_httproutermap *map, capy_string key)
 {
-    return capy_strmap_get(map->items, sizeof(capy_httprouter), map->capacity, key);
+    return capy_strmap_get(&map->strmap, key);
 }
 
 static MustCheck capy_err capy_http_router_map_set(capy_arena *arena, capy_httproutermap *map, capy_httprouter router)
 {
-    void *items = capy_strmap_set(arena, map->items, sizeof(capy_httprouter), &map->capacity, &map->size, &router);
-
-    if (items == NULL)
-    {
-        return ErrStd(ENOMEM);
-    }
-
-    map->items = items;
-
-    return Ok;
+    return capy_strmap_set(arena, &map->strmap, &router);
 }
 
 static capy_httprouter *http_route_add_(capy_arena *arena, capy_httprouter *router, capy_httpmethod method, capy_string suffix, capy_string path, capy_http_handler handler)

@@ -210,13 +210,7 @@ static capy_err httpconn_read_request_openssl(httpconn *conn)
         return Ok;
     }
 
-    err = capy_buffer_resize(conn->line_buffer, line_size + Cast(size_t, bytes_read));
-
-    if (err.code)
-    {
-        return err;
-    }
-
+    conn->line_buffer->size = line_size + Cast(size_t, bytes_read);
     conn->state = conn->after_read;
     return Ok;
 }
@@ -778,13 +772,7 @@ static capy_err httpconn_read_request(httpconn *conn)
         return ErrWrap(err, "Failed to read socket");
     }
 
-    err = capy_buffer_resize(conn->line_buffer, line_size + Cast(size_t, bytes_read));
-
-    if (err.code)
-    {
-        return err;
-    }
-
+    conn->line_buffer->size = line_size + Cast(size_t, bytes_read);
     conn->state = conn->after_read;
     return Ok;
 }

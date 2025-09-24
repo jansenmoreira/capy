@@ -45,7 +45,7 @@
     (capy_arena_alloc((arena), sizeof(T) * (size), alignof(T), false))
 
 #define Cast(T, v) ((T)(v))
-#define ReinterpretCast(T, v) ((T)((void *)(v)))
+#define ReinterpretCast(T, v) ((T)((char *)(v)))
 
 #define ErrStd capy_err_errno
 #define ErrWrap capy_err_wrap
