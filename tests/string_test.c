@@ -12,7 +12,7 @@ static int test_capy_string_copy(void)
     ExpectNePtr(output.data, input.data);
     ExpectEqStr(output, input);
 
-    ExpectNotNull(Make(arena, char, 4000));
+    ExpectNotNull(Make(arena, char, capy_arena_available(arena)));
     ExpectErr(capy_string_copy(arena, &output, input));
 
     input.size = 0;
@@ -35,7 +35,7 @@ static int test_capy_string_lower(void)
     ExpectOk(capy_string_lower(arena, &output, input));
     ExpectEqStr(output, expected);
 
-    ExpectNotNull(Make(arena, char, 4040));
+    ExpectNotNull(Make(arena, char, capy_arena_available(arena)));
     ExpectErr(capy_string_lower(arena, &output, input));
 
     input.size = 0;
@@ -58,7 +58,7 @@ static int test_capy_string_upper(void)
     ExpectOk(capy_string_upper(arena, &output, input));
     ExpectEqStr(output, expected);
 
-    ExpectNotNull(Make(arena, char, 4040));
+    ExpectNotNull(Make(arena, char, capy_arena_available(arena)));
     ExpectErr(capy_string_upper(arena, &output, input));
 
     input.size = 0;
@@ -81,7 +81,7 @@ static int test_capy_string_join(void)
     ExpectOk(capy_string_join(arena, &output, " ", 3, input));
     ExpectEqStr(output, expected);
 
-    ExpectNotNull(Make(arena, char, 4040));
+    ExpectNotNull(Make(arena, char, capy_arena_available(arena)));
     ExpectErr(capy_string_join(arena, &output, " ", 3, input));
 
     ExpectOk(capy_string_join(arena, &output, " ", 0, input));

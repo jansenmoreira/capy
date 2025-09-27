@@ -31,6 +31,8 @@ static int test_capy_vec_insert(void)
     }
 
     ExpectErr(capy_vec_insert(arena, &vec, 0, MiB(1), NULL));
+    ExpectErr(capy_vec_insert(arena, &vec, 20, 10, NULL));
+    ExpectErr(capy_vec_insert(NULL, &vec, 0, 6, NULL));
 
     return true;
 }
@@ -51,7 +53,7 @@ static int test_capy_vec_delete(void)
     ExpectOk(capy_vec_insert(arena, &vec, 0, 11, Arr(int, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)));
     ExpectEqU(vec.size, 11);
 
-    ExpectOk(capy_vec_delete(&vec, 11, 0));
+    ExpectOk(capy_vec_delete(&vec, 5, 0));
     ExpectEqU(vec.size, 11);
 
     ExpectOk(capy_vec_delete(&vec, 0, 5));
@@ -59,6 +61,8 @@ static int test_capy_vec_delete(void)
 
     ExpectOk(capy_vec_delete(&vec, 0, 6));
     ExpectEqU(vec.size, 0);
+
+    ExpectErr(capy_vec_delete(&vec, 0, 1));
 
     return true;
 }

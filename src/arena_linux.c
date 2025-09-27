@@ -7,10 +7,11 @@
 
 struct capy_arena
 {
-    size_t size;
+    size_t used;
     size_t capacity;
     size_t min;
     size_t max;
+    size_t size;
     size_t page_size;
 };
 
@@ -32,16 +33,18 @@ capy_arena *capy_arena_init(size_t min, size_t max)
 
     if (mprotect(arena, min, PROT_READ | PROT_WRITE) == -1)
     {
+        munmap(arena, max);
         return NULL;
     }
 
     LogMem("capy_arena_init: ptr=%p capacity=%zu", (void *)arena, min);
 
-    arena->size = 40;
+    arena->used = sizeof(capy_arena);
     arena->capacity = min;
     arena->page_size = page_size;
     arena->min = min;
     arena->max = max;
+    arena->size = max;
 
     return arena;
 }
@@ -50,7 +53,7 @@ capy_err capy_arena_destroy(capy_arena *arena)
 {
     capy_assert(arena != NULL);
 
-    if (munmap(arena, arena->max) == -1)
+    if (munmap(arena, arena->size) == -1)
     {
         return ErrStd(errno);
     }
@@ -93,11 +96,32 @@ void *capy_arena_realloc(capy_arena *arena, void *data, size_t size, size_t new_
     return data;
 }
 
+void *capy_arena_create_stack(capy_arena *arena, size_t size)
+{
+    size = align_to(size, arena->page_size);
+
+    if (arena->max - arena->used < (size + arena->page_size))
+    {
+        return NULL;
+    }
+
+    char *stack = Cast(char *, arena) + arena->size - size;
+
+    if (mprotect(stack, size, PROT_READ | PROT_WRITE) == -1)
+    {
+        return NULL;
+    }
+
+    arena->max -= size + arena->page_size;
+
+    return stack + size;
+}
+
 void *capy_arena_alloc(capy_arena *arena, size_t size, size_t align, int zeroinit)
 {
     capy_assert(arena != NULL);
 
-    size_t begin = (align) ? align_to(arena->size, align) : arena->size;
+    size_t begin = (align) ? align_to(arena->used, align) : arena->used;
     size_t end = begin + size;
 
     if (end > arena->max)
@@ -109,7 +133,12 @@ void *capy_arena_alloc(capy_arena *arena, size_t size, size_t align, int zeroini
     {
         size_t capacity = next_pow2(end);
 
-        if (mprotect(arena, capacity, PROT_READ | PROT_WRITE))
+        if (capacity > arena->max)
+        {
+            capacity = arena->max;
+        }
+
+        if (mprotect(arena, capacity, PROT_READ | PROT_WRITE) == -1)
         {
             return NULL;
         }
@@ -119,7 +148,7 @@ void *capy_arena_alloc(capy_arena *arena, size_t size, size_t align, int zeroini
         arena->capacity = capacity;
     }
 
-    arena->size = end;
+    arena->used = end;
 
     char *data = Cast(char *, arena) + begin;
 
@@ -134,17 +163,17 @@ void *capy_arena_alloc(capy_arena *arena, size_t size, size_t align, int zeroini
 capy_err capy_arena_free(capy_arena *arena, void *addr)
 {
     capy_assert(Cast(uintptr_t, addr) >= Cast(uintptr_t, arena) + sizeof(capy_arena));
-    capy_assert(Cast(uintptr_t, addr) <= Cast(uintptr_t, arena) + arena->size);
+    capy_assert(Cast(uintptr_t, addr) <= Cast(uintptr_t, arena) + arena->used);
 
-    arena->size = Cast(size_t, Cast(char *, addr) - Cast(char *, arena));
+    arena->used = Cast(size_t, Cast(char *, addr) - Cast(char *, arena));
 
     if (arena->capacity > arena->min)
     {
         size_t threshold = arena->capacity >> 2;
 
-        if (arena->size <= threshold)
+        if (arena->used <= threshold)
         {
-            size_t capacity = next_pow2(arena->size << 1);
+            size_t capacity = next_pow2(arena->used << 1);
 
             if (capacity < arena->min)
             {
@@ -169,14 +198,17 @@ capy_err capy_arena_free(capy_arena *arena, void *addr)
     return Ok;
 }
 
-size_t capy_arena_size(capy_arena *arena)
+size_t capy_arena_available(capy_arena *arena)
 {
-    capy_assert(arena != NULL);
-    return arena->size;
+    return arena->max - arena->used;
+}
+
+size_t capy_arena_used(capy_arena *arena)
+{
+    return arena->used;
 }
 
 void *capy_arena_end(capy_arena *arena)
 {
-    capy_assert(arena != NULL);
-    return Cast(char *, arena) + arena->size;
+    return Cast(char *, arena) + arena->used;
 }

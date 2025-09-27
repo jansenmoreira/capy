@@ -24,7 +24,7 @@ static int test_capy_strset(void)
     ExpectEqS(capy_strset_has(strset, Str("foo")), false);
 
     ExpectOk(capy_strset_add(strset, Str("foo")));
-    ExpectNotNull(Make(arena, char, KiB(4) - capy_arena_size(arena)));
+    ExpectNotNull(Make(arena, char, capy_arena_available(arena)));
     ExpectErr(capy_strset_add(strset, Str("bar")));
 
     capy_arena_destroy(arena);
@@ -60,7 +60,7 @@ static int test_capy_strkvmap(void)
 
     ExpectOk(capy_strkvmap_set(strkvmap, Str("foo"), Str("bar")));
 
-    ExpectNotNull(Make(arena, char, KiB(4) - capy_arena_size(arena)));
+    ExpectNotNull(Make(arena, char, capy_arena_available(arena)));
     ExpectErr(capy_strkvmap_set(strkvmap, Str("bar"), Str("foo")));
 
     capy_arena_destroy(arena);
@@ -73,10 +73,10 @@ static int test_capy_strkvnmap(void)
 
     ExpectNull(capy_strkvnmap_init(arena, KiB(8)));
 
-    capy_strkvnmap *strkvnmap = capy_strkvnmap_init(arena, 4);
+    capy_strkvnmap *strkvnmap = capy_strkvnmap_init(arena, 2);
 
     ExpectNotNull(strkvnmap);
-    ExpectEqU(strkvnmap->capacity, 4);
+    ExpectEqU(strkvnmap->capacity, 2);
     ExpectEqU(strkvnmap->size, 0);
     ExpectEqPtr(strkvnmap->arena, arena);
     ExpectNotNull(strkvnmap->items);
@@ -113,7 +113,7 @@ static int test_capy_strkvnmap(void)
     ExpectOk(capy_strkvnmap_add(strkvnmap, Str("foo"), Str("bar")));
     ExpectOk(capy_strkvnmap_add(strkvnmap, Str("foo"), Str("baz")));
 
-    ExpectNotNull(Make(arena, char, KiB(4) - capy_arena_size(arena)));
+    ExpectNotNull(Make(arena, char, capy_arena_available(arena)));
     ExpectErr(capy_strkvnmap_add(strkvnmap, Str("foo"), Str("fail")));
     ExpectErr(capy_strkvnmap_add(strkvnmap, Str("baz"), Str("fail")));
     ExpectErr(capy_strkvnmap_set(strkvnmap, Str("baz"), Str("fail")));

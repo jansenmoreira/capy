@@ -38,7 +38,7 @@ static capy_err explode_handler(Unused capy_arena *arena, Unused capy_httpreq *r
         return err;
     }
 
-    void *data = capy_arena_alloc(arena, MiB(1) - capy_arena_size(arena), 0, 0);
+    void *data = capy_arena_alloc(arena, capy_arena_available(arena), 0, 0);
 
     if (data == NULL)
     {
@@ -88,6 +88,9 @@ static capy_err params_handler(Unused capy_arena *arena, capy_httpreq *request, 
 
 static capy_err echo_handler(capy_arena *arena, capy_httpreq *request, capy_httpresp *response)
 {
+    // struct timespec ts = {.tv_nsec = 60 * 1000 * 1000};
+    // nanosleep(&ts, NULL);
+
     capy_err err;
 
     capy_string uri = capy_uri_string(arena, request->uri);

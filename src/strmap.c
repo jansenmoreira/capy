@@ -5,15 +5,10 @@ static const char *DELETED = Cast(const char *, -1);
 
 MustCheck void *capy_strmap_get(capy_strmap *map, capy_string key)
 {
-    if (map == NULL)
-    {
-        return NULL;
-    }
-
     size_t k = capy_hash(key.data, key.size) % map->capacity;
     size_t j = 1;
 
-    for (;;)
+    while (j <= map->capacity)
     {
         char *item = map->items + (map->element_size * k);
         capy_string *item_key = Cast(capy_string *, item);
@@ -33,6 +28,8 @@ MustCheck void *capy_strmap_get(capy_strmap *map, capy_string key)
         k = (k + j) % map->capacity;
         j += 1;
     }
+
+    return NULL;
 }
 
 capy_err capy_strmap_set(capy_arena *arena, capy_strmap *map, const void *kv)
@@ -66,13 +63,9 @@ capy_err capy_strmap_set(capy_arena *arena, capy_strmap *map, const void *kv)
             char *item = map->items + (i * map->element_size);
             capy_string *item_key = Cast(capy_string *, item);
 
-            if (item_key->data != DELETED && item_key->size != 0)
+            if (item_key->size != 0)
             {
-                if (capy_strmap_set(arena, &tmp, item).code)
-                {
-                    // this should never fail
-                    abort();
-                }
+                Ignore capy_strmap_set(arena, &tmp, item).code;
             }
         }
 
@@ -86,7 +79,7 @@ capy_err capy_strmap_set(capy_arena *arena, capy_strmap *map, const void *kv)
 
     char *data = map->items;
 
-    for (;;)
+    while (j <= map->capacity)
     {
         char *item = data + (map->element_size * k);
         capy_string *item_key = Cast(capy_string *, item);
@@ -117,7 +110,7 @@ capy_err capy_strmap_set(capy_arena *arena, capy_strmap *map, const void *kv)
 
 void capy_strmap_delete(capy_strmap *map, capy_string key)
 {
-    void *item = capy_strmap_get(map, key);
+    char *item = capy_strmap_get(map, key);
 
     if (item != NULL)
     {

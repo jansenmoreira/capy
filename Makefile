@@ -10,7 +10,8 @@ FLAGS_CC := \
 	-Wmissing-declarations \
 	-Wno-missing-field-initializers \
 	-Wno-unused-function \
-	-Wno-implicit-fallthrough
+	-Wno-implicit-fallthrough \
+	-masm=intel
 
 FLAGS_LINUX := \
 	-DCAPY_OS_LINUX \
@@ -33,7 +34,7 @@ linux/build:
 	ar rcs ${TARGET}/libcapy.a ${TARGET}/capy.o
 	${CC} ${FLAGS} tests/test.c    -L${TARGET} ${LIBS} -o ${TARGET}/tests
 	${CC} ${FLAGS} examples/echo.c -L${TARGET} ${LIBS} -o ${TARGET}/ex_echo
-	echo "${FLAGS_CC} ${FLAGS_LINUX}" | tr ' ' '\n' > compile_flags.txt
+	echo "${FLAGS_CC} ${FLAGS_LINUX} -Wno-undefined-internal" | tr ' ' '\n' > compile_flags.txt
 
 
 .PHONY: linux/debug
@@ -95,3 +96,13 @@ update/rapidhash:
 	curl -fsSLO https://github.com/Nicoshev/rapidhash/raw/refs/heads/master/rapidhash.h && \
 	curl -fsSLO https://github.com/Nicoshev/rapidhash/raw/refs/heads/master/LICENSE
 
+
+.PHONY: update/libco
+update/libco:
+	mkdir -p include/libco
+	cd include/libco && \
+	curl -fsSLO https://github.com/higan-emu/libco/raw/refs/heads/master/amd64.c && \
+	curl -fsSLO https://github.com/higan-emu/libco/raw/refs/heads/master/libco.c && \
+	curl -fsSLO https://github.com/higan-emu/libco/raw/refs/heads/master/libco.h && \
+	curl -fsSLO https://github.com/higan-emu/libco/raw/refs/heads/master/valgrind.h && \
+	curl -fsSLO https://github.com/higan-emu/libco/raw/refs/heads/master/settings.h

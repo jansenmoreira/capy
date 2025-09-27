@@ -3,7 +3,7 @@
 
 MustCheck capy_err capy_vec_insert(capy_arena *arena, capy_vec *vec, size_t position, size_t count, const void *values)
 {
-    if (vec == NULL || position > vec->size)
+    if (position > vec->size)
     {
         return ErrStd(EINVAL);
     }
@@ -55,9 +55,14 @@ MustCheck capy_err capy_vec_insert(capy_arena *arena, capy_vec *vec, size_t posi
 
 capy_err capy_vec_delete(capy_vec *vec, size_t position, size_t count)
 {
-    if (vec == NULL || position + count > vec->size)
+    if (position + count > vec->size)
     {
         return ErrStd(EINVAL);
+    }
+
+    if (count == 0)
+    {
+        return Ok;
     }
 
     size_t tail_size = vec->size - (position + count);
@@ -70,5 +75,6 @@ capy_err capy_vec_delete(capy_vec *vec, size_t position, size_t count)
     }
 
     vec->size = vec->size - count;
+
     return Ok;
 }

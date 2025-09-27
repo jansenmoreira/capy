@@ -26,10 +26,10 @@ static int test_capy_arena_alloc(void)
     size_t s64 = Cast(size_t, capy_arena_alloc(arena, sizeof(int64_t), alignof(int64_t), true));
     ExpectEqU(s64 % alignof(int64_t), 0);
 
-    size_t size = capy_arena_size(arena);
+    size_t size = capy_arena_used(arena);
     void *chunk = capy_arena_alloc(arena, KiB(16), 0, false);
     ExpectNotNull(chunk);
-    ExpectGteU(capy_arena_size(arena) - size, KiB(16));
+    ExpectGteU(capy_arena_used(arena) - size, KiB(16));
 
     capy_arena_destroy(arena);
     return true;
@@ -55,22 +55,22 @@ static int test_capy_arena_realloc(void)
 {
     capy_arena *arena = capy_arena_init(0, KiB(32));
 
-    size_t size = capy_arena_size(arena);
+    size_t size = capy_arena_used(arena);
     void *data = capy_arena_alloc(arena, KiB(1), 8, false);
     ExpectNotNull(data);
     void *tmp = capy_arena_realloc(arena, data, KiB(1), KiB(2), false);
     ExpectEqPtr(data, tmp);
-    ExpectGteU(capy_arena_size(arena) - size, KiB(2));
+    ExpectGteU(capy_arena_used(arena) - size, KiB(2));
 
     data = tmp;
 
     ExpectNotNull(Make(arena, int, 1));
-    size = capy_arena_size(arena);
+    size = capy_arena_used(arena);
     tmp = capy_arena_realloc(arena, data, KiB(2), KiB(4), false);
 
     ExpectNotNull(tmp);
     ExpectNePtr(data, tmp);
-    ExpectGteU(capy_arena_size(arena) - size, KiB(2));
+    ExpectGteU(capy_arena_used(arena) - size, KiB(2));
 
     data = tmp;
 

@@ -22,12 +22,7 @@
             "name": "ex_echo",
             "program": "${workspaceFolder}/build/debug/ex_echo",
             "args": [
-                "-w",
-                "2",
-                "-c",
-                "64",
-                "-m",
-                "-v"
+                "-vms"
             ],
             "cwd": "${workspaceFolder}",
             "terminal": "integrated",

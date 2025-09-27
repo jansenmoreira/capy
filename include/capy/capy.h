@@ -94,7 +94,13 @@ MustCheck capy_err capy_arena_free(capy_arena *arena, void *addr);
 void *capy_arena_end(capy_arena *arena);
 
 // Returns the number of bytes allocated by an Arena.
-size_t capy_arena_size(capy_arena *arena);
+size_t capy_arena_used(capy_arena *arena);
+
+// Returns the number of bytes not allocated by an Arena.
+size_t capy_arena_available(capy_arena *arena);
+
+// Creates a stack of size `size` at the end Arena's memory region.
+void *capy_arena_create_stack(capy_arena *arena, size_t size);
 
 //
 // ASSERTIONS
@@ -651,6 +657,16 @@ MustCheck capy_err capy_json_array_push(capy_jsonarr *array, capy_jsonval value)
 
 capy_err capy_json_deserialize(capy_arena *arena, capy_jsonval *value, const char *input);
 capy_err capy_json_serialize(capy_buffer *buffer, capy_jsonval value, int tabsize);
+
+//
+// COROUTINES
+//
+
+typedef struct capy_co capy_co;
+
+capy_co *capy_co_active(void);
+capy_co *capy_co_init(capy_arena *arena, size_t size, void (*entrypoint)(void));
+void capy_co_switch(capy_co *co);
 
 #undef InOut
 #undef Out
