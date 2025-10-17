@@ -1,6 +1,8 @@
 #include <capy/capy.h>
 #include <capy/macros.h>
 
+// PUBLIC DEFINITIONS
+
 MustCheck capy_err capy_vec_insert(capy_arena *arena, capy_vec *vec, size_t position, size_t count, const void *values)
 {
     if (position > vec->size)

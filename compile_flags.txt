@@ -10,7 +10,6 @@
 -Wno-missing-field-initializers
 -Wno-unused-function
 -Wno-implicit-fallthrough
--masm=intel
 -DCAPY_OS_LINUX
 -D_GNU_SOURCE
--Wno-undefined-internal
+-Wno-unused-includes

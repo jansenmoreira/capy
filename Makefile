@@ -10,8 +10,7 @@ FLAGS_CC := \
 	-Wmissing-declarations \
 	-Wno-missing-field-initializers \
 	-Wno-unused-function \
-	-Wno-implicit-fallthrough \
-	-masm=intel
+	-Wno-implicit-fallthrough
 
 FLAGS_LINUX := \
 	-DCAPY_OS_LINUX \
@@ -20,7 +19,7 @@ FLAGS_LINUX := \
 LIBS := \
 	-lcapy
 
-CC := clang
+CC := gcc
 
 
 all: linux/release
@@ -34,7 +33,7 @@ linux/build:
 	ar rcs ${TARGET}/libcapy.a ${TARGET}/capy.o
 	${CC} ${FLAGS} tests/test.c    -L${TARGET} ${LIBS} -o ${TARGET}/tests
 	${CC} ${FLAGS} examples/echo.c -L${TARGET} ${LIBS} -o ${TARGET}/ex_echo
-	echo "${FLAGS_CC} ${FLAGS_LINUX} -Wno-undefined-internal" | tr ' ' '\n' > compile_flags.txt
+	echo "${FLAGS_CC} ${FLAGS_LINUX} -Wno-unused-includes" | tr ' ' '\n' > compile_flags.txt
 
 
 .PHONY: linux/debug

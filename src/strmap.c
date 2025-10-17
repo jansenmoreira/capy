@@ -1,7 +1,8 @@
-#include <capy/capy.h>
-#include <capy/macros.h>
+#include "capy.h"
 
 static const char *DELETED = Cast(const char *, -1);
+
+// PUBLIC DEFINITIONS
 
 MustCheck void *capy_strmap_get(capy_strmap *map, capy_string key)
 {

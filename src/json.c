@@ -1,5 +1,6 @@
-#include <capy/capy.h>
-#include <capy/macros.h>
+#include "capy.h"
+
+// PUBLIC DEFINITIONS
 
 capy_jsonval capy_json_null(void)
 {

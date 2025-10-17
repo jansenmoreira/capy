@@ -1,18 +1,25 @@
 #include "assert.c"
 #include "base64.c"
 #include "buffer.c"
-#include "coroutines.c"
+#include "error.c"
 #include "hash.c"
+#include "http.c"
 #include "json.c"
 #include "logs.c"
-#include "math.c"
 #include "string.c"
 #include "strmap.c"
+#include "task.c"
 #include "uri.c"
+#include "utils.c"
 #include "vec.c"
 
 #ifdef CAPY_OS_LINUX
 #include "arena_linux.c"
 #include "error_linux.c"
 #include "http_linux.c"
+#include "task_linux.c"
+#endif
+
+#if defined(CAPY_OS_LINUX) && defined(__x86_64__)
+#include "task_linux_amd64.c"
 #endif

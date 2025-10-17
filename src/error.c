@@ -1,7 +1,8 @@
-#include <capy/capy.h>
-#include <capy/macros.h>
+#include "capy.h"
 
 #define CAPY_EBUFSIZE 512
+
+// PUBLIC DEFINITIONS
 
 static char *capy_err_buf(void)
 {

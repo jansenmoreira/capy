@@ -1,14 +1,19 @@
 #include <capy/capy.h>
 #include <capy/macros.h>
 
-#define URI_GEN_DELIM 0x01
-#define URI_SUB_DELIM 0x02
-#define URI_UNRESERVED 0x04
-#define URI_SCHEME_BEGIN 0x08
-#define URI_SCHEME_CONTINUE 0x10
-#define URI_HEXDIGIT 0x20
-#define URI_DIGIT 0x40
-#define URI_PCT_ENCODED 0x80
+enum
+{
+    URI_GEN_DELIM = (1 << 0),
+    URI_SUB_DELIM = (1 << 1),
+    URI_UNRESERVED = (1 << 2),
+    URI_SCHEME_BEGIN = (1 << 3),
+    URI_SCHEME_CONTINUE = (1 << 4),
+    URI_HEXDIGIT = (1 << 5),
+    URI_DIGIT = (1 << 6),
+    URI_PCT_ENCODED = (1 << 7),
+};
+
+// INTERNAL VARIABLES
 
 static uint8_t uri_char_categories_[256] = {
     ['#'] = URI_GEN_DELIM,
@@ -113,7 +118,9 @@ static uint8_t uri_char_categories_[256] = {
     ['z'] = URI_UNRESERVED | URI_SCHEME_BEGIN | URI_SCHEME_CONTINUE,
 };
 
-static inline uint8_t uri_char_categories(char c)
+// INTERNAL DEFINITIONS
+
+static uint8_t uri_char_categories(char c)
 {
     return uri_char_categories_[(uint8_t)(c)];
 }
@@ -250,32 +257,32 @@ static capy_string uri_parse_dec_octet(capy_string input)
     return input;
 }
 
-static inline size_t uri_valid_userinfo(capy_string userinfo)
+static size_t uri_valid_userinfo(capy_string userinfo)
 {
     return uri_string_validate(userinfo, URI_UNRESERVED | URI_SUB_DELIM | URI_PCT_ENCODED, ":");
 }
 
-static inline size_t uri_valid_port(capy_string port)
+static size_t uri_valid_port(capy_string port)
 {
     return uri_string_validate(port, URI_DIGIT, NULL);
 }
 
-static inline size_t uri_valid_fragment(capy_string fragment)
+static size_t uri_valid_fragment(capy_string fragment)
 {
     return uri_string_validate(fragment, URI_UNRESERVED | URI_SUB_DELIM | URI_PCT_ENCODED, ":@/?");
 }
 
-static inline size_t uri_valid_query(capy_string query)
+static size_t uri_valid_query(capy_string query)
 {
     return uri_string_validate(query, URI_UNRESERVED | URI_SUB_DELIM | URI_PCT_ENCODED, ":@/?");
 }
 
-static inline size_t uri_valid_reg_name(capy_string host)
+static size_t uri_valid_reg_name(capy_string host)
 {
     return uri_string_validate(host, URI_UNRESERVED | URI_SUB_DELIM | URI_PCT_ENCODED, NULL);
 }
 
-static inline size_t uri_valid_segment(capy_string segment)
+static size_t uri_valid_segment(capy_string segment)
 {
     return uri_string_validate(segment, URI_UNRESERVED | URI_PCT_ENCODED | URI_SUB_DELIM, ":@");
 }
@@ -491,6 +498,8 @@ static capy_string uri_path_merge(capy_arena *arena, capy_string base, capy_stri
 
     return (capy_string){.data = buffer, .size = size};
 }
+
+// PUBLIC DEFINITIONS
 
 capy_err capy_uri_normalize(capy_arena *arena, capy_string *output, capy_string input, int lowercase)
 {

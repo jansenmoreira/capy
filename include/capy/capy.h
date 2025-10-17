@@ -3,6 +3,7 @@
 
 #include <inttypes.h>
 #include <stdalign.h>
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -16,7 +17,9 @@
 
 size_t align_to(size_t v, size_t n);
 size_t next_pow2(size_t v);
-int64_t timespec_diff(struct timespec a, struct timespec b);
+int64_t capy_timespec_diff(struct timespec a, struct timespec b);
+struct timespec capy_timespec_addms(struct timespec t, uint64_t ms);
+struct timespec capy_now(void);
 void nanoseconds_normalize(int64_t *ns, const char **unit);
 
 #ifdef __GNUC__
@@ -562,10 +565,10 @@ typedef struct capy_httpserveropt
     capy_httproute *routes;
 
     size_t workers;
-    size_t connections;
 
     size_t line_buffer_size;
     size_t mem_connection_max;
+    uint64_t inactivity_timeout;
 
     capy_httpprotocol protocol;
     const char *certificate_chain;
@@ -662,11 +665,22 @@ capy_err capy_json_serialize(capy_buffer *buffer, capy_jsonval value, int tabsiz
 // COROUTINES
 //
 
-typedef struct capy_co capy_co;
+#ifdef CAPY_OS_LINUX
+typedef int capy_fd;
+#endif
 
-capy_co *capy_co_active(void);
-capy_co *capy_co_init(capy_arena *arena, size_t size, void (*entrypoint)(void));
-void capy_co_switch(capy_co *co);
+typedef struct capy_task capy_task;
+
+capy_task *capy_task_init(capy_arena *arena, size_t size, void (*entrypoint)(void), void *ctx);
+void *capy_task_ctx(capy_task *task);
+bool capy_task_canceled(void);
+void capy_task_set_cleanup(capy_task *task, void (*cleanup)(void *));
+capy_err capy_task_enqueue(capy_task *task, capy_fd fd, bool write, uint64_t timeout);
+capy_err capy_task_waitfd(capy_fd fd, bool write, uint64_t timeout);
+capy_err capy_task_sleep(uint64_t ms);
+capy_err capy_tasks_join(Unused int timeout);
+capy_task *capy_task_active(void);
+size_t capy_thread_id(void);
 
 #undef InOut
 #undef Out

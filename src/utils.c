@@ -1,5 +1,6 @@
-#include <capy/capy.h>
-#include <capy/macros.h>
+#include "capy.h"
+
+// PUBLIC DEFINITIONS
 
 size_t align_to(size_t v, size_t n)
 {
@@ -28,11 +29,30 @@ size_t next_pow2(size_t v)
     return v;
 }
 
-int64_t timespec_diff(struct timespec a, struct timespec b)
+int64_t capy_timespec_diff(struct timespec a, struct timespec b)
 {
     int64_t ns = Cast(int64_t, a.tv_sec - b.tv_sec) * 1000000000;
     ns += Cast(int64_t, a.tv_nsec - b.tv_nsec);
     return ns;
+}
+
+struct timespec capy_timespec_addms(struct timespec t, uint64_t ms)
+{
+    if (ms == 0)
+    {
+        ms = Years(50);
+    }
+
+    t.tv_sec += Cast(int64_t, ms) / 1000;
+    t.tv_nsec += (Cast(int64_t, ms) % 1000) * 1000000;
+    return t;
+}
+
+struct timespec capy_now(void)
+{
+    struct timespec now;
+    timespec_get(&now, TIME_UTC);
+    return now;
 }
 
 void nanoseconds_normalize(int64_t *ns, const char **unit)

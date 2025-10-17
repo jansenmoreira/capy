@@ -38,6 +38,12 @@
 #define GiB(v) ((v) * 1024 * 1024 * 1024)
 #define TiB(v) ((v) * 1024 * 1024 * 1024 * 1024)
 
+#define Seconds(v) (Cast(uint64_t, v) * 1000)
+#define Minutes(v) (Cast(uint64_t, v) * 1000 * 60)
+#define Hours(v) (Cast(uint64_t, v) * 1000 * 60 * 60)
+#define Days(v) (Cast(uint64_t, v) * 1000 * 60 * 60 * 24)
+#define Years(v) (Cast(uint64_t, v) * 1000 * 60 * 60 * 24 * 365)
+
 #define Make(arena, T, size) \
     (capy_arena_alloc((arena), sizeof(T) * (size), alignof(T), true))
 

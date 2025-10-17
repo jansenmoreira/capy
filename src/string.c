@@ -1,7 +1,8 @@
-#include <capy/capy.h>
-#include <capy/macros.h>
+#include "capy.h"
 
 #define capy_string_empty ((capy_string){.data = NULL, .size = 0})
+
+// PUBLIC DEFINITIONS
 
 size_t capy_string_parse_hexdigits(uint64_t *value, capy_string input)
 {

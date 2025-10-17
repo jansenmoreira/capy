@@ -1,5 +1,6 @@
-#include <capy/capy.h>
-#include <capy/macros.h>
+#include "capy.h"
+
+// PUBLIC DEFINITIONS
 
 capy_buffer *capy_buffer_init(capy_arena *arena, size_t capacity)
 {

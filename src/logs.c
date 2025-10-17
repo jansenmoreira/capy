@@ -1,17 +1,18 @@
-#include <capy/capy.h>
-#include <capy/macros.h>
+#include "capy.h"
 
-typedef struct logger_t
-{
-    FILE *file;
-    unsigned int mask;
-    const char *timefmt;
-} logger_t;
+// INTERNAL VARIABLES
 
-static logger_t logger = {
-    .file = NULL,
-    .mask = 0,
+static logger_t logger = {.file = NULL, .mask = 0};
+
+static const char *levelmsg[] = {
+    [CAPY_LOG_MEM] = "\x1b[32m[MEM]\x1b[0m",
+    [CAPY_LOG_DEBUG] = "\x1b[35m[DBG]\x1b[0m",
+    [CAPY_LOG_INFO] = "[INF]",
+    [CAPY_LOG_WARNING] = "\x1b[33m[WRN]\x1b[0m",
+    [CAPY_LOG_ERROR] = "\x1b[31m[ERR]\x1b[0m",
 };
+
+// PUBLIC DEFINIITIONS
 
 void capy_logger_init(FILE *file)
 {
@@ -50,14 +51,6 @@ void capy_logger_time_format(const char *fmt)
     logger.timefmt = fmt;
 }
 
-static const char *levelmsg[] = {
-    [CAPY_LOG_MEM] = "\x1b[32m[MEM]\x1b[0m",
-    [CAPY_LOG_DEBUG] = "\x1b[35m[DBG]\x1b[0m",
-    [CAPY_LOG_INFO] = "[INF]",
-    [CAPY_LOG_WARNING] = "\x1b[33m[WRN]\x1b[0m",
-    [CAPY_LOG_ERROR] = "\x1b[31m[ERR]\x1b[0m",
-};
-
 void capy_log(capy_loglevel level, const char *format, ...)
 {
     thread_local static char log_buffer[KiB(2)];
@@ -67,8 +60,7 @@ void capy_log(capy_loglevel level, const char *format, ...)
         ssize_t max = KiB(2);
         ssize_t n = 0;
 
-        struct timespec timestamp;
-        timespec_get(&timestamp, TIME_UTC);
+        struct timespec timestamp = capy_now();
 
         n += (ssize_t)strftime(log_buffer + n, (size_t)max, logger.timefmt, gmtime(&timestamp.tv_sec));
         max = max - n;

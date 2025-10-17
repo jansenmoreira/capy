@@ -88,8 +88,7 @@ static capy_err params_handler(Unused capy_arena *arena, capy_httpreq *request, 
 
 static capy_err echo_handler(capy_arena *arena, capy_httpreq *request, capy_httpresp *response)
 {
-    // struct timespec ts = {.tv_nsec = 60 * 1000 * 1000};
-    // nanosleep(&ts, NULL);
+    // capy_task_sleep(50);
 
     capy_err err;
 
@@ -195,9 +194,6 @@ int main(int argc, char *argv[])
                 break;
             case 'w':
                 options.workers = (size_t)(strtoull(optarg, NULL, 10));
-                break;
-            case 'c':
-                options.connections = (size_t)(strtoull(optarg, NULL, 10));
                 break;
             case 'a':
                 options.host = optarg;

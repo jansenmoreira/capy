@@ -1,12 +1,11 @@
-#include <capy/capy.h>
-#include <capy/macros.h>
+#include "capy.h"
 
-// STATIC
+// INTERNAL VARIABLES
 
 static char base64_std_enc[65] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 static char base64_url_enc[65] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
-// DEFINITIONS
+// PUBLIC DEFINITIONS
 
 size_t capy_base64(char *output, const char *encoding, size_t n, const char *input, int padding)
 {

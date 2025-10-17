@@ -1,24 +1,33 @@
 package main
 
 import (
-    "fmt"
-    "net/http"
-    "os"
-    "encoding/base64"
-    "io"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"time"
 )
 
 func headers(w http.ResponseWriter, req *http.Request) {
-    for name, headers := range req.Header {
-        for _, h := range headers {
-            fmt.Fprintf(w, "%v: %v\n", name, h)
-        }
-    }
-    body, _ := io.ReadAll(req.Body)
-    fmt.Fprintf(w, "%s", base64.URLEncoding.EncodeToString(body))
+	time.Sleep(50 * time.Millisecond)
+
+	for name, headers := range req.Header {
+		for _, h := range headers {
+			fmt.Fprintf(w, "%v: %v\n", name, h)
+		}
+	}
+	body, _ := io.ReadAll(req.Body)
+
+	var v any
+
+	json.Unmarshal(body, &v)
+	res, _ := json.Marshal(v)
+
+	fmt.Fprintf(w, "%s", string(res))
 }
 
 func main() {
-    http.HandleFunc("/", headers)
-    http.ListenAndServe(os.Args[1], nil)
+	http.HandleFunc("/", headers)
+	http.ListenAndServe(os.Args[1], nil)
 }

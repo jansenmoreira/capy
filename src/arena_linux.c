@@ -1,21 +1,14 @@
-#include <capy/capy.h>
-#include <capy/macros.h>
+#include <stdatomic.h>
 #include <sys/mman.h>
 #include <unistd.h>
 
-// TYPES
+#include "capy.h"
 
-struct capy_arena
-{
-    size_t used;
-    size_t capacity;
-    size_t min;
-    size_t max;
-    size_t size;
-    size_t page_size;
-};
+// INTERNAL VARIABLES
 
-// DEFINITIONS
+static atomic_int arena_allocs = 0;
+
+// PUBLIC DEFINITIONS
 
 capy_arena *capy_arena_init(size_t min, size_t max)
 {
@@ -37,7 +30,8 @@ capy_arena *capy_arena_init(size_t min, size_t max)
         return NULL;
     }
 
-    LogMem("capy_arena_init: ptr=%p capacity=%zu", (void *)arena, min);
+    int count = atomic_fetch_add(&arena_allocs, 1);
+    LogMem("capy_arena_init: capacity=%zu count=%d", min, count + 1);
 
     arena->used = sizeof(capy_arena);
     arena->capacity = min;
@@ -57,6 +51,9 @@ capy_err capy_arena_destroy(capy_arena *arena)
     {
         return ErrStd(errno);
     }
+
+    int count = atomic_fetch_sub(&arena_allocs, 1);
+    LogMem("capy_arena_destroy: count=%d", count - 1);
 
     return Ok;
 }
@@ -105,9 +102,14 @@ void *capy_arena_create_stack(capy_arena *arena, size_t size)
         return NULL;
     }
 
-    char *stack = Cast(char *, arena) + arena->size - size;
+    char *stack = Cast(char *, arena) + arena->max - size;
 
     if (mprotect(stack, size, PROT_READ | PROT_WRITE) == -1)
+    {
+        return NULL;
+    }
+
+    if (mprotect(stack - arena->page_size, arena->page_size, PROT_NONE) == -1)
     {
         return NULL;
     }

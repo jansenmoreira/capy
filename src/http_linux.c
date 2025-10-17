@@ -1,6 +1,4 @@
 #include <arpa/inet.h>
-#include <capy/capy.h>
-#include <capy/macros.h>
 #include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -8,15 +6,14 @@
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <pthread.h>
-#include <sys/epoll.h>
 #include <sys/signalfd.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "http.c"
+#include "capy.h"
 
-#define SIGNAL_EPOLL_EVENT -1ULL
+// STATIC DEFINITIONS
 
 static capy_err http_gai_error(int err)
 {
@@ -31,33 +28,6 @@ static int http_ssl_log_error(const char *buffer, size_t len, Unused void *userd
     return 0;
 }
 
-typedef struct tcpconn
-{
-    int socket;
-    struct ssl_st *ssl;
-    bool ssl_fatal;
-    int want_write;
-    struct httpworker *worker;
-    size_t connId;
-} tcpconn;
-
-static capy_err httpconn_update_epoll(httpconn *conn, int epoll_fd, int op, uint32_t events)
-{
-    events |= (conn->tcp->want_write) ? EPOLLOUT : EPOLLIN;
-
-    struct epoll_event client_event = {
-        .events = events,
-        .data.ptr = conn,
-    };
-
-    if (epoll_ctl(epoll_fd, op, conn->tcp->socket, &client_event) == -1)
-    {
-        return ErrWrap(ErrStd(errno), "Failed to update workers epoll");
-    }
-
-    return Ok;
-}
-
 static capy_err tcpconn_close(tcpconn *conn)
 {
     if (conn->ssl)
@@ -70,146 +40,181 @@ static capy_err tcpconn_close(tcpconn *conn)
     return Ok;
 }
 
-static capy_err tcpconn_recv_tls(tcpconn *conn, capy_buffer *buffer)
+static capy_err tcpconn_recv(tcpconn *conn, capy_buffer *buffer, uint64_t timeout)
 {
-    ERR_clear_error();
+    if (conn->ssl)
+    {
+        return tcpconn_recv_tls(conn, buffer, timeout);
+    }
 
+    size_t bytes_wanted = buffer->capacity - buffer->size;
+
+    for (;;)
+    {
+        ssize_t bytes_read = recv(conn->socket, buffer->data + buffer->size, bytes_wanted, 0);
+
+        if (bytes_read == -1)
+        {
+            capy_err err = ErrStd(errno);
+
+            if (err.code == EWOULDBLOCK || err.code == EAGAIN)
+            {
+                capy_err err = capy_task_waitfd(conn->socket, false, timeout);
+
+                if (err.code)
+                {
+                    return err;
+                }
+
+                continue;
+            }
+
+            return err;
+        }
+
+        buffer->size += Cast(size_t, bytes_read);
+        return Ok;
+    }
+}
+
+static capy_err tcpconn_recv_tls(tcpconn *conn, capy_buffer *buffer, uint64_t timeout)
+{
     size_t bytes_wanted = buffer->capacity - buffer->size;
     size_t bytes_read = 0;
 
-    if (!SSL_read_ex(conn->ssl, buffer->data + buffer->size, bytes_wanted, &bytes_read))
+    for (;;)
     {
-        int ssl_err = SSL_get_error(conn->ssl, 0);
+        ERR_clear_error();
 
-        switch (ssl_err)
+        if (!SSL_read_ex(conn->ssl, buffer->data + buffer->size, bytes_wanted, &bytes_read))
         {
-            case SSL_ERROR_WANT_READ:
-            case SSL_ERROR_WANT_WRITE:
-            {
-                conn->want_write = (ssl_err == SSL_ERROR_WANT_WRITE);
-                return ErrStd(EWOULDBLOCK);
-            }
+            int ssl_err = SSL_get_error(conn->ssl, 0);
 
-            case SSL_ERROR_ZERO_RETURN:
+            switch (ssl_err)
             {
-                return Ok;
-            }
+                case SSL_ERROR_WANT_READ:
+                case SSL_ERROR_WANT_WRITE:
+                {
+                    capy_err err = capy_task_waitfd(conn->socket, ssl_err == SSL_ERROR_WANT_WRITE, timeout);
 
-            case SSL_ERROR_SYSCALL:
-            {
-                conn->ssl_fatal = true;
-                return ErrStd(errno);
-            }
+                    if (err.code)
+                    {
+                        return err;
+                    }
 
-            default:
-            {
-                conn->ssl_fatal = true;
-                return ErrStd(EPROTO);
+                    continue;
+                }
+
+                case SSL_ERROR_ZERO_RETURN:
+                {
+                    return Ok;
+                }
+
+                case SSL_ERROR_SYSCALL:
+                {
+                    conn->ssl_fatal = true;
+                    return ErrStd(errno);
+                }
+
+                default:
+                {
+                    conn->ssl_fatal = true;
+                    return ErrStd(EPROTO);
+                }
             }
         }
-    }
 
-    buffer->size += Cast(size_t, bytes_read);
-    return Ok;
+        buffer->size += Cast(size_t, bytes_read);
+        return Ok;
+    }
 }
 
-static capy_err tcpconn_recv(tcpconn *conn, capy_buffer *buffer)
+static capy_err tcpconn_send(tcpconn *conn, capy_buffer *buffer, uint64_t timeout)
 {
     if (conn->ssl)
     {
-        return tcpconn_recv_tls(conn, buffer);
+        return tcpconn_send_tls(conn, buffer, timeout);
     }
 
     capy_err err;
 
-    size_t bytes_wanted = buffer->capacity - buffer->size;
-    ssize_t bytes_read = recv(conn->socket, buffer->data + buffer->size, bytes_wanted, 0);
-
-    if (bytes_read == -1)
+    for (;;)
     {
-        err = ErrStd(errno);
+        ssize_t bytes_written = send(conn->socket, buffer->data, buffer->size, 0);
 
-        if (err.code == EWOULDBLOCK || err.code == EAGAIN)
+        if (bytes_written == -1)
         {
-            conn->want_write = false;
-            return ErrStd(EWOULDBLOCK);
+            err = ErrStd(errno);
+
+            if (err.code == EWOULDBLOCK || err.code == EAGAIN)
+            {
+                capy_err err = capy_task_waitfd(conn->socket, true, timeout);
+
+                if (err.code)
+                {
+                    return err;
+                }
+
+                continue;
+            }
+
+            return err;
         }
 
-        return err;
+        capy_buffer_shl(buffer, Cast(size_t, bytes_written));
+        return Ok;
     }
-
-    buffer->size += Cast(size_t, bytes_read);
-    return Ok;
 }
 
-static capy_err tcpconn_send_tls(tcpconn *conn, capy_buffer *buffer)
+static capy_err tcpconn_send_tls(tcpconn *conn, capy_buffer *buffer, uint64_t timeout)
 {
-    ERR_clear_error();
-
     size_t bytes_written = 0;
 
-    if (!SSL_write_ex(conn->ssl, buffer->data, buffer->size, &bytes_written))
+    for (;;)
     {
-        int ssl_err = SSL_get_error(conn->ssl, 0);
+        ERR_clear_error();
 
-        switch (ssl_err)
+        if (!SSL_write_ex(conn->ssl, buffer->data, buffer->size, &bytes_written))
         {
-            case SSL_ERROR_WANT_READ:
-            case SSL_ERROR_WANT_WRITE:
-            {
-                conn->want_write = (ssl_err == SSL_ERROR_WANT_WRITE);
-                return ErrStd(EWOULDBLOCK);
-            }
+            int ssl_err = SSL_get_error(conn->ssl, 0);
 
-            case SSL_ERROR_ZERO_RETURN:
+            switch (ssl_err)
             {
-                return Ok;
-            }
+                case SSL_ERROR_WANT_READ:
+                case SSL_ERROR_WANT_WRITE:
+                {
+                    capy_err err = capy_task_waitfd(conn->socket, ssl_err == SSL_ERROR_WANT_WRITE, timeout);
 
-            case SSL_ERROR_SYSCALL:
-            {
-                conn->ssl_fatal = true;
-                return ErrStd(errno);
-            }
+                    if (err.code)
+                    {
+                        return err;
+                    }
 
-            default:
-            {
-                conn->ssl_fatal = true;
-                return ErrStd(EPROTO);
+                    continue;
+                }
+
+                case SSL_ERROR_ZERO_RETURN:
+                {
+                    return Ok;
+                }
+
+                case SSL_ERROR_SYSCALL:
+                {
+                    conn->ssl_fatal = true;
+                    return ErrStd(errno);
+                }
+
+                default:
+                {
+                    conn->ssl_fatal = true;
+                    return ErrStd(EPROTO);
+                }
             }
         }
+
+        capy_buffer_shl(buffer, Cast(size_t, bytes_written));
+        return Ok;
     }
-
-    capy_buffer_shl(buffer, Cast(size_t, bytes_written));
-    return Ok;
-}
-
-static capy_err tcpconn_send(tcpconn *conn, capy_buffer *buffer)
-{
-    if (conn->ssl)
-    {
-        return tcpconn_send_tls(conn, buffer);
-    }
-
-    capy_err err;
-
-    ssize_t bytes_written = send(conn->socket, buffer->data, buffer->size, 0);
-
-    if (bytes_written == -1)
-    {
-        err = ErrStd(errno);
-
-        if (err.code == EWOULDBLOCK || err.code == EAGAIN)
-        {
-            conn->want_write = true;
-            return ErrStd(EWOULDBLOCK);
-        }
-
-        return err;
-    }
-
-    capy_buffer_shl(buffer, Cast(size_t, bytes_written));
-    return Ok;
 }
 
 static capy_err tcpconn_shutdown(tcpconn *conn)
@@ -223,109 +228,17 @@ static capy_err tcpconn_shutdown(tcpconn *conn)
     return Ok;
 }
 
-typedef struct httpworker
+static void tcpconn_cleanup(void *data)
 {
-    size_t id;
-    pthread_t thread_id;
-    int epoll_fd;
-    sigset_t *mask;
-    struct httpconn **connections;
-} httpworker;
-
-static void *httpworker_loop(void *data)
-{
-    capy_err err;
-
-    httpworker *worker = data;
-
-    struct epoll_event events[16];
-
-    for (;;)
-    {
-        int events_count = epoll_pwait(worker->epoll_fd, events, 16, -1, worker->mask);
-
-        if (events_count == -1)
-        {
-            err = ErrStd(errno);
-
-            if (err.code == EINTR)
-            {
-                continue;
-            }
-
-            LogErr("Failed to receive events from epoll (worker): %s", err.msg);
-            abort();
-        }
-
-        for (int i = 0; i < events_count; i++)
-        {
-            if (events[i].data.u64 == SIGNAL_EPOLL_EVENT)
-            {
-                return 0;
-            }
-
-            httpconn *conn = events[i].data.ptr;
-
-            if (conn->tcp->worker == NULL)
-            {
-                conn->tcp->worker = worker;
-                conn->co_parent = capy_co_active();
-
-                bool full = true;
-
-                for (size_t i = 0; i < conn->options->connections; i++)
-                {
-                    if (worker->connections[i] == NULL)
-                    {
-                        worker->connections[i] = conn;
-                        conn->conn_id = i;
-                        full = false;
-                        break;
-                    }
-                }
-
-                if (full)
-                {
-                    httpconn_close(conn);
-                    capy_arena_destroy(conn->arena);
-                    continue;
-                }
-            }
-
-            active_conn = conn;
-            capy_co_switch(conn->co_self);
-
-            if (conn->tcp->socket != 0)
-            {
-                httpconn_update_epoll(conn, worker->epoll_fd, EPOLL_CTL_MOD, EPOLLET | EPOLLONESHOT);
-            }
-            else
-            {
-                worker->connections[conn->conn_id] = NULL;
-                capy_arena_destroy(conn->arena);
-            }
-        }
-    }
+    httpconn *conn = data;
+    capy_arena_destroy(conn->arena);
 }
 
-typedef struct httpserver
+static void tcpconn_run(void)
 {
-    capy_arena *arena;
-    capy_httprouter *router;
-    int fd;
-    int epoll_fd;
-    int workers_epoll_fd;
-    int signal_fd;
-    sigset_t signals;
-    httpworker *workers;
-    capy_httpserveropt options;
-    struct ssl_ctx_st *ssl_ctx;
-} httpserver;
-
-static capy_err httpserver_free_openssl(httpserver *server)
-{
-    SSL_CTX_free(server->ssl_ctx);
-    return Ok;
+    capy_task *task = capy_task_active();
+    httpconn *conn = capy_task_ctx(task);
+    httpconn_run(conn);
 }
 
 static capy_err httpserver_init_openssl(httpserver *server)
@@ -341,7 +254,6 @@ static capy_err httpserver_init_openssl(httpserver *server)
     if (!SSL_CTX_set_min_proto_version(server->ssl_ctx, TLS1_2_VERSION))
     {
         ERR_print_errors_cb(http_ssl_log_error, NULL);
-        SSL_CTX_free(server->ssl_ctx);
         return ErrFmt(EPROTO, "Failed to set the minimum TLS protocol version");
     }
 
@@ -352,14 +264,12 @@ static capy_err httpserver_init_openssl(httpserver *server)
     if (!SSL_CTX_use_certificate_chain_file(server->ssl_ctx, server->options.certificate_chain))
     {
         ERR_print_errors_cb(http_ssl_log_error, NULL);
-        SSL_CTX_free(server->ssl_ctx);
         return ErrFmt(EPROTO, "Failed to load the server certificate chain file");
     }
 
     if (!SSL_CTX_use_PrivateKey_file(server->ssl_ctx, server->options.certificate_key, SSL_FILETYPE_PEM))
     {
         ERR_print_errors_cb(http_ssl_log_error, NULL);
-        SSL_CTX_free(server->ssl_ctx);
         return ErrFmt(EPROTO, "Failed to load the server private key file");
     }
 
@@ -381,11 +291,6 @@ static capy_httpserveropt httpserver_options_with_defaults(capy_httpserveropt op
         options.workers = (size_t)(sysconf(_SC_NPROCESSORS_CONF));
     }
 
-    if (!options.connections)
-    {
-        options.connections = 2048;
-    }
-
     if (options.host == NULL)
     {
         options.host = "127.0.0.1";
@@ -394,6 +299,11 @@ static capy_httpserveropt httpserver_options_with_defaults(capy_httpserveropt op
     if (options.port == NULL)
     {
         options.port = "8080";
+    }
+
+    if (!options.inactivity_timeout)
+    {
+        options.inactivity_timeout = Seconds(30);
     }
 
     if (!options.line_buffer_size)
@@ -409,8 +319,10 @@ static capy_httpserveropt httpserver_options_with_defaults(capy_httpserveropt op
     return options;
 }
 
-static capy_err httpserver_bind(httpserver *server)
+static capy_err httpserver_listen(int *serverfd, capy_httpserveropt *options)
 {
+    *serverfd = -1;
+
     struct addrinfo hints = {
         .ai_family = AF_INET,
         .ai_socktype = SOCK_STREAM,
@@ -419,7 +331,7 @@ static capy_err httpserver_bind(httpserver *server)
 
     struct addrinfo *addresses;
 
-    capy_err err = http_gai_error(getaddrinfo(server->options.host, server->options.port, &hints, &addresses));
+    capy_err err = http_gai_error(getaddrinfo(options->host, options->port, &hints, &addresses));
 
     if (err.code)
     {
@@ -444,94 +356,47 @@ static capy_err httpserver_bind(httpserver *server)
             break;
         }
 
+        if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, (int[]){1}, sizeof(int)) == -1)
+        {
+            err = ErrStd(errno);
+            break;
+        }
+
         if (bind(fd, address->ai_addr, address->ai_addrlen) == -1)
         {
             err = ErrStd(errno);
             continue;
         }
 
-        server->fd = fd;
+        *serverfd = fd;
         break;
     }
 
     freeaddrinfo(addresses);
 
+    if (err.code)
+    {
+        return err;
+    }
+
+    int flags = fcntl(*serverfd, F_GETFL);
+
+    if (flags == -1)
+    {
+        return ErrStd(errno);
+    }
+
+    if (fcntl(*serverfd, F_SETFL, flags | O_NONBLOCK) == -1)
+    {
+        return ErrStd(errno);
+    }
+
+    if (listen(*serverfd, 2048) == -1)
+    {
+        return ErrStd(errno);
+    }
+
     return err;
-}
-
-static capy_err httpserver_create_signal_fd(httpserver *server)
-{
-    sigemptyset(&server->signals);
-    sigaddset(&server->signals, SIGINT);
-    sigaddset(&server->signals, SIGQUIT);
-    sigprocmask(SIG_BLOCK, &server->signals, NULL);
-
-    server->signal_fd = signalfd(-1, &server->signals, 0);
-
-    if (server->signal_fd == -1)
-    {
-        return ErrStd(errno);
-    }
-
-    return Ok;
-}
-
-static capy_err httpserver_create_epoll(httpserver *server)
-{
-    struct epoll_event event;
-
-    server->epoll_fd = epoll_create1(0);
-
-    if (server->epoll_fd == -1)
-    {
-        return ErrStd(errno);
-    }
-
-    event = (struct epoll_event){
-        .events = EPOLLIN,
-        .data.u64 = SIGNAL_EPOLL_EVENT,
-    };
-
-    if (epoll_ctl(server->epoll_fd, EPOLL_CTL_ADD, server->signal_fd, &event) == -1)
-    {
-        return ErrStd(errno);
-    }
-
-    event = (struct epoll_event){
-        .events = EPOLLIN,
-        .data.u64 = 0,
-    };
-
-    if (epoll_ctl(server->epoll_fd, EPOLL_CTL_ADD, server->fd, &event) == -1)
-    {
-        return ErrStd(errno);
-    }
-
-    return Ok;
-}
-
-static capy_err httpserver_create_workers_epoll(httpworker *worker, int signal_fd)
-{
-    struct epoll_event event;
-
-    worker->epoll_fd = epoll_create1(0);
-
-    if (worker->epoll_fd == -1)
-    {
-        return ErrStd(errno);
-    }
-
-    event = (struct epoll_event){
-        .events = EPOLLIN,
-        .data.u64 = SIGNAL_EPOLL_EVENT,
-    };
-
-    if (epoll_ctl(worker->epoll_fd, EPOLL_CTL_ADD, signal_fd, &event) == -1)
-    {
-        return ErrStd(errno);
-    }
-
-    return Ok;
 }
 
 static httpconn *httpserver_create_connection(httpserver *server, int conn_fd)
@@ -572,181 +437,27 @@ static httpconn *httpserver_create_connection(httpserver *server, int conn_fd)
     conn->line_buffer = capy_buffer_init(arena, server->options.line_buffer_size);
     conn->line_buffer->arena = NULL;
     conn->state = STATE_RESET;
-
     conn->tcp = Make(arena, tcpconn, 1);
     conn->tcp->ssl = ssl;
     conn->tcp->socket = conn_fd;
+    conn->tcp->task = capy_task_init(arena, KiB(16), tcpconn_run, conn);
 
-    conn->co_self = capy_co_init(arena, KiB(16), httpconn_run);
-
-    if (conn->co_self == NULL)
+    if (conn->tcp->task == NULL)
     {
         capy_arena_destroy(arena);
         return NULL;
     }
 
+    capy_task_set_cleanup(conn->tcp->task, tcpconn_cleanup);
     conn->marker_init = capy_arena_end(arena);
+    conn->timestamp = capy_now();
 
-    timespec_get(&conn->timestamp, TIME_UTC);
     return conn;
 }
 
-static capy_err httpserver_create_workers(httpserver *server)
+static capy_err httpserver_accept(httpserver *server, int server_fd)
 {
     capy_err err;
-
-    server->workers = Make(server->arena, httpworker, server->options.workers);
-
-    if (server->workers == NULL)
-    {
-        return ErrStd(ENOMEM);
-    }
-
-    for (size_t i = 0; i < server->options.workers; i++)
-    {
-        httpworker *worker = server->workers + i;
-
-        worker->id = i;
-        worker->epoll_fd = server->workers_epoll_fd;
-        worker->mask = &server->signals;
-
-        worker->connections = Make(server->arena, httpconn *, server->options.connections);
-
-        if (worker->connections == NULL)
-        {
-            return ErrStd(ENOMEM);
-        }
-
-        err = httpserver_create_workers_epoll(server->workers + i, server->signal_fd);
-
-        if (err.code)
-        {
-            return err;
-        }
-
-        int code = pthread_create(&worker->thread_id, NULL, httpworker_loop, worker);
-
-        if (code)
-        {
-            return ErrStd(code);
-        }
-    }
-
-    return Ok;
-}
-
-static void httpserver_destroy(httpserver *server)
-{
-    for (size_t i = 0; i < server->options.workers; i++)
-    {
-        httpworker *worker = server->workers + i;
-
-        pthread_join(worker->thread_id, NULL);
-
-        for (size_t i = 0; i < server->options.workers; i++)
-        {
-            httpconn *conn = worker->connections[i];
-
-            if (conn == NULL)
-            {
-                continue;
-            }
-
-            if (conn->tcp->socket != 0)
-            {
-                httpconn_close(conn);
-            }
-
-            capy_arena_destroy(conn->arena);
-        }
-    }
-
-    if (server->options.protocol == CAPY_HTTPS)
-    {
-        httpserver_free_openssl(server);
-    }
-
-    close(server->signal_fd);
-    close(server->fd);
-    close(server->epoll_fd);
-    close(server->workers_epoll_fd);
-
-    capy_arena_destroy(server->arena);
-}
-
-capy_err capy_http_serve(capy_httpserveropt options)
-{
-    capy_err err;
-
-    capy_arena *arena = capy_arena_init(0, MiB(1));
-
-    if (arena == NULL)
-    {
-        return ErrFmt(ENOMEM, "Failed to create server arena");
-    }
-
-    capy_httprouter *router = capy_http_router_init(arena, options.routes_size, options.routes);
-
-    if (router == NULL)
-    {
-        return ErrFmt(ENOMEM, "Failed to create router");
-    }
-
-    options = httpserver_options_with_defaults(options);
-
-    httpserver server = {
-        .router = router,
-        .arena = arena,
-        .options = options,
-    };
-
-    err = httpserver_bind(&server);
-
-    if (err.code)
-    {
-        return ErrWrap(err, "Failed to bind server");
-    }
-
-    err = httpserver_create_signal_fd(&server);
-
-    if (err.code)
-    {
-        return ErrWrap(err, "Failed to create signal file descriptors");
-    }
-
-    err = httpserver_create_epoll(&server);
-
-    if (err.code)
-    {
-        return ErrWrap(err, "Failed to create listen epoll");
-    }
-
-    if (options.protocol == CAPY_HTTPS)
-    {
-        err = httpserver_init_openssl(&server);
-
-        if (err.code)
-        {
-            return ErrWrap(err, "Failed to initialize SSL context");
-        }
-    }
-
-    err = httpserver_create_workers(&server);
-
-    if (err.code)
-    {
-        return ErrWrap(err, "Failed to create workers pool");
-    }
-
-    if (listen(server.fd, 10) == -1)
-    {
-        return ErrWrap(ErrStd(errno), "Failed to listen");
-    }
-
-    LogInf("server: listening at %s:%s (protocol = %s, workers = %lu, connections = %lu)",
-           server.options.host, server.options.port,
-           (options.protocol == CAPY_HTTPS) ? "https" : "http",
-           server.options.workers, server.options.connections);
 
     void *address_buffer = &(struct sockaddr_storage){0};
     socklen_t address_buffer_size = sizeof(address_buffer);
@@ -757,39 +468,29 @@ capy_err capy_http_serve(capy_httpserveropt options)
 
     unsigned int timeout = Cast(unsigned int, (keepidle + (keepcnt * keepintvl)) * 1000);
 
-    struct epoll_event events[10];
-
-    size_t workerId = 0;
-
-    for (int stop = false; !stop;)
+    for (;;)
     {
-        int events_count = epoll_pwait(server.epoll_fd, events, 10, 5000, &server.signals);
+        err = capy_task_waitfd(server_fd, false, 0);
 
-        if (events_count == -1)
+        if (err.code)
         {
-            err = ErrStd(errno);
-
-            if (err.code == EINTR)
-            {
-                continue;
-            }
-
-            return ErrWrap(err, "Failed to receive events from epoll");
+            return err;
         }
 
-        for (int i = 0; i < events_count; i++)
+        for (;;)
         {
-            if (events[i].data.u64 == SIGNAL_EPOLL_EVENT)
-            {
-                stop = true;
-                break;
-            }
-
-            int conn_fd = accept4(server.fd, address_buffer, &address_buffer_size, SOCK_NONBLOCK);
+            int conn_fd = accept4(server_fd, address_buffer, &address_buffer_size, SOCK_NONBLOCK);
 
             if (conn_fd == -1)
             {
-                return ErrWrap(ErrStd(errno), "Failed to accept connection");
+                err = ErrStd(errno);
+
+                if (err.code == EAGAIN || err.code == EWOULDBLOCK)
+                {
+                    break;
+                }
+
+                return err;
             }
 
             if (setsockopt(conn_fd, SOL_SOCKET, SO_KEEPALIVE, &(int){1}, sizeof(int)) == -1)
@@ -822,29 +523,130 @@ capy_err capy_http_serve(capy_httpserveropt options)
                 return ErrWrap(ErrStd(errno), "Failed to set TCP_NODELAY value");
             }
 
-            httpconn *conn = httpserver_create_connection(&server, conn_fd);
+            httpconn *conn = httpserver_create_connection(server, conn_fd);
 
             if (conn == NULL)
             {
                 return ErrWrap(ErrStd(ENOMEM), "Failed to create connection");
             }
 
-            httpworker *worker = server.workers + workerId;
+            conn->conn_id = Cast(size_t, conn_fd);
 
-            err = httpconn_update_epoll(conn, worker->epoll_fd, EPOLL_CTL_ADD, EPOLLET | EPOLLONESHOT);
+            LogInf("New connection %d", conn_fd);
+
+            err = capy_task_enqueue(conn->tcp->task, conn_fd, false, server->options.inactivity_timeout);
 
             if (err.code)
             {
-                return err;
+                return ErrWrap(err, "Failed to add task");
             }
+        }
+    }
+}
 
-            workerId = (workerId + 1) % server.options.workers;
+static void *httpserver_serve(void *data)
+{
+    httpserver *server = data;
+    int server_fd;
+
+    capy_err err = httpserver_listen(&server_fd, &server->options);
+
+    if (err.code)
+    {
+        LogErr("Failed to bind and listen: %s", err.msg);
+        return NULL;
+    }
+
+    LogDbg("worker: thread %zu listening for connections", capy_thread_id());
+
+    err = httpserver_accept(server, server_fd);
+
+    if (err.code != ECANCELED)
+    {
+        LogErr("Failed to accept connections: %s", err.msg);
+        return NULL;
+    }
+
+    close(server_fd);
+    capy_tasks_join(0);
+
+    return NULL;
+}
+
+// PUBLIC DEFINITIONS
+
+capy_err capy_http_serve(capy_httpserveropt options)
+{
+    capy_err err;
+
+    capy_arena *arena = capy_arena_init(0, MiB(1));
+
+    if (arena == NULL)
+    {
+        return ErrFmt(ENOMEM, "Failed to create server arena");
+    }
+
+    httpserver *server = Make(arena, httpserver, 1);
+
+    if (server == NULL)
+    {
+        capy_arena_destroy(arena);
+        return ErrFmt(ENOMEM, "Failed to create server");
+    }
+
+    server->router = capy_http_router_init(arena, options.routes_size, options.routes);
+
+    if (server->router == NULL)
+    {
+        capy_arena_destroy(arena);
+        return ErrFmt(ENOMEM, "Failed to create server router");
+    }
+
+    options = httpserver_options_with_defaults(options);
+
+    server->options = options;
+
+    if (options.protocol == CAPY_HTTPS)
+    {
+        err = httpserver_init_openssl(server);
+
+        if (err.code)
+        {
+            capy_arena_destroy(arena);
+            return ErrWrap(err, "Failed to initialize server SSL context");
         }
     }
 
-    httpserver_destroy(&server);
+    LogInf("server: address = %s:%s, protocol = %s, workers = %lu",
+           options.host, options.port,
+           (options.protocol == CAPY_HTTPS) ? "https" : "http",
+           options.workers);
 
-    LogInf("server: shutting down");
+    sigset_t signals;
+
+    sigemptyset(&signals);
+    sigaddset(&signals, SIGINT);
+    sigaddset(&signals, SIGTERM);
+    sigprocmask(SIG_BLOCK, &signals, NULL);
+
+    pthread_t *ids = Make(arena, pthread_t, options.workers);
+
+    for (size_t i = 0; i < options.workers; i++)
+    {
+        pthread_create(ids + i, NULL, httpserver_serve, server);
+    }
+
+    for (size_t i = 0; i < options.workers; i++)
+    {
+        pthread_join(ids[i], NULL);
+    }
+
+    if (server->ssl_ctx != NULL)
+    {
+        SSL_CTX_free(server->ssl_ctx);
+    }
+
+    capy_arena_destroy(arena);
 
     return Ok;
 }

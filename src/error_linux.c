@@ -1,6 +1,8 @@
-#include "error.c"
+#include "capy.h"
 
-static const capy_err errno_table[] = {
+// INTERNAL VARIABLES
+
+static const capy_err table[] = {
     [EPERM] = {EPERM, "Operation not permitted"},
     [ENOENT] = {ENOENT, "No such file or directory"},
     [ESRCH] = {ESRCH, "No such process"},
@@ -136,6 +138,8 @@ static const capy_err errno_table[] = {
     [EHWPOISON] = {EHWPOISON, "Memory page has hardware error"},
 };
 
+// PUBLIC DEFINITIONS
+
 capy_err capy_err_errno(int err)
 {
     if (err == 0)
@@ -148,5 +152,5 @@ capy_err capy_err_errno(int err)
         return ErrFmt(err, "Unknown error %d", err);
     }
 
-    return errno_table[err];
+    return table[err];
 }

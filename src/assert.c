@@ -1,5 +1,6 @@
-#include <capy/capy.h>
-#include <capy/macros.h>
+#include "capy.h"
+
+// PUBLIC DEFINITIONS
 
 void capy_assert_(int condition, const char *file, int line, const char *expression)
 {
