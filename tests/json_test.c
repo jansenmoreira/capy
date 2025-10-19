@@ -1,4 +1,3 @@
-#include <capy/macros.h>
 #include <capy/test.h>
 
 static int test_capy_json_deserialize(void)

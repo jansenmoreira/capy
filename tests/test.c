@@ -6,6 +6,7 @@
 #include "json_test.c"
 #include "string_test.c"
 #include "strmap_test.c"
+#include "task_test.c"
 #include "uri_test.c"
 #include "vec_test.c"
 
@@ -25,6 +26,7 @@ int main(void)
     test_strmap(&t);
     test_error(&t);
     test_json(&t);
+    test_task(&t);
 
     printf("\nSummary - %d of %d tests succeeded\n", t.succeded, t.succeded + t.failed);
 

@@ -38,11 +38,6 @@ int64_t capy_timespec_diff(struct timespec a, struct timespec b)
 
 struct timespec capy_timespec_addms(struct timespec t, uint64_t ms)
 {
-    if (ms == 0)
-    {
-        ms = Years(50);
-    }
-
     t.tv_sec += Cast(int64_t, ms) / 1000;
     t.tv_nsec += (Cast(int64_t, ms) % 1000) * 1000000;
     return t;

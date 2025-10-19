@@ -1,6 +1,5 @@
-#include <rapidhash/rapidhash.h>
-
 #include "capy.h"
+#include "rapidhash/rapidhash.h"
 
 // PUBLIC DEFINITIONS
 

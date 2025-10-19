@@ -4,7 +4,7 @@
 
 // PUBLIC DEFINITIONS
 
-static char *capy_err_buf(void)
+char *capy_err_buf_(void)
 {
     thread_local static char buffer1[CAPY_EBUFSIZE];
     thread_local static char buffer2[CAPY_EBUFSIZE];
@@ -24,7 +24,7 @@ static char *capy_err_buf(void)
 
 capy_err capy_err_fmt(int code, const char *fmt, ...)
 {
-    char *buffer = capy_err_buf();
+    char *buffer = capy_err_buf_();
 
     va_list args;
     va_start(args, fmt);

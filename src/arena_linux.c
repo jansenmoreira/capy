@@ -2,7 +2,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#include "capy.h"
+#include "capy_linux.h"
 
 // INTERNAL VARIABLES
 

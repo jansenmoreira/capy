@@ -13,7 +13,6 @@ FLAGS_CC := \
 	-Wno-implicit-fallthrough
 
 FLAGS_LINUX := \
-	-DCAPY_OS_LINUX \
 	-D_GNU_SOURCE
 
 LIBS := \

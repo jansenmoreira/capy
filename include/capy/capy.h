@@ -1,14 +1,42 @@
 #ifndef CAPY_H
 #define CAPY_H
 
+#ifdef __linux__
+#define CAPY_OS_LINUX
+#endif
+
+#ifdef __x86_64__
+#define CAPY_ARCH_AMD64
+#endif
+
+#ifdef __GNUC__
+#define Format(i) __attribute__((format(printf, (i), (i) + 1)))
+#define MustCheck __attribute__((warn_unused_result))
+#define Unused __attribute__((unused))
+#define Ignore (void)!
+#else
+#define Format(i)
+#define MustCheck
+#define Unused
+#define Ignore
+#endif
+
+#define InOut
+#define Out
+
+#include <errno.h>
 #include <inttypes.h>
+#include <limits.h>
 #include <stdalign.h>
+#include <stdarg.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <threads.h>
 #include <time.h>
 
 //
@@ -21,25 +49,6 @@ int64_t capy_timespec_diff(struct timespec a, struct timespec b);
 struct timespec capy_timespec_addms(struct timespec t, uint64_t ms);
 struct timespec capy_now(void);
 void nanoseconds_normalize(int64_t *ns, const char **unit);
-
-#ifdef __GNUC__
-
-#define Format(i) __attribute__((format(printf, (i), (i) + 1)))
-#define MustCheck __attribute__((warn_unused_result))
-#define Unused __attribute__((unused))
-#define Ignore (void)!
-
-#else
-
-#define Format(i)
-#define MustCheck
-#define Unused
-#define Ignore
-
-#endif
-
-#define InOut
-#define Out
 
 //
 // ERROR HANDLING
@@ -669,18 +678,13 @@ capy_err capy_json_serialize(capy_buffer *buffer, capy_jsonval value, int tabsiz
 typedef int capy_fd;
 #endif
 
-typedef struct capy_task capy_task;
+capy_err capy_task_init(capy_arena *arena, size_t size, void (*entrypoint)(void *data), void (*cleanup)(void *data), void *data);
+capy_err capy_waitfd(capy_fd fd, bool write, uint64_t timeout);
+capy_err capy_sleep(uint64_t ms);
+capy_err capy_shutdown(Unused int timeout);
 
-capy_task *capy_task_init(capy_arena *arena, size_t size, void (*entrypoint)(void), void *ctx);
-void *capy_task_ctx(capy_task *task);
-bool capy_task_canceled(void);
-void capy_task_set_cleanup(capy_task *task, void (*cleanup)(void *));
-capy_err capy_task_enqueue(capy_task *task, capy_fd fd, bool write, uint64_t timeout);
-capy_err capy_task_waitfd(capy_fd fd, bool write, uint64_t timeout);
-capy_err capy_task_sleep(uint64_t ms);
-capy_err capy_tasks_join(Unused int timeout);
-capy_task *capy_task_active(void);
 size_t capy_thread_id(void);
+bool capy_task_canceled(void);
 
 #undef InOut
 #undef Out

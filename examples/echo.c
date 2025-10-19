@@ -88,7 +88,7 @@ static capy_err params_handler(Unused capy_arena *arena, capy_httpreq *request, 
 
 static capy_err echo_handler(capy_arena *arena, capy_httpreq *request, capy_httpresp *response)
 {
-    // capy_task_sleep(50);
+    capy_sleep(50);
 
     capy_err err;
 
@@ -98,7 +98,7 @@ static capy_err echo_handler(capy_arena *arena, capy_httpreq *request, capy_http
 
     if (err.code)
     {
-        return ErrWrap(err, "Failed to produce URI");
+        return ErrWrap(err, "Failed to create URI");
     }
 
     for (size_t i = 0; i < request->headers->capacity; i++)

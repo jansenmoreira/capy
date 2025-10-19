@@ -2,12 +2,6 @@
 #define CAPY_MACROS_H
 
 #include <capy/capy.h>
-#include <errno.h>
-#include <limits.h>
-#include <signal.h>
-#include <stdarg.h>
-#include <stdlib.h>
-#include <threads.h>
 
 #define ArrLen(v) (sizeof(v) / sizeof(v[0]))
 #define Arr(T, ...) ((T[]){__VA_ARGS__})

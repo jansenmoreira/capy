@@ -6,29 +6,30 @@
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <pthread.h>
+#include <signal.h>
 #include <sys/signalfd.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "capy.h"
+#include "capy_linux.h"
 
-// STATIC DEFINITIONS
+// INTERNAL DEFINITIONS
 
-static capy_err http_gai_error(int err)
+capy_err capy_gaierr_(int err)
 {
     if (err == 0) return Ok;
     return (capy_err){.code = err, .msg = gai_strerror(err)};
 }
 
-static int http_ssl_log_error(const char *buffer, size_t len, Unused void *userdata)
+int capy_log_sslerr_(const char *buffer, size_t len, Unused void *userdata)
 {
     len = (len > 0) ? len - 1 : 0;
     LogErr("%.*s", (int)len, buffer);
     return 0;
 }
 
-static capy_err tcpconn_close(tcpconn *conn)
+capy_err capy_tcpconn_close_(capy_tcpconn *conn)
 {
     if (conn->ssl)
     {
@@ -40,11 +41,11 @@ static capy_err tcpconn_close(tcpconn *conn)
     return Ok;
 }
 
-static capy_err tcpconn_recv(tcpconn *conn, capy_buffer *buffer, uint64_t timeout)
+capy_err capy_tcpconn_recv_(capy_tcpconn *conn, capy_buffer *buffer, uint64_t timeout)
 {
     if (conn->ssl)
     {
-        return tcpconn_recv_tls(conn, buffer, timeout);
+        return capy_tcpconn_tlsrecv_(conn, buffer, timeout);
     }
 
     size_t bytes_wanted = buffer->capacity - buffer->size;
@@ -59,7 +60,7 @@ static capy_err tcpconn_recv(tcpconn *conn, capy_buffer *buffer, uint64_t timeou
 
             if (err.code == EWOULDBLOCK || err.code == EAGAIN)
             {
-                capy_err err = capy_task_waitfd(conn->socket, false, timeout);
+                capy_err err = capy_waitfd(conn->socket, false, timeout);
 
                 if (err.code)
                 {
@@ -77,7 +78,7 @@ static capy_err tcpconn_recv(tcpconn *conn, capy_buffer *buffer, uint64_t timeou
     }
 }
 
-static capy_err tcpconn_recv_tls(tcpconn *conn, capy_buffer *buffer, uint64_t timeout)
+capy_err capy_tcpconn_tlsrecv_(capy_tcpconn *conn, capy_buffer *buffer, uint64_t timeout)
 {
     size_t bytes_wanted = buffer->capacity - buffer->size;
     size_t bytes_read = 0;
@@ -95,7 +96,7 @@ static capy_err tcpconn_recv_tls(tcpconn *conn, capy_buffer *buffer, uint64_t ti
                 case SSL_ERROR_WANT_READ:
                 case SSL_ERROR_WANT_WRITE:
                 {
-                    capy_err err = capy_task_waitfd(conn->socket, ssl_err == SSL_ERROR_WANT_WRITE, timeout);
+                    capy_err err = capy_waitfd(conn->socket, ssl_err == SSL_ERROR_WANT_WRITE, timeout);
 
                     if (err.code)
                     {
@@ -129,11 +130,11 @@ static capy_err tcpconn_recv_tls(tcpconn *conn, capy_buffer *buffer, uint64_t ti
     }
 }
 
-static capy_err tcpconn_send(tcpconn *conn, capy_buffer *buffer, uint64_t timeout)
+capy_err capy_tcpconn_send_(capy_tcpconn *conn, capy_buffer *buffer, uint64_t timeout)
 {
     if (conn->ssl)
     {
-        return tcpconn_send_tls(conn, buffer, timeout);
+        return capy_tcpconn_tlssend_(conn, buffer, timeout);
     }
 
     capy_err err;
@@ -148,7 +149,7 @@ static capy_err tcpconn_send(tcpconn *conn, capy_buffer *buffer, uint64_t timeou
 
             if (err.code == EWOULDBLOCK || err.code == EAGAIN)
             {
-                capy_err err = capy_task_waitfd(conn->socket, true, timeout);
+                capy_err err = capy_waitfd(conn->socket, true, timeout);
 
                 if (err.code)
                 {
@@ -166,7 +167,7 @@ static capy_err tcpconn_send(tcpconn *conn, capy_buffer *buffer, uint64_t timeou
     }
 }
 
-static capy_err tcpconn_send_tls(tcpconn *conn, capy_buffer *buffer, uint64_t timeout)
+capy_err capy_tcpconn_tlssend_(capy_tcpconn *conn, capy_buffer *buffer, uint64_t timeout)
 {
     size_t bytes_written = 0;
 
@@ -183,7 +184,7 @@ static capy_err tcpconn_send_tls(tcpconn *conn, capy_buffer *buffer, uint64_t ti
                 case SSL_ERROR_WANT_READ:
                 case SSL_ERROR_WANT_WRITE:
                 {
-                    capy_err err = capy_task_waitfd(conn->socket, ssl_err == SSL_ERROR_WANT_WRITE, timeout);
+                    capy_err err = capy_waitfd(conn->socket, ssl_err == SSL_ERROR_WANT_WRITE, timeout);
 
                     if (err.code)
                     {
@@ -217,43 +218,40 @@ static capy_err tcpconn_send_tls(tcpconn *conn, capy_buffer *buffer, uint64_t ti
     }
 }
 
-static capy_err tcpconn_shutdown(tcpconn *conn)
+capy_err capy_tcpconn_shutdown_(capy_tcpconn *conn)
 {
     if (conn->ssl)
     {
         SSL_shutdown(conn->ssl);
     }
 
-    shutdown(conn->socket, SHUT_RDWR);
     return Ok;
 }
 
-static void tcpconn_cleanup(void *data)
+void capy_tcpconn_cleanup_(void *ctx)
 {
-    httpconn *conn = data;
+    capy_httpconn *conn = ctx;
     capy_arena_destroy(conn->arena);
 }
 
-static void tcpconn_run(void)
+void capy_tcpconn_run_(void *ctx)
 {
-    capy_task *task = capy_task_active();
-    httpconn *conn = capy_task_ctx(task);
-    httpconn_run(conn);
+    capy_httpconn_run_(ctx);
 }
 
-static capy_err httpserver_init_openssl(httpserver *server)
+capy_err capy_httpserver_init_openssl_(capy_httpserver *server)
 {
     server->ssl_ctx = SSL_CTX_new(TLS_server_method());
 
     if (server->ssl_ctx == NULL)
     {
-        ERR_print_errors_cb(http_ssl_log_error, NULL);
+        ERR_print_errors_cb(capy_log_sslerr_, NULL);
         return ErrFmt(EPROTO, "Failed to create server SSL_CTX");
     }
 
     if (!SSL_CTX_set_min_proto_version(server->ssl_ctx, TLS1_2_VERSION))
     {
-        ERR_print_errors_cb(http_ssl_log_error, NULL);
+        ERR_print_errors_cb(capy_log_sslerr_, NULL);
         return ErrFmt(EPROTO, "Failed to set the minimum TLS protocol version");
     }
 
@@ -263,13 +261,13 @@ static capy_err httpserver_init_openssl(httpserver *server)
 
     if (!SSL_CTX_use_certificate_chain_file(server->ssl_ctx, server->options.certificate_chain))
     {
-        ERR_print_errors_cb(http_ssl_log_error, NULL);
+        ERR_print_errors_cb(capy_log_sslerr_, NULL);
         return ErrFmt(EPROTO, "Failed to load the server certificate chain file");
     }
 
     if (!SSL_CTX_use_PrivateKey_file(server->ssl_ctx, server->options.certificate_key, SSL_FILETYPE_PEM))
     {
-        ERR_print_errors_cb(http_ssl_log_error, NULL);
+        ERR_print_errors_cb(capy_log_sslerr_, NULL);
         return ErrFmt(EPROTO, "Failed to load the server private key file");
     }
 
@@ -284,7 +282,7 @@ static capy_err httpserver_init_openssl(httpserver *server)
     return Ok;
 }
 
-static capy_httpserveropt httpserver_options_with_defaults(capy_httpserveropt options)
+capy_httpserveropt capy_httpserver_default_options_(capy_httpserveropt options)
 {
     if (!options.workers)
     {
@@ -319,7 +317,7 @@ static capy_httpserveropt httpserver_options_with_defaults(capy_httpserveropt op
     return options;
 }
 
-static capy_err httpserver_listen(int *serverfd, capy_httpserveropt *options)
+capy_err capy_httpserver_listen_(int *serverfd, capy_httpserveropt *options)
 {
     *serverfd = -1;
 
@@ -331,7 +329,7 @@ static capy_err httpserver_listen(int *serverfd, capy_httpserveropt *options)
 
     struct addrinfo *addresses;
 
-    capy_err err = http_gai_error(getaddrinfo(options->host, options->port, &hints, &addresses));
+    capy_err err = capy_gaierr_(getaddrinfo(options->host, options->port, &hints, &addresses));
 
     if (err.code)
     {
@@ -399,7 +397,7 @@ static capy_err httpserver_listen(int *serverfd, capy_httpserveropt *options)
     return err;
 }
 
-static httpconn *httpserver_create_connection(httpserver *server, int conn_fd)
+capy_httpconn *capy_httpserver_create_connection_(capy_httpserver *server, int conn_fd)
 {
     SSL *ssl = NULL;
 
@@ -409,13 +407,13 @@ static httpconn *httpserver_create_connection(httpserver *server, int conn_fd)
 
         if (ssl == NULL)
         {
-            ERR_print_errors_cb(http_ssl_log_error, NULL);
+            ERR_print_errors_cb(capy_log_sslerr_, NULL);
             return NULL;
         }
 
         if (!SSL_set_fd(ssl, conn_fd))
         {
-            ERR_print_errors_cb(http_ssl_log_error, NULL);
+            ERR_print_errors_cb(capy_log_sslerr_, NULL);
             return NULL;
         }
 
@@ -429,7 +427,7 @@ static httpconn *httpserver_create_connection(httpserver *server, int conn_fd)
         return NULL;
     }
 
-    httpconn *conn = Make(arena, httpconn, 1);
+    capy_httpconn *conn = Make(arena, capy_httpconn, 1);
 
     conn->arena = arena;
     conn->router = server->router;
@@ -437,25 +435,26 @@ static httpconn *httpserver_create_connection(httpserver *server, int conn_fd)
     conn->line_buffer = capy_buffer_init(arena, server->options.line_buffer_size);
     conn->line_buffer->arena = NULL;
     conn->state = STATE_RESET;
-    conn->tcp = Make(arena, tcpconn, 1);
+    conn->tcp = Make(arena, capy_tcpconn, 1);
     conn->tcp->ssl = ssl;
     conn->tcp->socket = conn_fd;
-    conn->tcp->task = capy_task_init(arena, KiB(16), tcpconn_run, conn);
 
-    if (conn->tcp->task == NULL)
+    capy_err err = capy_task_init(arena, KiB(16), capy_tcpconn_run_, capy_tcpconn_cleanup_, conn);
+
+    if (err.code)
     {
         capy_arena_destroy(arena);
         return NULL;
     }
 
-    capy_task_set_cleanup(conn->tcp->task, tcpconn_cleanup);
     conn->marker_init = capy_arena_end(arena);
-    conn->timestamp = capy_now();
+    conn->created = capy_now();
+    conn->timestamp = conn->created;
 
     return conn;
 }
 
-static capy_err httpserver_accept(httpserver *server, int server_fd)
+capy_err capy_httpserver_accept_(capy_httpserver *server, int server_fd)
 {
     capy_err err;
 
@@ -470,7 +469,7 @@ static capy_err httpserver_accept(httpserver *server, int server_fd)
 
     for (;;)
     {
-        err = capy_task_waitfd(server_fd, false, 0);
+        err = capy_waitfd(server_fd, false, 0);
 
         if (err.code)
         {
@@ -523,33 +522,22 @@ static capy_err httpserver_accept(httpserver *server, int server_fd)
                 return ErrWrap(ErrStd(errno), "Failed to set TCP_NODELAY value");
             }
 
-            httpconn *conn = httpserver_create_connection(server, conn_fd);
+            capy_httpconn *conn = capy_httpserver_create_connection_(server, conn_fd);
 
             if (conn == NULL)
             {
                 return ErrWrap(ErrStd(ENOMEM), "Failed to create connection");
             }
-
-            conn->conn_id = Cast(size_t, conn_fd);
-
-            LogInf("New connection %d", conn_fd);
-
-            err = capy_task_enqueue(conn->tcp->task, conn_fd, false, server->options.inactivity_timeout);
-
-            if (err.code)
-            {
-                return ErrWrap(err, "Failed to add task");
-            }
         }
     }
 }
 
-static void *httpserver_serve(void *data)
+void *capy_httpserver_serve_(void *data)
 {
-    httpserver *server = data;
+    capy_httpserver *server = data;
     int server_fd;
 
-    capy_err err = httpserver_listen(&server_fd, &server->options);
+    capy_err err = capy_httpserver_listen_(&server_fd, &server->options);
 
     if (err.code)
     {
@@ -559,7 +547,7 @@ static void *httpserver_serve(void *data)
 
     LogDbg("worker: thread %zu listening for connections", capy_thread_id());
 
-    err = httpserver_accept(server, server_fd);
+    err = capy_httpserver_accept_(server, server_fd);
 
     if (err.code != ECANCELED)
     {
@@ -568,7 +556,7 @@ static void *httpserver_serve(void *data)
     }
 
     close(server_fd);
-    capy_tasks_join(0);
+    capy_shutdown(0);
 
     return NULL;
 }
@@ -586,7 +574,7 @@ capy_err capy_http_serve(capy_httpserveropt options)
         return ErrFmt(ENOMEM, "Failed to create server arena");
     }
 
-    httpserver *server = Make(arena, httpserver, 1);
+    capy_httpserver *server = Make(arena, capy_httpserver, 1);
 
     if (server == NULL)
     {
@@ -594,7 +582,7 @@ capy_err capy_http_serve(capy_httpserveropt options)
         return ErrFmt(ENOMEM, "Failed to create server");
     }
 
-    server->router = capy_http_router_init(arena, options.routes_size, options.routes);
+    server->router = capy_httprouter_init_(arena, options.routes_size, options.routes);
 
     if (server->router == NULL)
     {
@@ -602,13 +590,13 @@ capy_err capy_http_serve(capy_httpserveropt options)
         return ErrFmt(ENOMEM, "Failed to create server router");
     }
 
-    options = httpserver_options_with_defaults(options);
+    options = capy_httpserver_default_options_(options);
 
     server->options = options;
 
     if (options.protocol == CAPY_HTTPS)
     {
-        err = httpserver_init_openssl(server);
+        err = capy_httpserver_init_openssl_(server);
 
         if (err.code)
         {
@@ -631,12 +619,14 @@ capy_err capy_http_serve(capy_httpserveropt options)
 
     pthread_t *ids = Make(arena, pthread_t, options.workers);
 
-    for (size_t i = 0; i < options.workers; i++)
+    for (size_t i = 1; i < options.workers; i++)
     {
-        pthread_create(ids + i, NULL, httpserver_serve, server);
+        pthread_create(ids + i, NULL, capy_httpserver_serve_, server);
     }
 
-    for (size_t i = 0; i < options.workers; i++)
+    capy_httpserver_serve_(server);
+
+    for (size_t i = 1; i < options.workers; i++)
     {
         pthread_join(ids[i], NULL);
     }

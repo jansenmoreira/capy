@@ -10,6 +10,5 @@
 -Wno-missing-field-initializers
 -Wno-unused-function
 -Wno-implicit-fallthrough
--DCAPY_OS_LINUX
 -D_GNU_SOURCE
 -Wno-unused-includes
