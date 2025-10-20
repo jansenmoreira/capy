@@ -3,6 +3,22 @@
 
 #include <capy/capy.h>
 
+#ifdef __GNUC__
+#define Format(i) __attribute__((format(printf, (i), (i) + 1)))
+#define MustCheck __attribute__((warn_unused_result))
+#define Unused __attribute__((unused))
+#define Ignore (void)!
+#define InOut
+#define Out
+#else
+#define Format(i)
+#define MustCheck
+#define Unused
+#define Ignore
+#define InOut
+#define Out
+#endif
+
 #define ArrLen(v) (sizeof(v) / sizeof(v[0]))
 #define Arr(T, ...) ((T[]){__VA_ARGS__})
 

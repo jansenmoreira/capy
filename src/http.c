@@ -972,10 +972,11 @@ void capy_httpconn_trace_(capy_httpconn *conn)
     size_t to_read = (conn->line_buffer) ? conn->line_buffer->size : 0;
     size_t to_write = (conn->response_buffer) ? conn->response_buffer->size : 0;
 
-    LogDbg("worker: %-24s | WK:%-4zu SK:%-4zu MH:%-8zu MC:%-8zu MT:%-8zu MR:%-8zu MA:%-8zu RS:%-8zu WS:%-8zu | %3" PRIi64 " %s",
-           httpconnstate_cstr[conn->state], capy_thread_id(), conn->conn_id,
+    LogDbg("worker: %-21s | MH:%-8zu MC:%-8zu MT:%-8zu MR:%-8zu MA:%-8zu RS:%-8zu WS:%-8zu | %3" PRIi64 " %-2s | %s %d",
+           httpconnstate_cstr[conn->state],
            conn->mem_headers, conn->mem_content, conn->mem_trailers, conn->mem_response, mem_total,
-           to_read, to_write, elapsed, elapsed_unit);
+           to_read, to_write, elapsed, elapsed_unit,
+           capy_tcpconn_addr(conn->tcp), capy_tcpconn_port(conn->tcp));
 }
 
 capy_err capy_httpconn_write_response_(capy_httpconn *conn)
@@ -1009,7 +1010,7 @@ capy_err capy_httpconn_write_response_(capy_httpconn *conn)
     {
         conn->state = STATE_WRITE_RESPONSE;
     }
-    else if (conn->request.close || capy_task_canceled())
+    else if (conn->request.close || capy_canceled())
     {
         capy_tcpconn_shutdown_(conn->tcp);
         conn->state = STATE_CLOSE;

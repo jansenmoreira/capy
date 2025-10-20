@@ -20,6 +20,6 @@
 #include "task_linux.c"
 #endif
 
-#if defined(CAPY_OS_LINUX) && defined(CAPY_ARCH_AMD64)
+#ifdef CAPY_LINUX_AMD64
 #include "task_linux_amd64.c"
 #endif

@@ -260,22 +260,19 @@ void capy_scheduler_clean_(void *data)
 void capy_scheduler_switch_(capy_scheduler *scheduler, capy_task *task)
 {
     scheduler->previous = scheduler->active;
+    scheduler->previous->ready = false;
     scheduler->active = task;
     capy_task_switch_(scheduler->active->ctx, scheduler->previous->ctx);
 }
 
-capy_err capy_scheduler_shutdown_(capy_scheduler *scheduler, Unused int timeout)
+capy_err capy_scheduler_shutdown_(capy_scheduler *scheduler, uint64_t timeout)
 {
     if (scheduler->active != scheduler->main)
     {
         return ErrStd(EINVAL);
     }
 
-    while (scheduler->queue->size > 0)
-    {
-        capy_scheduler_switch_(scheduler, scheduler->poller);
-    }
-
+    capy_sleep(timeout);
     capy_poll_destroy_(scheduler);
     capy_arena_destroy(scheduler->arena);
 
@@ -402,9 +399,17 @@ capy_err capy_waitfd(capy_fd fd, bool write, uint64_t timeout)
         return ErrStd(ETIMEDOUT);
     }
 
-    if (task == task_scheduler->main && task_scheduler->cancel)
+    if (task == task_scheduler->main)
     {
-        return ErrStd(ECANCELED);
+        if (task_scheduler->err.code)
+        {
+            return err;
+        }
+
+        if (capy_canceled())
+        {
+            return ErrStd(ECANCELED);
+        }
     }
 
     return Ok;
@@ -431,7 +436,7 @@ capy_err capy_sleep(uint64_t ms)
     return Ok;
 }
 
-capy_err capy_shutdown(Unused int timeout)
+capy_err capy_shutdown(uint64_t timeout)
 {
     if (task_scheduler == NULL)
     {
@@ -441,7 +446,12 @@ capy_err capy_shutdown(Unused int timeout)
     return capy_scheduler_shutdown_(task_scheduler, timeout);
 }
 
-bool capy_task_canceled(void)
+bool capy_canceled(void)
 {
-    return task_scheduler->cancel;
+    if (task_scheduler == NULL)
+    {
+        return false;
+    }
+
+    return task_scheduler->canceled;
 }

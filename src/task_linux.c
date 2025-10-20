@@ -6,8 +6,6 @@
 
 #include "capy_linux.h"
 
-#define SIGNAL_EPOLL_EVENT -1ULL
-
 // INTERNAL DEFINITIONS
 
 void capy_poll_(void *data)
@@ -22,6 +20,11 @@ void capy_poll_(void *data)
 
     for (;;)
     {
+        if (scheduler->canceled && scheduler->queue->size == 1)
+        {
+            capy_scheduler_switch_(scheduler, scheduler->main);
+        }
+
         ready_count = 0;
 
         int timeout = Seconds(10);
@@ -33,8 +36,19 @@ void capy_poll_(void *data)
             if (ms <= 0)
             {
                 capy_task *task = capy_taskqueue_pop_(scheduler->queue);
-                capy_poll_remove_(scheduler, task);
-                ready[ready_count++] = task;
+                scheduler->err = capy_poll_remove_(scheduler, task);
+
+                if (scheduler->err.code)
+                {
+                    capy_scheduler_switch_(scheduler, scheduler->main);
+                }
+
+                if (!task->ready)
+                {
+                    ready[ready_count++] = task;
+                    task->ready = true;
+                }
+
                 continue;
             }
 
@@ -66,22 +80,31 @@ void capy_poll_(void *data)
                     continue;
                 }
 
+                scheduler->err = err;
+                capy_scheduler_switch_(scheduler, scheduler->main);
                 continue;
             }
 
             for (int i = 0; i < count; i++)
             {
-                if (events[i].data.u64 == SIGNAL_EPOLL_EVENT)
+                capy_task *task = NULL;
+
+                if (events[i].data.u64 == 0)
                 {
-                    capy_task *task = capy_taskqueue_remove_(scheduler->queue, scheduler->main->queuepos);
-                    capy_poll_remove_(scheduler, task);
-                    scheduler->cancel = true;
+                    scheduler->canceled = true;
+                    task = scheduler->main;
                 }
                 else
                 {
-                    capy_task *task = events[i].data.ptr;
-                    capy_taskqueue_remove_(scheduler->queue, task->queuepos);
+                    task = events[i].data.ptr;
+                }
+
+                capy_taskqueue_remove_(scheduler->queue, task->queuepos);
+
+                if (!task->ready)
+                {
                     ready[ready_count++] = task;
+                    task->ready = true;
                 }
             }
         }
@@ -90,8 +113,6 @@ void capy_poll_(void *data)
         {
             capy_scheduler_switch_(scheduler, ready[i]);
         }
-
-        capy_scheduler_switch_(scheduler, scheduler->main);
     }
 }
 
@@ -128,7 +149,7 @@ capy_err capy_poll_init_(capy_scheduler *scheduler)
 
     struct epoll_event event = {
         .events = EPOLLIN | EPOLLET | EPOLLONESHOT,
-        .data.u64 = SIGNAL_EPOLL_EVENT,
+        .data.u64 = 0,
     };
 
     if (epoll_ctl(poll->fd, EPOLL_CTL_ADD, signal_fd, &event) == -1)

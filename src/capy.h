@@ -92,6 +92,7 @@ typedef struct capy_task
     struct timespec deadline;
     capy_fd fd;
     bool write;
+    bool ready;
     size_t queuepos;
 } capy_task;
 
@@ -112,7 +113,8 @@ typedef struct capy_poll capy_poll;
 
 typedef struct capy_scheduler
 {
-    bool cancel;
+    bool canceled;
+    capy_err err;
     capy_arena *arena;
     capy_poll *poll;
     capy_task *main;
@@ -130,6 +132,8 @@ typedef struct logger_t
     const char *timefmt;
 } logger_t;
 
+const char *capy_tcpconn_addr(capy_tcpconn *conn);
+uint16_t capy_tcpconn_port(capy_tcpconn *conn);
 capy_err capy_tcpconn_recv_(capy_tcpconn *conn, capy_buffer *buffer, uint64_t timeout);
 capy_err capy_tcpconn_send_(capy_tcpconn *conn, capy_buffer *buffer, uint64_t timeout);
 capy_err capy_tcpconn_shutdown_(capy_tcpconn *conn);
@@ -180,7 +184,7 @@ capy_err capy_poll_destroy_(capy_scheduler *scheduler);
 capy_task *capy_task_init_(capy_arena *arena, size_t size, void (*entrypoint)(void *data), void (*cleanup)(void *data), void *data);
 void capy_scheduler_switch_(capy_scheduler *scheduler, capy_task *task);
 capy_err capy_scheduler_init_(void);
-capy_err capy_scheduler_shutdown_(capy_scheduler *scheduler, int timeout);
+capy_err capy_scheduler_shutdown_(capy_scheduler *scheduler, uint64_t timeout);
 capy_err capy_scheduler_waitfd_(capy_scheduler *scheduler, capy_task *task, capy_fd fd, bool write, uint64_t timeout);
 capy_err capy_scheduler_sleep_(capy_scheduler *scheduler, capy_task *task, uint64_t timeout);
 void capy_scheduler_clean_(void *data);

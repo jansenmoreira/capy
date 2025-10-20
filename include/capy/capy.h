@@ -9,20 +9,25 @@
 #define CAPY_ARCH_AMD64
 #endif
 
+#if defined(CAPY_OS_LINUX) && defined(CAPY_ARCH_AMD64)
+#define CAPY_LINUX_AMD64
+#endif
+
 #ifdef __GNUC__
 #define Format(i) __attribute__((format(printf, (i), (i) + 1)))
 #define MustCheck __attribute__((warn_unused_result))
 #define Unused __attribute__((unused))
 #define Ignore (void)!
+#define InOut
+#define Out
 #else
 #define Format(i)
 #define MustCheck
 #define Unused
 #define Ignore
-#endif
-
 #define InOut
 #define Out
+#endif
 
 #include <errno.h>
 #include <inttypes.h>
@@ -671,7 +676,7 @@ capy_err capy_json_deserialize(capy_arena *arena, capy_jsonval *value, const cha
 capy_err capy_json_serialize(capy_buffer *buffer, capy_jsonval value, int tabsize);
 
 //
-// COROUTINES
+// TASKS
 //
 
 #ifdef CAPY_OS_LINUX
@@ -681,11 +686,14 @@ typedef int capy_fd;
 capy_err capy_task_init(capy_arena *arena, size_t size, void (*entrypoint)(void *data), void (*cleanup)(void *data), void *data);
 capy_err capy_waitfd(capy_fd fd, bool write, uint64_t timeout);
 capy_err capy_sleep(uint64_t ms);
-capy_err capy_shutdown(Unused int timeout);
-
+capy_err capy_shutdown(uint64_t timeout);
+bool capy_canceled(void);
 size_t capy_thread_id(void);
-bool capy_task_canceled(void);
 
+#undef Format
+#undef Unused
+#undef MustCheck
+#undef Ignore
 #undef InOut
 #undef Out
 
