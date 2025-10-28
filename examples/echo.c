@@ -203,8 +203,8 @@ int main(int argc, char *argv[])
                 break;
             case 's':
                 options.protocol = CAPY_HTTPS;
-                options.certificate_chain = "extra/certificates/server_chain.pem";
-                options.certificate_key = "extra/certificates/server_key.pem";
+                options.certificate_chain = "build/certificates/server_chain.pem";
+                options.certificate_key = "build/certificates/server_key.pem";
                 break;
         }
     }

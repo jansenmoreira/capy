@@ -20,21 +20,6 @@
             }
         },
         {
-            "label": "build/release",
-            "type": "shell",
-            "command": "make podman/linux/release",
-            "presentation": {
-                "echo": true,
-                "reveal": "silent",
-                "panel": "shared",
-                "showReuseMessage": false,
-                "clear": true
-            },
-            "group": {
-                "kind": "build"
-            }
-        },
-        {
             "label": "coverage",
             "type": "shell",
             "command": "make coverage",

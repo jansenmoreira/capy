@@ -50,7 +50,7 @@ linux/release: linux/build
 
 .PHONY:
 podman/linux:
-	podman image build --tag capy:linux .
+	podman image build --tag capy:linux -f contrib/Dockerfile  .
 	podman run -it -v ./:/capy capy:linux /bin/bash -c "make $(TARGET) CC=gcc"
 
 
@@ -79,27 +79,21 @@ coverage:
 
 .PHONY: certificates
 certificates:
-	rm -rf extra/certificates/
-	mkdir -p extra/certificates/
-	cd extra/certificates/ && \
+	rm -rf build/certificates/
+	mkdir -p build/certificates/
+	cd build/certificates/ && \
 	openssl genrsa > server_key.pem && \
 	openssl req -new -x509 -key server_key.pem > server_chain.pem
 
 
 .PHONY: update/rapidhash
 update/rapidhash:
-	mkdir -p include/rapidhash
-	cd include/rapidhash && \
+	mkdir -p src/rapidhash
+	cd src/rapidhash && \
 	curl -fsSLO https://github.com/Nicoshev/rapidhash/raw/refs/heads/master/rapidhash.h && \
 	curl -fsSLO https://github.com/Nicoshev/rapidhash/raw/refs/heads/master/LICENSE
 
-
-.PHONY: update/libco
-update/libco:
-	mkdir -p include/libco
-	cd include/libco && \
-	curl -fsSLO https://github.com/higan-emu/libco/raw/refs/heads/master/amd64.c && \
-	curl -fsSLO https://github.com/higan-emu/libco/raw/refs/heads/master/libco.c && \
-	curl -fsSLO https://github.com/higan-emu/libco/raw/refs/heads/master/libco.h && \
-	curl -fsSLO https://github.com/higan-emu/libco/raw/refs/heads/master/valgrind.h && \
-	curl -fsSLO https://github.com/higan-emu/libco/raw/refs/heads/master/settings.h
+vscode:
+	mkdir -p .vscode/
+	cp contrib/vscode/launch.json .vscode/launch.json
+	cp contrib/vscode/tasks.json .vscode/tasks.json

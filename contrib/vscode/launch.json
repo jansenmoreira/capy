@@ -13,8 +13,8 @@
             "expressions": "native",
             "terminal": "integrated",
             "initCommands": [
-                "command source extra/lldb/capy.lldb"
-            ],
+                "command source contrib/lldb/capy.lldb"
+            ]
         },
         {
             "type": "lldb",
@@ -22,17 +22,15 @@
             "name": "ex_echo",
             "program": "${workspaceFolder}/build/debug/ex_echo",
             "args": [
-                "-vm",
-                "-a",
-                "0.0.0.0"
+                "-vm"
             ],
             "cwd": "${workspaceFolder}",
             "terminal": "integrated",
             "preLaunchTask": "build",
             "expressions": "native",
             "initCommands": [
-                "command source extra/lldb/capy.lldb"
-            ],
+                "command source contrib/lldb/capy.lldb"
+            ]
         }
     ]
 }
