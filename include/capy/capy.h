@@ -32,6 +32,7 @@
 #include <errno.h>
 #include <inttypes.h>
 #include <limits.h>
+#include <signal.h>
 #include <stdalign.h>
 #include <stdarg.h>
 #include <stdatomic.h>
@@ -453,6 +454,37 @@ MustCheck capy_err capy_uri_normalize(capy_arena *arena, capy_string *output, ca
 capy_string capy_uri_path_removedots(capy_arena *arena, capy_string path);
 
 //
+// IO
+//
+
+#ifdef CAPY_OS_LINUX
+typedef int capy_fd;
+#endif
+
+//
+// TCP
+//
+
+typedef struct capy_tcp capy_tcp;
+
+capy_tcp *capy_tcp_init(capy_arena *arena);
+capy_err capy_tcp_tls_server(capy_tcp *tcp, const char *chain, const char *key);
+capy_err capy_tcp_tls_client(capy_tcp *tcp);
+
+capy_err capy_tcp_listen(struct capy_tcp *tcp, const char *host, const char *port, size_t backlog);
+capy_err capy_tcp_connect(struct capy_tcp *tcp, const char *host, const char *port);
+capy_err capy_tcp_accept(struct capy_tcp *server, struct capy_tcp *client);
+capy_err capy_tcp_recv(capy_tcp *tcp, capy_buffer *buffer, uint64_t timeout);
+capy_err capy_tcp_send(capy_tcp *tcp, capy_buffer *buffer, uint64_t timeout);
+capy_err capy_tcp_shutdown(capy_tcp *tcp);
+capy_err capy_tcp_close(capy_tcp *tcp);
+uint16_t capy_tcp_port(capy_tcp *tcp);
+const char *capy_tcp_addr(capy_tcp *tcp);
+capy_err capy_tcp_keepalive(capy_tcp *tcp, bool enabled, int idle, int count, int interval);
+capy_err capy_tcp_nodelay(capy_tcp *tcp, bool enabled);
+capy_fd capy_tcp_fd(capy_tcp *tcp);
+
+//
 // HTTP
 //
 
@@ -679,16 +711,14 @@ capy_err capy_json_serialize(capy_buffer *buffer, capy_jsonval value, int tabsiz
 // TASKS
 //
 
-#ifdef CAPY_OS_LINUX
-typedef int capy_fd;
-#endif
-
 capy_err capy_task_init(capy_arena *arena, size_t size, void (*entrypoint)(void *data), void (*cleanup)(void *data), void *data);
 capy_err capy_waitfd(capy_fd fd, bool write, uint64_t timeout);
 capy_err capy_sleep(uint64_t ms);
 capy_err capy_shutdown(uint64_t timeout);
+void capy_cancel(void);
 bool capy_canceled(void);
 size_t capy_thread_id(void);
+size_t capy_cpus(void);
 
 #undef Format
 #undef Unused

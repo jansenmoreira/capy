@@ -1,4 +1,4 @@
-#include "capy.h"
+#include <capy/macros.h>
 
 #define capy_string_empty ((capy_string){.data = NULL, .size = 0})
 

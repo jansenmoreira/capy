@@ -1,4 +1,5 @@
-#include "capy.h"
+#include <capy/macros.h>
+
 #include "rapidhash/rapidhash.h"
 
 // PUBLIC DEFINITIONS

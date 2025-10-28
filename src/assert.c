@@ -1,4 +1,4 @@
-#include "capy.h"
+#include <capy/macros.h>
 
 // PUBLIC DEFINITIONS
 

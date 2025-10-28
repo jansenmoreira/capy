@@ -1,4 +1,4 @@
-#include "capy.h"
+#include <capy/macros.h>
 
 // PUBLIC DEFINITIONS
 
@@ -31,7 +31,7 @@ size_t next_pow2(size_t v)
 
 int64_t capy_timespec_diff(struct timespec a, struct timespec b)
 {
-    int64_t ns = Cast(int64_t, a.tv_sec - b.tv_sec) * 1000000000;
+    int64_t ns = Cast(int64_t, a.tv_sec - b.tv_sec) * (1000 * 1000 * 1000);
     ns += Cast(int64_t, a.tv_nsec - b.tv_nsec);
     return ns;
 }

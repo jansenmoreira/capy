@@ -1,4 +1,4 @@
-#include "capy.h"
+#include <capy/macros.h>
 
 enum
 {
@@ -11,6 +11,25 @@ enum
     URI_DIGIT = (1 << 6),
     URI_PCT_ENCODED = (1 << 7),
 };
+
+static uint8_t uri_char_categories(char c);
+static capy_string uri_shl_pctenc(capy_string input);
+static int uri_validate_pctenc(capy_string input, int categories, const char *chars);
+static size_t uri_validate_string(capy_string s, int categories, const char *chars);
+static capy_string uri_parse_hexword(capy_string input);
+static capy_string uri_parse_decoctet(capy_string input);
+static size_t uri_valid_userinfo(capy_string userinfo);
+static size_t uri_valid_port(capy_string port);
+static size_t uri_valid_fragment(capy_string fragment);
+static size_t uri_valid_query(capy_string query);
+static size_t uri_valid_reg_name(capy_string host);
+static size_t uri_valid_segment(capy_string segment);
+static size_t uri_valid_ipv4(capy_string host);
+static size_t uri_valid_ipv6(capy_string host);
+static size_t uri_valid_host(capy_string host);
+static size_t uri_valid_scheme(capy_string scheme);
+static size_t uri_valid_path(capy_string path);
+static capy_string uri_merge_paths(capy_arena *arena, capy_string base, capy_string reference);
 
 // INTERNAL VARIABLES
 
@@ -119,12 +138,12 @@ static uint8_t uri_char_categories_[256] = {
 
 // INTERNAL DEFINITIONS
 
-uint8_t capy_uri_char_categories_(char c)
+static uint8_t uri_char_categories(char c)
 {
     return uri_char_categories_[(uint8_t)(c)];
 }
 
-capy_string capy_uri_pctenc_shl_(capy_string input)
+static capy_string uri_shl_pctenc(capy_string input)
 {
     capy_assert(input.size);
 
@@ -138,19 +157,19 @@ capy_string capy_uri_pctenc_shl_(capy_string input)
     }
 }
 
-int capy_uri_pctenc_validate_(capy_string input, int categories, const char *chars)
+static int uri_validate_pctenc(capy_string input, int categories, const char *chars)
 {
     capy_assert(input.size);
 
     if (input.data[0] != '%')
     {
-        return ((capy_uri_char_categories_(input.data[0]) & categories) ||
+        return ((uri_char_categories(input.data[0]) & categories) ||
                 capy_char_is(input.data[0], chars));
     }
 
     if (input.size >= 3 &&
-        (capy_uri_char_categories_(input.data[1]) & URI_HEXDIGIT) &&
-        (capy_uri_char_categories_(input.data[2]) & URI_HEXDIGIT))
+        (uri_char_categories(input.data[1]) & URI_HEXDIGIT) &&
+        (uri_char_categories(input.data[2]) & URI_HEXDIGIT))
     {
         return URI_PCT_ENCODED & categories;
     }
@@ -158,30 +177,30 @@ int capy_uri_pctenc_validate_(capy_string input, int categories, const char *cha
     return 0;
 }
 
-size_t capy_uri_string_validate_(capy_string s, int categories, const char *chars)
+static size_t uri_validate_string(capy_string s, int categories, const char *chars)
 {
     capy_string input = s;
 
     while (input.size)
     {
-        if (!capy_uri_pctenc_validate_(input, categories, chars))
+        if (!uri_validate_pctenc(input, categories, chars))
         {
             return 0;
         }
 
-        input = capy_uri_pctenc_shl_(input);
+        input = uri_shl_pctenc(input);
     }
 
     return s.size;
 }
 
-capy_string capy_uri_parse_hexword_(capy_string input)
+static capy_string uri_parse_hexword(capy_string input)
 {
     size_t i;
 
     for (i = 0; i < 4 && i < input.size; i++)
     {
-        if ((capy_uri_char_categories_(input.data[i]) & URI_HEXDIGIT) == 0)
+        if ((uri_char_categories(input.data[i]) & URI_HEXDIGIT) == 0)
         {
             break;
         }
@@ -192,7 +211,7 @@ capy_string capy_uri_parse_hexword_(capy_string input)
     return input;
 }
 
-capy_string capy_uri_parse_decoctet_(capy_string input)
+static capy_string uri_parse_decoctet(capy_string input)
 {
     switch (input.data[0])
     {
@@ -206,9 +225,9 @@ capy_string capy_uri_parse_decoctet_(capy_string input)
         case '1':
         case '2':
         {
-            if (input.size >= 2 && capy_uri_char_categories_(input.data[1]) & URI_DIGIT)
+            if (input.size >= 2 && uri_char_categories(input.data[1]) & URI_DIGIT)
             {
-                if (input.size >= 3 && capy_uri_char_categories_(input.data[2]) & URI_DIGIT)
+                if (input.size >= 3 && uri_char_categories(input.data[2]) & URI_DIGIT)
                 {
                     input.size = 3;
                 }
@@ -234,7 +253,7 @@ capy_string capy_uri_parse_decoctet_(capy_string input)
         case '8':
         case '9':
         {
-            if (input.size >= 2 && capy_uri_char_categories_(input.data[1]) & URI_DIGIT)
+            if (input.size >= 2 && uri_char_categories(input.data[1]) & URI_DIGIT)
             {
                 input.size = 2;
             }
@@ -256,37 +275,37 @@ capy_string capy_uri_parse_decoctet_(capy_string input)
     return input;
 }
 
-size_t capy_uri_valid_userinfo_(capy_string userinfo)
+static size_t uri_valid_userinfo(capy_string userinfo)
 {
-    return capy_uri_string_validate_(userinfo, URI_UNRESERVED | URI_SUB_DELIM | URI_PCT_ENCODED, ":");
+    return uri_validate_string(userinfo, URI_UNRESERVED | URI_SUB_DELIM | URI_PCT_ENCODED, ":");
 }
 
-size_t capy_uri_valid_port_(capy_string port)
+static size_t uri_valid_port(capy_string port)
 {
-    return capy_uri_string_validate_(port, URI_DIGIT, NULL);
+    return uri_validate_string(port, URI_DIGIT, NULL);
 }
 
-size_t capy_uri_valid_fragment_(capy_string fragment)
+static size_t uri_valid_fragment(capy_string fragment)
 {
-    return capy_uri_string_validate_(fragment, URI_UNRESERVED | URI_SUB_DELIM | URI_PCT_ENCODED, ":@/?");
+    return uri_validate_string(fragment, URI_UNRESERVED | URI_SUB_DELIM | URI_PCT_ENCODED, ":@/?");
 }
 
-size_t capy_uri_valid_query_(capy_string query)
+static size_t uri_valid_query(capy_string query)
 {
-    return capy_uri_string_validate_(query, URI_UNRESERVED | URI_SUB_DELIM | URI_PCT_ENCODED, ":@/?");
+    return uri_validate_string(query, URI_UNRESERVED | URI_SUB_DELIM | URI_PCT_ENCODED, ":@/?");
 }
 
-size_t capy_uri_valid_reg_name_(capy_string host)
+static size_t uri_valid_reg_name(capy_string host)
 {
-    return capy_uri_string_validate_(host, URI_UNRESERVED | URI_SUB_DELIM | URI_PCT_ENCODED, NULL);
+    return uri_validate_string(host, URI_UNRESERVED | URI_SUB_DELIM | URI_PCT_ENCODED, NULL);
 }
 
-size_t capy_uri_valid_segment_(capy_string segment)
+static size_t uri_valid_segment(capy_string segment)
 {
-    return capy_uri_string_validate_(segment, URI_UNRESERVED | URI_PCT_ENCODED | URI_SUB_DELIM, ":@");
+    return uri_validate_string(segment, URI_UNRESERVED | URI_PCT_ENCODED | URI_SUB_DELIM, ":@");
 }
 
-size_t capy_uri_valid_ipv4_(capy_string host)
+static size_t uri_valid_ipv4(capy_string host)
 {
     capy_string input = host;
 
@@ -302,7 +321,7 @@ size_t capy_uri_valid_ipv4_(capy_string host)
             input = capy_string_shl(input, 1);
         }
 
-        capy_string dec_octet = capy_uri_parse_decoctet_(input);
+        capy_string dec_octet = uri_parse_decoctet(input);
 
         if (dec_octet.size == 0)
         {
@@ -315,7 +334,7 @@ size_t capy_uri_valid_ipv4_(capy_string host)
     return (input.size == 0) ? host.size : 0;
 }
 
-size_t capy_uri_valid_ipv6_(capy_string host)
+static size_t uri_valid_ipv6(capy_string host)
 {
     capy_string input = host;
 
@@ -327,7 +346,7 @@ size_t capy_uri_valid_ipv6_(capy_string host)
     {
         if ((!short_form && prefix == 6) || (short_form && suffix < 6))
         {
-            if (capy_uri_valid_ipv4_(input))
+            if (uri_valid_ipv4(input))
             {
                 if (short_form)
                 {
@@ -343,7 +362,7 @@ size_t capy_uri_valid_ipv6_(capy_string host)
             }
         }
 
-        capy_string hex_word = capy_uri_parse_hexword_(input);
+        capy_string hex_word = uri_parse_hexword(input);
         input = capy_string_shl(input, hex_word.size);
 
         if (hex_word.size)
@@ -392,13 +411,13 @@ size_t capy_uri_valid_ipv6_(capy_string host)
     return host.size;
 }
 
-size_t capy_uri_valid_host_(capy_string host)
+static size_t uri_valid_host(capy_string host)
 {
     if (host.data[0] == '[' && host.data[host.size - 1] == ']')
     {
         capy_string input = {.data = host.data + 1, .size = host.size - 2};
 
-        if (capy_uri_valid_ipv6_(input))
+        if (uri_valid_ipv6(input))
         {
             return host.size;
         }
@@ -406,15 +425,15 @@ size_t capy_uri_valid_host_(capy_string host)
         return 0;
     }
 
-    if (capy_uri_valid_ipv4_(host))
+    if (uri_valid_ipv4(host))
     {
         return host.size;
     }
 
-    return capy_uri_valid_reg_name_(host);
+    return uri_valid_reg_name(host);
 }
 
-size_t capy_uri_valid_scheme_(capy_string scheme)
+static size_t uri_valid_scheme(capy_string scheme)
 {
     if (scheme.size == 0)
     {
@@ -423,27 +442,27 @@ size_t capy_uri_valid_scheme_(capy_string scheme)
 
     capy_string input = scheme;
 
-    if (!capy_uri_pctenc_validate_(input, URI_SCHEME_BEGIN, NULL))
+    if (!uri_validate_pctenc(input, URI_SCHEME_BEGIN, NULL))
     {
         return 0;
     }
 
-    input = capy_uri_pctenc_shl_(input);
+    input = uri_shl_pctenc(input);
 
     while (input.size)
     {
-        if (!capy_uri_pctenc_validate_(input, URI_SCHEME_CONTINUE, NULL))
+        if (!uri_validate_pctenc(input, URI_SCHEME_CONTINUE, NULL))
         {
             return 0;
         }
 
-        input = capy_uri_pctenc_shl_(input);
+        input = uri_shl_pctenc(input);
     }
 
     return scheme.size;
 }
 
-size_t capy_uri_valid_path_(capy_string path)
+static size_t uri_valid_path(capy_string path)
 {
     capy_string input = path;
 
@@ -453,7 +472,7 @@ size_t capy_uri_valid_path_(capy_string path)
     {
         if (input.data[segment_size] == '/')
         {
-            if (segment_size && !capy_uri_valid_segment_(capy_string_slice(input, 0, segment_size)))
+            if (segment_size && !uri_valid_segment(capy_string_slice(input, 0, segment_size)))
             {
                 return 0;
             }
@@ -467,7 +486,7 @@ size_t capy_uri_valid_path_(capy_string path)
         }
     }
 
-    if (segment_size && !capy_uri_valid_segment_(input))
+    if (segment_size && !uri_valid_segment(input))
     {
         return 0;
     }
@@ -475,7 +494,7 @@ size_t capy_uri_valid_path_(capy_string path)
     return path.size;
 }
 
-capy_string capy_uri_path_merge_(capy_arena *arena, capy_string base, capy_string reference)
+static capy_string uri_merge_paths(capy_arena *arena, capy_string base, capy_string reference)
 {
     while (base.size)
     {
@@ -525,7 +544,7 @@ capy_err capy_uri_normalize(capy_arena *arena, capy_string *output, capy_string 
             capy_string_parse_hexdigits(&value, capy_string_slice(input, 1, 3));
             char c = (char)(value);
 
-            if (capy_uri_char_categories_(c) & URI_UNRESERVED)
+            if (uri_char_categories(c) & URI_UNRESERVED)
             {
                 buffer[size] = c;
                 size += 1;
@@ -735,37 +754,37 @@ capy_uri capy_uri_parse(capy_string input)
 
 int capy_uri_valid(capy_uri uri)
 {
-    if ((uri.flags & CAPY_URI_SCHEME) && !capy_uri_valid_scheme_(uri.scheme))
+    if ((uri.flags & CAPY_URI_SCHEME) && !uri_valid_scheme(uri.scheme))
     {
         return false;
     }
 
-    if (uri.userinfo.size && !capy_uri_valid_userinfo_(uri.userinfo))
+    if (uri.userinfo.size && !uri_valid_userinfo(uri.userinfo))
     {
         return false;
     }
 
-    if (uri.port.size && !capy_uri_valid_port_(uri.port))
+    if (uri.port.size && !uri_valid_port(uri.port))
     {
         return false;
     }
 
-    if (uri.host.size && !capy_uri_valid_host_(uri.host))
+    if (uri.host.size && !uri_valid_host(uri.host))
     {
         return false;
     }
 
-    if (uri.path.size && !capy_uri_valid_path_(uri.path))
+    if (uri.path.size && !uri_valid_path(uri.path))
     {
         return false;
     }
 
-    if (uri.query.size && !capy_uri_valid_query_(uri.query))
+    if (uri.query.size && !uri_valid_query(uri.query))
     {
         return false;
     }
 
-    if (uri.fragment.size && !capy_uri_valid_fragment_(uri.fragment))
+    if (uri.fragment.size && !uri_valid_fragment(uri.fragment))
     {
         return false;
     }
@@ -809,7 +828,7 @@ capy_uri capy_uri_resolve_reference(capy_arena *arena, capy_uri base, capy_uri r
         }
         else
         {
-            uri.path = capy_uri_path_merge_(arena, base.path, reference.path);
+            uri.path = uri_merge_paths(arena, base.path, reference.path);
             uri.path = capy_uri_path_removedots(arena, uri.path);
         }
     }

@@ -1,8 +1,15 @@
-#include "capy.h"
+#include <capy/macros.h>
 
 // INTERNAL VARIABLES
 
-static logger_t logger = {.file = NULL, .mask = 0};
+struct logger
+{
+    FILE *file;
+    unsigned int mask;
+    const char *timefmt;
+};
+
+static struct logger logger = {.file = NULL, .mask = 0};
 
 static const char *levelmsg[] = {
     [CAPY_LOG_MEM] = "\x1b[32m[MEM]\x1b[0m",

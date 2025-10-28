@@ -8,7 +8,9 @@
 -Wmissing-prototypes
 -Wmissing-declarations
 -Wno-missing-field-initializers
--Wno-unused-function
 -Wno-implicit-fallthrough
 -D_GNU_SOURCE
+-g
+-fprofile-arcs
+-ftest-coverage
 -Wno-unused-includes

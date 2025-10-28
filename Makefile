@@ -9,7 +9,6 @@ FLAGS_CC := \
 	-Wmissing-prototypes \
 	-Wmissing-declarations \
 	-Wno-missing-field-initializers \
-	-Wno-unused-function \
 	-Wno-implicit-fallthrough
 
 FLAGS_LINUX := \
@@ -32,7 +31,6 @@ linux/build:
 	ar rcs ${TARGET}/libcapy.a ${TARGET}/capy.o
 	${CC} ${FLAGS} tests/test.c    -L${TARGET} ${LIBS} -o ${TARGET}/tests
 	${CC} ${FLAGS} examples/echo.c -L${TARGET} ${LIBS} -o ${TARGET}/ex_echo
-	echo "${FLAGS_CC} ${FLAGS_LINUX} -Wno-unused-includes" | tr ' ' '\n' > compile_flags.txt
 
 
 .PHONY: linux/debug
@@ -40,6 +38,7 @@ linux/debug: FLAGS  := ${FLAGS_CC} ${FLAGS_LINUX} -g -fprofile-arcs -ftest-cover
 linux/debug: TARGET := build/debug
 linux/debug: LIBS   += -lssl -lcrypto
 linux/debug: linux/build
+	echo "${FLAGS} -Wno-unused-includes" | tr ' ' '\n' > compile_flags.txt
 
 
 .PHONY: linux/release

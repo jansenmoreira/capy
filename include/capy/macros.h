@@ -74,4 +74,8 @@
 #define LogWrn(...) capy_log(CAPY_LOG_WARNING, __VA_ARGS__)
 #define LogErr(...) capy_log(CAPY_LOG_ERROR, __VA_ARGS__)
 
+#define Linux
+#define LinuxAmd64
+#define Platform
+
 #endif

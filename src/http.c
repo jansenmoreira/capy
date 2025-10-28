@@ -1,4 +1,85 @@
-#include "capy.h"
+#include <capy/macros.h>
+
+typedef union httproutermap
+{
+    capy_strmap strmap;
+    struct
+    {
+        size_t size;
+        size_t capacity;
+        size_t element_size;
+        struct httprouter *items;
+    };
+} httproutermap;
+
+typedef struct httprouter
+{
+    capy_string segment;
+    httproutermap *segments;
+    capy_httproute routes[10];
+} httprouter;
+
+typedef enum
+{
+    STATE_UNKNOWN,
+    STATE_RESET,
+    STATE_READ_REQUEST,
+    STATE_PARSE_REQLINE,
+    STATE_PARSE_HEADERS,
+    STATE_PARSE_CONTENT,
+    STATE_PARSE_CHUNKSIZE,
+    STATE_PARSE_CHUNKDATA,
+    STATE_PARSE_TRAILERS,
+    STATE_ROUTE_REQUEST,
+    STATE_WRITE_RESPONSE,
+    STATE_BAD_REQUEST,
+    STATE_SERVER_FAILURE,
+    STATE_SSL_SHUTDOWN,
+    STATE_CLOSE,
+} httpconnstate;
+
+typedef struct httpconn
+{
+    capy_tcp *tcp;
+
+    size_t conn_id;
+
+    capy_arena *arena;
+    void *marker_init;
+
+    ssize_t mem_headers;
+    ssize_t mem_content;
+    ssize_t mem_trailers;
+    ssize_t mem_response;
+
+    httpconnstate state;
+    httpconnstate after_read;
+
+    capy_buffer *line_buffer;
+
+    capy_buffer *content_buffer;
+    capy_buffer *response_buffer;
+
+    size_t line_cursor;
+    size_t chunk_size;
+
+    capy_httpreq request;
+    capy_httpresp response;
+
+    httprouter *router;
+
+    capy_httpserveropt *options;
+
+    struct timespec created;
+    struct timespec timestamp;
+} httpconn;
+
+typedef struct capy_httpserver
+{
+    capy_tcp *tcp;
+    httprouter *router;
+    capy_httpserveropt *options;
+} capy_httpserver;
 
 enum
 {
@@ -223,9 +304,52 @@ static const char *http_months[] = {
     "Dec",
 };
 
+static bool http_validate_string(capy_string s, int categories, const char *chars);
+static capy_string http_next_token(capy_string *buffer, const char *delimiters);
+static size_t http_consume_chars(capy_string *buffer, const char *chars, size_t limit);
+static capy_err http_canonicalize_field(capy_arena *arena, capy_string *output, capy_string input);
+static capy_err httpresp_write_status(capy_httpresp *response);
+static capy_err httpresp_write_cstr(capy_httpresp *response, const char *msg);
+static capy_err http_pctdecode_query(capy_arena *arena, capy_string *output, capy_string input);
+
+static httproutermap *httproutermap_init(capy_arena *arena, size_t capacity);
+static httprouter *httproutermap_get(httproutermap *map, capy_string key);
+static MustCheck capy_err httproutermap_set(capy_arena *arena, httproutermap *map, httprouter router);
+
+static httprouter *httprouter_init(capy_arena *arena, int n, capy_httproute *routes);
+static httprouter *httprouter_add_route(capy_arena *arena, httprouter *router, capy_httpmethod method, capy_string suffix, capy_string path, capy_http_handler handler);
+static capy_httproute *httprouter_get_route(httprouter *router, capy_httpmethod method, capy_string path);
+static capy_err httprouter_handle_request(capy_arena *arena, httprouter *router, capy_httpreq *request, capy_httpresp *response);
+
+static int httpconn_parse_eol(httpconn *conn, capy_string *line);
+static void httpconn_consume_bytes(httpconn *conn, size_t size);
+static void httpconn_consume_line(httpconn *conn);
+static capy_err httpconn_parse_reqline(httpconn *conn);
+static capy_err httpconn_parse_headers(httpconn *conn);
+static capy_err httpconn_parse_trailers(httpconn *conn);
+static capy_err httpconn_parse_chunksize(httpconn *conn);
+static capy_err httpconn_parse_chunkdata(httpconn *conn);
+static capy_err httpconn_parse_reqbody(httpconn *conn);
+static capy_err httpconn_prepare_badrequest(httpconn *conn);
+static capy_err httpconn_route_request(httpconn *conn);
+static capy_err httpconn_reset(httpconn *conn);
+static void httpconn_trace(httpconn *conn);
+static capy_err httpconn_write_response(httpconn *conn);
+static capy_err httpconn_read_request(httpconn *conn);
+static capy_err httpconn_run(httpconn *conn);
+static capy_err httpconn_destroy(httpconn *conn);
+static void httpconn_run_task(void *conn);
+static void httpconn_clean_task(void *conn);
+
+static capy_httpserveropt httpserveropt_default(capy_httpserveropt options);
+static capy_err httpserver_accept(capy_httpserver *server);
+static capy_err httpserver_serve(capy_httpserver *server);
+
+Platform static capy_err httpserver_workers(size_t n, capy_httpserver *servers);
+
 // INTERNAL DEFINITIONS
 
-bool capy_http_validate_string_(capy_string s, int categories, const char *chars)
+static bool http_validate_string(capy_string s, int categories, const char *chars)
 {
     capy_string input = s;
 
@@ -242,7 +366,7 @@ bool capy_http_validate_string_(capy_string s, int categories, const char *chars
     return true;
 }
 
-capy_string capy_http_next_token_(capy_string *buffer, const char *delimiters)
+static capy_string http_next_token(capy_string *buffer, const char *delimiters)
 {
     capy_string input = *buffer;
 
@@ -261,7 +385,7 @@ capy_string capy_http_next_token_(capy_string *buffer, const char *delimiters)
     return capy_string_slice(input, 0, i);
 }
 
-size_t capy_http_consume_chars_(capy_string *buffer, const char *chars, size_t limit)
+static size_t http_consume_chars(capy_string *buffer, const char *chars, size_t limit)
 {
     capy_string input = *buffer;
 
@@ -281,7 +405,7 @@ size_t capy_http_consume_chars_(capy_string *buffer, const char *chars, size_t l
     return i;
 }
 
-capy_err capy_http_canonicalize_field_(capy_arena *arena, capy_string *output, capy_string input)
+static capy_err http_canonicalize_field(capy_arena *arena, capy_string *output, capy_string input)
 {
     char *data = Make(arena, char, input.size + 1);
 
@@ -317,88 +441,7 @@ capy_err capy_http_canonicalize_field_(capy_arena *arena, capy_string *output, c
     return Ok;
 }
 
-capy_httproutermap *capy_httproutermap_init_(capy_arena *arena, size_t capacity)
-{
-    char *addr = capy_arena_alloc(arena, sizeof(capy_httproutermap) + (sizeof(capy_httprouter) * capacity), 8, true);
-
-    if (addr == NULL)
-    {
-        return NULL;
-    }
-
-    capy_httproutermap *map = Cast(capy_httproutermap *, addr);
-
-    map->size = 0;
-    map->capacity = capacity;
-    map->element_size = sizeof(capy_httprouter);
-    map->items = Cast(capy_httprouter *, addr + sizeof(capy_httproutermap));
-
-    return map;
-}
-
-capy_httprouter *capy_httproutermap_get_(capy_httproutermap *map, capy_string key)
-{
-    return capy_strmap_get(&map->strmap, key);
-}
-
-MustCheck capy_err capy_httproutermap_set_(capy_arena *arena, capy_httproutermap *map, capy_httprouter router)
-{
-    return capy_strmap_set(arena, &map->strmap, &router);
-}
-
-capy_httprouter *capy_httprouter_add_route_(capy_arena *arena, capy_httprouter *router, capy_httpmethod method, capy_string suffix, capy_string path, capy_http_handler handler)
-{
-    if (router == NULL)
-    {
-        router = Make(arena, capy_httprouter, 1);
-
-        if (router == NULL)
-        {
-            return NULL;
-        }
-
-        router->segments = capy_httproutermap_init_(arena, 4);
-
-        if (router->segments == NULL)
-        {
-            return NULL;
-        }
-    }
-
-    capy_http_consume_chars_(&suffix, "/", 0);
-    capy_string segment = capy_http_next_token_(&suffix, "/");
-
-    if (segment.size == 0)
-    {
-        router->routes[method] = (capy_httproute){.method = method, .path = path, .handler = handler};
-        return router;
-    }
-
-    if (segment.data[0] == '^')
-    {
-        segment = Str("^");
-    }
-
-    capy_httprouter *child = capy_httproutermap_get_(router->segments, segment);
-
-    child = capy_httprouter_add_route_(arena, child, method, suffix, path, handler);
-
-    if (child == NULL)
-    {
-        return NULL;
-    }
-
-    child->segment = segment;
-
-    if (capy_httproutermap_set_(arena, router->segments, *child).code)
-    {
-        return NULL;
-    }
-
-    return router;
-}
-
-capy_err capy_httpresp_write_status_(capy_httpresp *response)
+static capy_err httpresp_write_status(capy_httpresp *response)
 {
     capy_string status_text = http_status_string[response->status];
 
@@ -419,7 +462,7 @@ capy_err capy_httpresp_write_status_(capy_httpresp *response)
     return Ok;
 }
 
-capy_err capy_httpresp_write_cstr_(capy_httpresp *response, const char *msg)
+static capy_err httpresp_write_cstr(capy_httpresp *response, const char *msg)
 {
     capy_err err = capy_strkvnmap_add(response->headers, Str("Content-Type"), Str("text/plain; charset=UTF-8"));
 
@@ -438,7 +481,7 @@ capy_err capy_httpresp_write_cstr_(capy_httpresp *response, const char *msg)
     return Ok;
 }
 
-capy_err capy_http_pctdecode_query_(capy_arena *arena, capy_string *output, capy_string input)
+static capy_err http_pctdecode_query(capy_arena *arena, capy_string *output, capy_string input)
 {
     if (input.size == 0)
     {
@@ -480,13 +523,42 @@ capy_err capy_http_pctdecode_query_(capy_arena *arena, capy_string *output, capy
     return Ok;
 }
 
-capy_httprouter *capy_httprouter_init_(capy_arena *arena, int n, capy_httproute *routes)
+static httproutermap *httproutermap_init(capy_arena *arena, size_t capacity)
 {
-    capy_httprouter *router = NULL;
+    char *addr = capy_arena_alloc(arena, sizeof(httproutermap) + (sizeof(httprouter) * capacity), 8, true);
+
+    if (addr == NULL)
+    {
+        return NULL;
+    }
+
+    httproutermap *map = Cast(httproutermap *, addr);
+
+    map->size = 0;
+    map->capacity = capacity;
+    map->element_size = sizeof(httprouter);
+    map->items = Cast(httprouter *, addr + sizeof(httproutermap));
+
+    return map;
+}
+
+static httprouter *httproutermap_get(httproutermap *map, capy_string key)
+{
+    return capy_strmap_get(&map->strmap, key);
+}
+
+static MustCheck capy_err httproutermap_set(capy_arena *arena, httproutermap *map, httprouter router)
+{
+    return capy_strmap_set(arena, &map->strmap, &router);
+}
+
+httprouter *httprouter_init(capy_arena *arena, int n, capy_httproute *routes)
+{
+    httprouter *router = NULL;
 
     for (int i = 0; i < n; i++)
     {
-        router = capy_httprouter_add_route_(arena, router, routes[i].method, routes[i].path, routes[i].path, routes[i].handler);
+        router = httprouter_add_route(arena, router, routes[i].method, routes[i].path, routes[i].path, routes[i].handler);
 
         if (router == NULL)
         {
@@ -497,10 +569,62 @@ capy_httprouter *capy_httprouter_init_(capy_arena *arena, int n, capy_httproute 
     return router;
 }
 
-capy_httproute *capy_httprouter_get_route_(capy_httprouter *router, capy_httpmethod method, capy_string path)
+static httprouter *httprouter_add_route(capy_arena *arena, httprouter *router, capy_httpmethod method, capy_string suffix, capy_string path, capy_http_handler handler)
 {
-    capy_http_consume_chars_(&path, "/", 0);
-    capy_string segment = capy_http_next_token_(&path, "/");
+    if (router == NULL)
+    {
+        router = Make(arena, httprouter, 1);
+
+        if (router == NULL)
+        {
+            return NULL;
+        }
+
+        router->segments = httproutermap_init(arena, 4);
+
+        if (router->segments == NULL)
+        {
+            return NULL;
+        }
+    }
+
+    http_consume_chars(&suffix, "/", 0);
+    capy_string segment = http_next_token(&suffix, "/");
+
+    if (segment.size == 0)
+    {
+        router->routes[method] = (capy_httproute){.method = method, .path = path, .handler = handler};
+        return router;
+    }
+
+    if (segment.data[0] == '^')
+    {
+        segment = Str("^");
+    }
+
+    httprouter *child = httproutermap_get(router->segments, segment);
+
+    child = httprouter_add_route(arena, child, method, suffix, path, handler);
+
+    if (child == NULL)
+    {
+        return NULL;
+    }
+
+    child->segment = segment;
+
+    if (httproutermap_set(arena, router->segments, *child).code)
+    {
+        return NULL;
+    }
+
+    return router;
+}
+
+capy_httproute *httprouter_get_route(httprouter *router, capy_httpmethod method, capy_string path)
+{
+    http_consume_chars(&path, "/", 0);
+    capy_string segment = http_next_token(&path, "/");
 
     if (segment.size == 0)
     {
@@ -514,11 +638,11 @@ capy_httproute *capy_httprouter_get_route_(capy_httprouter *router, capy_httpmet
         return route;
     }
 
-    capy_httprouter *child = capy_httproutermap_get_(router->segments, segment);
+    httprouter *child = httproutermap_get(router->segments, segment);
 
     if (child == NULL)
     {
-        child = capy_httproutermap_get_(router->segments, Str("^"));
+        child = httproutermap_get(router->segments, Str("^"));
 
         if (child == NULL)
         {
@@ -526,19 +650,19 @@ capy_httproute *capy_httprouter_get_route_(capy_httprouter *router, capy_httpmet
         }
     }
 
-    return capy_httprouter_get_route_(child, method, path);
+    return httprouter_get_route(child, method, path);
 }
 
-capy_err capy_httprouter_handle_request_(capy_arena *arena, capy_httprouter *router, capy_httpreq *request, capy_httpresp *response)
+capy_err httprouter_handle_request(capy_arena *arena, httprouter *router, capy_httpreq *request, capy_httpresp *response)
 {
     capy_err err;
 
-    capy_httproute *route = capy_httprouter_get_route_(router, request->method, request->uri.path);
+    capy_httproute *route = httprouter_get_route(router, request->method, request->uri.path);
 
     if (route == NULL)
     {
         response->status = CAPY_HTTP_NOT_FOUND;
-        return capy_httpresp_write_status_(response);
+        return httpresp_write_status(response);
     }
 
     err = capy_http_parse_uriparams(request->params, request->uri.path, route->path);
@@ -560,19 +684,13 @@ capy_err capy_httprouter_handle_request_(capy_arena *arena, capy_httprouter *rou
     if (err.code)
     {
         response->status = CAPY_HTTP_INTERNAL_SERVER_ERROR;
-        return capy_httpresp_write_cstr_(response, err.msg);
+        return httpresp_write_cstr(response, err.msg);
     }
 
     return Ok;
 }
 
-void capy_httpconn_close_(capy_httpconn *conn)
-{
-    capy_tcpconn_close_(conn->tcp);
-    conn->state = STATE_CLOSE;
-}
-
-int capy_httpconn_parse_msgline_(capy_httpconn *conn, capy_string *line)
+static int httpconn_parse_eol(httpconn *conn, capy_string *line)
 {
     while (conn->line_cursor <= conn->line_buffer->size)
     {
@@ -596,7 +714,7 @@ int capy_httpconn_parse_msgline_(capy_httpconn *conn, capy_string *line)
     return 0;
 }
 
-void capy_httpconn_shl_msg_(capy_httpconn *conn, size_t size)
+static void httpconn_consume_bytes(httpconn *conn, size_t size)
 {
     capy_buffer_shl(conn->line_buffer, size);
 
@@ -610,16 +728,16 @@ void capy_httpconn_shl_msg_(capy_httpconn *conn, size_t size)
     }
 }
 
-void capy_httpconn_shl_msgline_(capy_httpconn *conn)
+static void httpconn_consume_line(httpconn *conn)
 {
-    capy_httpconn_shl_msg_(conn, conn->line_cursor);
+    httpconn_consume_bytes(conn, conn->line_cursor);
 }
 
-capy_err capy_httpconn_parse_reqline_(capy_httpconn *conn)
+static capy_err httpconn_parse_reqline(httpconn *conn)
 {
     capy_string line;
 
-    if (capy_httpconn_parse_msgline_(conn, &line))
+    if (httpconn_parse_eol(conn, &line))
     {
         conn->after_read = STATE_PARSE_REQLINE;
         conn->state = STATE_READ_REQUEST;
@@ -638,13 +756,13 @@ capy_err capy_httpconn_parse_reqline_(capy_httpconn *conn)
         return ErrWrap(err, "Failed to parse request line");
     }
 
-    capy_httpconn_shl_msgline_(conn);
+    httpconn_consume_line(conn);
     conn->state = STATE_PARSE_HEADERS;
 
     return Ok;
 }
 
-capy_err capy_httpconn_parse_headers_(capy_httpconn *conn)
+static capy_err httpconn_parse_headers(httpconn *conn)
 {
     capy_err err;
 
@@ -652,7 +770,7 @@ capy_err capy_httpconn_parse_headers_(capy_httpconn *conn)
     {
         capy_string line;
 
-        if (capy_httpconn_parse_msgline_(conn, &line))
+        if (httpconn_parse_eol(conn, &line))
         {
             conn->after_read = STATE_PARSE_HEADERS;
             conn->state = STATE_READ_REQUEST;
@@ -661,7 +779,7 @@ capy_err capy_httpconn_parse_headers_(capy_httpconn *conn)
 
         if (line.size == 0)
         {
-            capy_httpconn_shl_msgline_(conn);
+            httpconn_consume_line(conn);
             break;
         }
 
@@ -677,7 +795,7 @@ capy_err capy_httpconn_parse_headers_(capy_httpconn *conn)
             return ErrWrap(err, "Failed to parse headers");
         }
 
-        capy_httpconn_shl_msgline_(conn);
+        httpconn_consume_line(conn);
     }
 
     err = capy_http_validate_request(conn->arena, &conn->request);
@@ -709,7 +827,7 @@ capy_err capy_httpconn_parse_headers_(capy_httpconn *conn)
     return Ok;
 }
 
-capy_err capy_httpconn_parse_trailers_(capy_httpconn *conn)
+static capy_err httpconn_parse_trailers(httpconn *conn)
 {
     capy_err err;
 
@@ -717,7 +835,7 @@ capy_err capy_httpconn_parse_trailers_(capy_httpconn *conn)
     {
         capy_string line;
 
-        if (capy_httpconn_parse_msgline_(conn, &line))
+        if (httpconn_parse_eol(conn, &line))
         {
             conn->after_read = STATE_PARSE_TRAILERS;
             conn->state = STATE_READ_REQUEST;
@@ -726,7 +844,7 @@ capy_err capy_httpconn_parse_trailers_(capy_httpconn *conn)
 
         if (line.size == 0)
         {
-            capy_httpconn_shl_msgline_(conn);
+            httpconn_consume_line(conn);
             break;
         }
 
@@ -742,18 +860,18 @@ capy_err capy_httpconn_parse_trailers_(capy_httpconn *conn)
             return ErrWrap(err, "Failed to parse trailers");
         }
 
-        capy_httpconn_shl_msgline_(conn);
+        httpconn_consume_line(conn);
     }
 
     conn->state = STATE_ROUTE_REQUEST;
     return Ok;
 }
 
-capy_err capy_httpconn_parse_chunksize_(capy_httpconn *conn)
+static capy_err httpconn_parse_chunksize(httpconn *conn)
 {
     capy_string line;
 
-    if (capy_httpconn_parse_msgline_(conn, &line))
+    if (httpconn_parse_eol(conn, &line))
     {
         conn->after_read = STATE_PARSE_CHUNKSIZE;
         conn->state = STATE_READ_REQUEST;
@@ -771,7 +889,7 @@ capy_err capy_httpconn_parse_chunksize_(capy_httpconn *conn)
 
     conn->chunk_size = (size_t)(value);
 
-    capy_httpconn_shl_msgline_(conn);
+    httpconn_consume_line(conn);
 
     if (conn->chunk_size == 0)
     {
@@ -785,7 +903,7 @@ capy_err capy_httpconn_parse_chunksize_(capy_httpconn *conn)
     return Ok;
 }
 
-capy_err capy_httpconn_parse_chunkdata_(capy_httpconn *conn)
+static capy_err httpconn_parse_chunkdata(httpconn *conn)
 {
     capy_err err;
 
@@ -800,7 +918,7 @@ capy_err capy_httpconn_parse_chunkdata_(capy_httpconn *conn)
             return ErrWrap(err, "Failed to read chunk data");
         }
 
-        capy_httpconn_shl_msg_(conn, msg_size);
+        httpconn_consume_bytes(conn, msg_size);
 
         conn->chunk_size -= msg_size;
 
@@ -824,13 +942,13 @@ capy_err capy_httpconn_parse_chunkdata_(capy_httpconn *conn)
         return ErrWrap(err, "Failed to read chunk data");
     }
 
-    capy_httpconn_shl_msg_(conn, conn->chunk_size + 2);
+    httpconn_consume_bytes(conn, conn->chunk_size + 2);
 
     conn->state = STATE_PARSE_CHUNKSIZE;
     return Ok;
 }
 
-capy_err capy_httpconn_parse_reqbody_(capy_httpconn *conn)
+static capy_err httpconn_parse_reqbody(httpconn *conn)
 {
     capy_err err;
 
@@ -845,7 +963,7 @@ capy_err capy_httpconn_parse_reqbody_(capy_httpconn *conn)
             return ErrWrap(err, "Failed to read content data");
         }
 
-        capy_httpconn_shl_msg_(conn, message_size);
+        httpconn_consume_bytes(conn, message_size);
 
         conn->chunk_size -= message_size;
 
@@ -861,20 +979,20 @@ capy_err capy_httpconn_parse_reqbody_(capy_httpconn *conn)
         return ErrWrap(err, "Failed to read content data");
     }
 
-    capy_httpconn_shl_msg_(conn, conn->chunk_size);
+    httpconn_consume_bytes(conn, conn->chunk_size);
 
     conn->state = STATE_ROUTE_REQUEST;
     return Ok;
 }
 
-capy_err capy_httpconn_prepare_badrequest_(capy_httpconn *conn)
+static capy_err httpconn_prepare_badrequest(httpconn *conn)
 {
     capy_err err;
 
     conn->request.close = true;
     conn->response.status = CAPY_HTTP_BAD_REQUEST;
 
-    err = capy_httpresp_write_status_(&conn->response);
+    err = httpresp_write_status(&conn->response);
 
     if (err.code)
     {
@@ -891,7 +1009,7 @@ capy_err capy_httpconn_prepare_badrequest_(capy_httpconn *conn)
     return Ok;
 }
 
-capy_err capy_httpconn_route_request_(capy_httpconn *conn)
+static capy_err httpconn_route_request(httpconn *conn)
 {
     capy_err err = capy_buffer_write_null(conn->content_buffer);
 
@@ -902,7 +1020,7 @@ capy_err capy_httpconn_route_request_(capy_httpconn *conn)
 
     conn->request.content = capy_string_bytes(conn->content_buffer->size, conn->content_buffer->data);
 
-    err = capy_httprouter_handle_request_(conn->arena, conn->router, &conn->request, &conn->response);
+    err = httprouter_handle_request(conn->arena, conn->router, &conn->request, &conn->response);
 
     if (err.code)
     {
@@ -920,7 +1038,7 @@ capy_err capy_httpconn_route_request_(capy_httpconn *conn)
     return Ok;
 }
 
-capy_err capy_httpconn_reset_(capy_httpconn *conn)
+static capy_err httpconn_reset(httpconn *conn)
 {
     capy_err err = capy_arena_free(conn->arena, conn->marker_init);
 
@@ -958,7 +1076,7 @@ capy_err capy_httpconn_reset_(capy_httpconn *conn)
     return Ok;
 }
 
-void capy_httpconn_trace_(capy_httpconn *conn)
+static void httpconn_trace(httpconn *conn)
 {
     struct timespec timestamp = capy_now();
 
@@ -976,16 +1094,16 @@ void capy_httpconn_trace_(capy_httpconn *conn)
            httpconnstate_cstr[conn->state],
            conn->mem_headers, conn->mem_content, conn->mem_trailers, conn->mem_response, mem_total,
            to_read, to_write, elapsed, elapsed_unit,
-           capy_tcpconn_addr(conn->tcp), capy_tcpconn_port(conn->tcp));
+           capy_tcp_addr(conn->tcp), capy_tcp_port(conn->tcp));
 }
 
-capy_err capy_httpconn_write_response_(capy_httpconn *conn)
+static capy_err httpconn_write_response(httpconn *conn)
 {
     capy_err err;
 
     size_t old_size = conn->response_buffer->size;
 
-    err = capy_tcpconn_send_(conn->tcp, conn->response_buffer, conn->options->inactivity_timeout);
+    err = capy_tcp_send(conn->tcp, conn->response_buffer, conn->options->inactivity_timeout);
 
     if (err.code)
     {
@@ -1012,7 +1130,7 @@ capy_err capy_httpconn_write_response_(capy_httpconn *conn)
     }
     else if (conn->request.close || capy_canceled())
     {
-        capy_tcpconn_shutdown_(conn->tcp);
+        capy_tcp_shutdown(conn->tcp);
         conn->state = STATE_CLOSE;
     }
     else
@@ -1023,7 +1141,7 @@ capy_err capy_httpconn_write_response_(capy_httpconn *conn)
     return Ok;
 }
 
-capy_err capy_httpconn_read_request_(capy_httpconn *conn)
+static capy_err httpconn_read_request(httpconn *conn)
 {
     capy_err err;
 
@@ -1039,7 +1157,7 @@ capy_err capy_httpconn_read_request_(capy_httpconn *conn)
 
     size_t old_size = conn->line_buffer->size;
 
-    err = capy_tcpconn_recv_(conn->tcp, conn->line_buffer, conn->options->inactivity_timeout);
+    err = capy_tcp_recv(conn->tcp, conn->line_buffer, conn->options->inactivity_timeout);
 
     if (err.code)
     {
@@ -1064,13 +1182,13 @@ capy_err capy_httpconn_read_request_(capy_httpconn *conn)
     return Ok;
 }
 
-capy_err capy_httpconn_run_(capy_httpconn *conn)
+static capy_err httpconn_run(httpconn *conn)
 {
     for (;;)
     {
         capy_err err = Ok;
 
-        capy_httpconn_trace_(conn);
+        httpconn_trace(conn);
 
         ssize_t begin = (ssize_t)capy_arena_used(conn->arena);
 
@@ -1078,81 +1196,80 @@ capy_err capy_httpconn_run_(capy_httpconn *conn)
         {
             case STATE_RESET:
             {
-                err = capy_httpconn_reset_(conn);
+                err = httpconn_reset(conn);
             }
             break;
 
             case STATE_READ_REQUEST:
             {
-                err = capy_httpconn_read_request_(conn);
+                err = httpconn_read_request(conn);
             }
             break;
 
             case STATE_PARSE_REQLINE:
             {
-                err = capy_httpconn_parse_reqline_(conn);
+                err = httpconn_parse_reqline(conn);
                 conn->mem_headers += (ssize_t)capy_arena_used(conn->arena) - begin;
             }
             break;
 
             case STATE_PARSE_HEADERS:
             {
-                err = capy_httpconn_parse_headers_(conn);
+                err = httpconn_parse_headers(conn);
                 conn->mem_headers += (ssize_t)capy_arena_used(conn->arena) - begin;
             }
             break;
 
             case STATE_PARSE_CONTENT:
             {
-                err = capy_httpconn_parse_reqbody_(conn);
+                err = httpconn_parse_reqbody(conn);
                 conn->mem_content += (ssize_t)capy_arena_used(conn->arena) - begin;
             }
             break;
 
             case STATE_PARSE_CHUNKSIZE:
             {
-                err = capy_httpconn_parse_chunksize_(conn);
+                err = httpconn_parse_chunksize(conn);
                 conn->mem_content += (ssize_t)capy_arena_used(conn->arena) - begin;
             }
             break;
 
             case STATE_PARSE_CHUNKDATA:
             {
-                err = capy_httpconn_parse_chunkdata_(conn);
+                err = httpconn_parse_chunkdata(conn);
                 conn->mem_content += (ssize_t)capy_arena_used(conn->arena) - begin;
             }
             break;
 
             case STATE_PARSE_TRAILERS:
             {
-                err = capy_httpconn_parse_trailers_(conn);
+                err = httpconn_parse_trailers(conn);
                 conn->mem_trailers += (ssize_t)capy_arena_used(conn->arena) - begin;
             }
             break;
 
             case STATE_ROUTE_REQUEST:
             {
-                err = capy_httpconn_route_request_(conn);
+                err = httpconn_route_request(conn);
                 conn->mem_response += (ssize_t)capy_arena_used(conn->arena) - begin;
             }
             break;
 
             case STATE_BAD_REQUEST:
             {
-                err = capy_httpconn_prepare_badrequest_(conn);
+                err = httpconn_prepare_badrequest(conn);
                 conn->mem_response += (ssize_t)capy_arena_used(conn->arena) - begin;
             }
             break;
 
             case STATE_WRITE_RESPONSE:
             {
-                err = capy_httpconn_write_response_(conn);
+                err = httpconn_write_response(conn);
             }
             break;
 
             case STATE_CLOSE:
             {
-                capy_httpconn_close_(conn);
                 return Ok;
             }
 
@@ -1164,11 +1281,165 @@ capy_err capy_httpconn_run_(capy_httpconn *conn)
 
         if (err.code)
         {
-            LogErr("While processing request: %s", err.msg);
-            capy_httpconn_close_(conn);
             return err;
         }
     }
+}
+
+static capy_err httpconn_destroy(httpconn *conn)
+{
+    capy_tcp_close(conn->tcp);
+    capy_arena_destroy(conn->arena);
+    return Ok;
+}
+
+static void httpconn_run_task(void *data)
+{
+    capy_err err = httpconn_run(data);
+
+    if (err.code)
+    {
+        LogErr("While processing request: %s", err.msg);
+    }
+}
+
+static void httpconn_clean_task(void *data)
+{
+    httpconn_destroy(data);
+}
+
+static capy_httpserveropt httpserveropt_default(capy_httpserveropt options)
+{
+    if (!options.workers)
+    {
+        options.workers = capy_cpus();
+    }
+
+    if (options.host == NULL)
+    {
+        options.host = "127.0.0.1";
+    }
+
+    if (options.port == NULL)
+    {
+        options.port = "8080";
+    }
+
+    if (!options.inactivity_timeout)
+    {
+        options.inactivity_timeout = Seconds(30);
+    }
+
+    if (!options.line_buffer_size)
+    {
+        options.line_buffer_size = KiB(8);
+    }
+
+    if (!options.mem_connection_max)
+    {
+        options.mem_connection_max = MiB(2);
+    }
+
+    return options;
+}
+
+static capy_err httpserver_accept(capy_httpserver *server)
+{
+    capy_err err;
+
+    httpconn *conn = NULL;
+
+    for (;;)
+    {
+        capy_arena *arena = capy_arena_init(server->options->line_buffer_size + KiB(4), server->options->mem_connection_max);
+
+        if (arena == NULL)
+        {
+            return ErrStd(ENOMEM);
+        }
+
+        conn = Make(arena, httpconn, 1);
+
+        conn->arena = arena;
+        conn->router = server->router;
+        conn->options = server->options;
+        conn->line_buffer = capy_buffer_init(arena, server->options->line_buffer_size);
+        conn->line_buffer->arena = NULL;
+        conn->state = STATE_RESET;
+        conn->tcp = capy_tcp_init(arena);
+
+        err = capy_tcp_accept(server->tcp, conn->tcp);
+
+        if (err.code)
+        {
+            httpconn_destroy(conn);
+
+            if (err.code == ECANCELED)
+            {
+                return Ok;
+            }
+
+            return err;
+        }
+
+        httpconn_destroy(conn);
+        return ErrStd(EPERM);
+
+        err = capy_tcp_keepalive(conn->tcp, 1, 60, 4, 15);
+
+        if (err.code)
+        {
+            httpconn_destroy(conn);
+            return err;
+        }
+
+        err = capy_tcp_nodelay(conn->tcp, 1);
+
+        if (err.code)
+        {
+            httpconn_destroy(conn);
+            return err;
+        }
+
+        err = capy_task_init(arena, KiB(16), httpconn_run_task, httpconn_clean_task, conn);
+
+        if (err.code)
+        {
+            httpconn_destroy(conn);
+            return err;
+        }
+
+        conn->marker_init = capy_arena_end(arena);
+        conn->created = capy_now();
+        conn->timestamp = conn->created;
+    }
+}
+
+static capy_err httpserver_serve(capy_httpserver *server)
+{
+    capy_err err;
+
+    err = capy_tcp_listen(server->tcp, server->options->host, server->options->port, 2048);
+
+    if (err.code)
+    {
+        return ErrWrap(err, "Failed to listen for connections");
+    }
+
+    LogDbg("worker: thread %zu listening for connections", capy_thread_id());
+
+    err = httpserver_accept(server);
+
+    if (err.code)
+    {
+        err = ErrWrap(err, "Failed to accept connections");
+        capy_cancel();
+    }
+
+    capy_tcp_close(server->tcp);
+    capy_shutdown(Seconds(10));
+
+    return err;
 }
 
 // PUBLIC DEFINITIONS
@@ -1358,23 +1629,23 @@ capy_err capy_http_parse_reqline(capy_arena *arena, capy_httpreq *request, capy_
 {
     capy_err err;
 
-    capy_string method = capy_http_next_token_(&line, " ");
+    capy_string method = http_next_token(&line, " ");
 
-    if (capy_http_consume_chars_(&line, " ", 0) != 1)
+    if (http_consume_chars(&line, " ", 0) != 1)
     {
         return ErrStd(EINVAL);
     }
 
-    capy_string uri = capy_http_next_token_(&line, " ");
+    capy_string uri = http_next_token(&line, " ");
 
     request->uri_raw = uri;
 
-    if (capy_http_consume_chars_(&line, " ", 0) != 1)
+    if (http_consume_chars(&line, " ", 0) != 1)
     {
         return ErrStd(EINVAL);
     }
 
-    capy_string version = capy_http_next_token_(&line, " ");
+    capy_string version = http_next_token(&line, " ");
 
     if (line.size != 0)
     {
@@ -1486,18 +1757,18 @@ capy_err capy_http_parse_query(capy_strkvnmap *fields, capy_string query)
 
     while (query.size)
     {
-        capy_string item = capy_http_next_token_(&query, "&");
+        capy_string item = http_next_token(&query, "&");
 
-        capy_http_consume_chars_(&query, "&", 1);
+        http_consume_chars(&query, "&", 1);
 
         if (item.size == 0)
         {
             continue;
         }
 
-        capy_string name = capy_http_next_token_(&item, "=");
+        capy_string name = http_next_token(&item, "=");
 
-        capy_http_consume_chars_(&item, "=", 1);
+        http_consume_chars(&item, "=", 1);
 
         if (name.size == 0)
         {
@@ -1506,14 +1777,14 @@ capy_err capy_http_parse_query(capy_strkvnmap *fields, capy_string query)
 
         capy_string value = item;
 
-        err = capy_http_pctdecode_query_(fields->arena, &name, name);
+        err = http_pctdecode_query(fields->arena, &name, name);
 
         if (err.code)
         {
             return err;
         }
 
-        err = capy_http_pctdecode_query_(fields->arena, &value, value);
+        err = http_pctdecode_query(fields->arena, &value, value);
 
         if (err.code)
         {
@@ -1569,7 +1840,7 @@ capy_err capy_http_validate_request(capy_arena *arena, capy_httpreq *request)
         request->uri.scheme = Str("http");
     }
 
-    if (!capy_string_eq(request->uri.scheme, Str("http")))
+    if (!capy_string_eq(request->uri.scheme, Str("http")) && !capy_string_eq(request->uri.scheme, Str("https")))
     {
         return ErrStd(EINVAL);
     }
@@ -1582,6 +1853,11 @@ capy_err capy_http_validate_request(capy_arena *arena, capy_httpreq *request)
             request->uri = capy_uri_parse_authority(request->uri);
 
             if (!capy_uri_valid(request->uri))
+            {
+                return ErrStd(EINVAL);
+            }
+
+            if (request->uri.userinfo.size != 0)
             {
                 return ErrStd(EINVAL);
             }
@@ -1622,7 +1898,7 @@ capy_err capy_http_validate_request(capy_arena *arena, capy_httpreq *request)
 
     if (content_length != NULL)
     {
-        if (request->chunked || content_length->next || !capy_http_validate_string_(content_length->value, HTTP_DIGIT, ""))
+        if (request->chunked || content_length->next || !http_validate_string(content_length->value, HTTP_DIGIT, ""))
         {
             return ErrStd(EINVAL);
         }
@@ -1668,26 +1944,26 @@ capy_err capy_http_parse_field(capy_strkvnmap *fields, capy_string line)
 {
     capy_err err;
 
-    capy_string name = capy_http_next_token_(&line, ":");
+    capy_string name = http_next_token(&line, ":");
 
-    if (name.size == 0 || !capy_http_validate_string_(name, HTTP_TOKEN, NULL))
+    if (name.size == 0 || !http_validate_string(name, HTTP_TOKEN, NULL))
     {
         return ErrStd(EINVAL);
     }
 
-    if (capy_http_consume_chars_(&line, ":", 0) != 1)
+    if (http_consume_chars(&line, ":", 0) != 1)
     {
         return ErrStd(EINVAL);
     }
 
     capy_string value = capy_string_trim(line, " \t");
 
-    if (!capy_http_validate_string_(value, HTTP_VCHAR, " \t"))
+    if (!http_validate_string(value, HTTP_VCHAR, " \t"))
     {
         return ErrStd(EINVAL);
     }
 
-    err = capy_http_canonicalize_field_(fields->arena, &name, name);
+    err = http_canonicalize_field(fields->arena, &name, name);
 
     if (err.code)
     {
@@ -1710,16 +1986,16 @@ capy_err capy_http_parse_uriparams(capy_strkvnmap *params, capy_string path, cap
 
     for (;;)
     {
-        capy_http_consume_chars_(&path, "/", 0);
-        capy_string path_segment = capy_http_next_token_(&path, "/");
+        http_consume_chars(&path, "/", 0);
+        capy_string path_segment = http_next_token(&path, "/");
 
         if (path_segment.size == 0)
         {
             break;
         }
 
-        capy_http_consume_chars_(&handler_path, "/", 0);
-        capy_string handler_path_segment = capy_http_next_token_(&handler_path, "/");
+        http_consume_chars(&handler_path, "/", 0);
+        capy_string handler_path_segment = http_next_token(&handler_path, "/");
 
         if (handler_path_segment.data[0] != '^')
         {
@@ -1738,3 +2014,109 @@ capy_err capy_http_parse_uriparams(capy_strkvnmap *params, capy_string path, cap
 
     return Ok;
 }
+
+capy_err capy_http_serve(capy_httpserveropt options)
+{
+    options = httpserveropt_default(options);
+
+    capy_arena *arena = capy_arena_init(0, MiB(1));
+
+    if (arena == NULL)
+    {
+        return ErrStd(ENOMEM);
+    }
+
+    httprouter *router = httprouter_init(arena, options.routes_size, options.routes);
+
+    if (router == NULL)
+    {
+        return ErrStd(ENOMEM);
+    }
+
+    capy_httpserver *servers = Make(arena, capy_httpserver, options.workers);
+
+    if (servers == NULL)
+    {
+        return ErrStd(ENOMEM);
+    }
+
+    for (size_t i = 0; i < options.workers; i++)
+    {
+        capy_httpserver *server = servers + i;
+
+        server->options = &options;
+        server->router = router;
+        server->tcp = capy_tcp_init(arena);
+
+        if (server->tcp == NULL)
+        {
+            return ErrStd(ENOMEM);
+        }
+
+        if (options.protocol == CAPY_HTTPS)
+        {
+            capy_err err = capy_tcp_tls_server(server->tcp, options.certificate_chain, options.certificate_key);
+
+            if (err.code)
+            {
+                return err;
+            }
+        }
+    }
+
+    LogInf("server: address = \"%s\" port = \"%s\" protocol = \"%s\" workers = \"%lu\"",
+           options.host, options.port,
+           (options.protocol == CAPY_HTTPS) ? "https" : "http",
+           options.workers);
+
+    capy_err err = httpserver_workers(options.workers, servers);
+
+    capy_arena_destroy(arena);
+
+    return err;
+}
+
+//
+// LINUX
+//
+
+#ifdef CAPY_OS_LINUX
+
+#include <pthread.h>
+
+Linux static void *httpserver_worker(void *data);
+
+//
+
+Linux static void *httpserver_worker(void *data)
+{
+    capy_err err = httpserver_serve(data);
+
+    if (err.code)
+    {
+        LogErr("%s", err.msg);
+    }
+
+    return NULL;
+}
+
+Linux static capy_err httpserver_workers(size_t n, capy_httpserver *servers)
+{
+    pthread_t *ids = calloc(n, sizeof(pthread_t));
+
+    for (size_t i = 1; i < n; i++)
+    {
+        pthread_create(ids + i, NULL, httpserver_worker, servers + i);
+    }
+
+    httpserver_worker(servers + 0);
+
+    for (size_t i = 1; i < n; i++)
+    {
+        pthread_join(ids[i], NULL);
+    }
+
+    return Ok;
+}
+
+#endif
