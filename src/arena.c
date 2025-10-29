@@ -16,9 +16,19 @@ Platform static void *arena_create_stack(capy_arena *arena, size_t size);
 Platform static void *arena_alloc(capy_arena *arena, size_t size, size_t align, int zeroinit);
 Platform static capy_err arena_free(capy_arena *arena, void *addr);
 
+static size_t align_to(size_t v, size_t n);
+
 // INTERNAL VARIABLES
 
 static atomic_int arena_allocs = 0;
+
+// INTERNAL DEFINITIONS
+
+static size_t align_to(size_t v, size_t n)
+{
+    size_t rem = v % n;
+    return (rem == 0) ? v : v + n - rem;
+}
 
 // PUBLIC DEFINITIONS
 
@@ -194,7 +204,7 @@ Linux static void *arena_alloc(capy_arena *arena, size_t size, size_t align, int
 
     if (end > arena->capacity)
     {
-        size_t capacity = next_pow2(end);
+        size_t capacity = capy_next_pow2(end);
 
         if (capacity > arena->max)
         {
@@ -236,7 +246,7 @@ Linux static capy_err arena_free(capy_arena *arena, void *addr)
 
         if (arena->used <= threshold)
         {
-            size_t capacity = next_pow2(arena->used << 1);
+            size_t capacity = capy_next_pow2(arena->used << 1);
 
             if (capacity < arena->min)
             {

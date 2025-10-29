@@ -29,7 +29,7 @@ static size_t uri_valid_ipv6(capy_string host);
 static size_t uri_valid_host(capy_string host);
 static size_t uri_valid_scheme(capy_string scheme);
 static size_t uri_valid_path(capy_string path);
-static capy_string uri_merge_paths(capy_arena *arena, capy_string base, capy_string reference);
+static capy_err uri_merge_paths(capy_arena *arena, capy_string *output, capy_string base, capy_string reference);
 
 // INTERNAL VARIABLES
 
@@ -494,7 +494,7 @@ static size_t uri_valid_path(capy_string path)
     return path.size;
 }
 
-static capy_string uri_merge_paths(capy_arena *arena, capy_string base, capy_string reference)
+static capy_err uri_merge_paths(capy_arena *arena, capy_string *output, capy_string base, capy_string reference)
 {
     while (base.size)
     {
@@ -510,11 +510,19 @@ static capy_string uri_merge_paths(capy_arena *arena, capy_string base, capy_str
     size_t size = base.size + 1 + reference.size;
     char *buffer = Make(arena, char, size + 1);
 
-    strncpy(buffer, base.data, base.size);
-    buffer[base.size] = '/';
-    strncpy(buffer + base.size + 1, reference.data, reference.size);
+    if (buffer == NULL)
+    {
+        return ErrStd(ENOMEM);
+    }
 
-    return (capy_string){.data = buffer, .size = size};
+    memcpy(buffer, base.data, base.size);
+    buffer[base.size] = '/';
+    memcpy(buffer + base.size + 1, reference.data, reference.size);
+
+    output->data = buffer;
+    output->size = size;
+
+    return Ok;
 }
 
 // PUBLIC DEFINITIONS
@@ -571,7 +579,7 @@ capy_err capy_uri_normalize(capy_arena *arena, capy_string *output, capy_string 
     return Ok;
 }
 
-capy_string capy_uri_path_removedots(capy_arena *arena, capy_string path)
+capy_err capy_uri_remove_pathdots(capy_arena *arena, capy_string *output, capy_string path)
 {
     capy_string path_self = Str("./");
     capy_string path_parent = Str("../");
@@ -580,13 +588,21 @@ capy_string capy_uri_path_removedots(capy_arena *arena, capy_string path)
 
     if (path.size == 0)
     {
-        return (capy_string){.size = 0};
+        output->data = NULL;
+        output->size = 0;
+        return Ok;
     }
 
     capy_string input = path;
 
-    char *output = Make(arena, char, path.size + 1);
-    size_t output_size = 0;
+    char *buffer = Make(arena, char, path.size + 1);
+
+    if (buffer == NULL)
+    {
+        return ErrStd(ENOMEM);
+    }
+
+    size_t buffer_size = 0;
 
     while (input.size)
     {
@@ -609,28 +625,30 @@ capy_string capy_uri_path_removedots(capy_arena *arena, capy_string path)
         }
         else if (capy_string_eq(segment, path_parent) || capy_string_eq(segment, path_dots))
         {
-            // it's impossible to generate an output of size 1 other than "/"
-            if (output_size == 1)
+            // it's impossible to generate an buffer of size 1 other than "/"
+            if (buffer_size == 1)
             {
                 continue;
             }
 
-            for (output_size -= 1; output_size > 0 && output[output_size - 1] != '/'; output_size -= 1)
+            for (buffer_size -= 1; buffer_size > 0 && buffer[buffer_size - 1] != '/'; buffer_size -= 1)
             {
             }
 
-            output[output_size] = 0;
+            buffer[buffer_size] = 0;
         }
         else
         {
-            memmove(output + output_size, segment.data, segment.size);
-            output_size += segment.size;
+            memmove(buffer + buffer_size, segment.data, segment.size);
+            buffer_size += segment.size;
         }
     }
 
-    output[output_size] = 0;
+    buffer[buffer_size] = 0;
 
-    return capy_string_bytes(output_size, output);
+    *output = capy_string_bytes(buffer_size, buffer);
+
+    return Ok;
 }
 
 capy_uri capy_uri_parse_authority(capy_uri uri)
@@ -752,7 +770,7 @@ capy_uri capy_uri_parse(capy_string input)
     return capy_uri_parse_authority(uri);
 }
 
-int capy_uri_valid(capy_uri uri)
+int capy_uri_validate(capy_uri uri)
 {
     if ((uri.flags & CAPY_URI_SCHEME) && !uri_valid_scheme(uri.scheme))
     {
@@ -792,62 +810,93 @@ int capy_uri_valid(capy_uri uri)
     return true;
 }
 
-// @todo: return error
-capy_uri capy_uri_resolve_reference(capy_arena *arena, capy_uri base, capy_uri reference)
+capy_err capy_uri_resolve_reference(capy_arena *arena, capy_uri *output, capy_uri base, capy_uri reference)
 {
-    capy_uri uri = reference;
+    capy_err err;
+
+    *output = reference;
 
     if (reference.scheme.size)
     {
-        uri.path = capy_uri_path_removedots(arena, reference.path);
-        return uri;
+        err = capy_uri_remove_pathdots(arena, &output->path, reference.path);
+
+        if (err.code)
+        {
+            return err;
+        }
+
+        return Ok;
     }
 
     if (reference.authority.size)
     {
-        uri.scheme = base.scheme;
-        uri.path = capy_uri_path_removedots(arena, reference.path);
-        uri.flags &= ~CAPY_URI_SCHEME;
-        uri.flags |= base.flags & CAPY_URI_SCHEME;
-        return uri;
+        output->scheme = base.scheme;
+
+        err = capy_uri_remove_pathdots(arena, &output->path, reference.path);
+
+        if (err.code)
+        {
+            return err;
+        }
+
+        output->flags &= ~CAPY_URI_SCHEME;
+        output->flags |= base.flags & CAPY_URI_SCHEME;
+
+        return Ok;
     }
 
-    uri.scheme = base.scheme;
-    uri.authority = base.authority;
-    uri.userinfo = base.userinfo;
-    uri.host = base.host;
-    uri.port = base.port;
-    uri.flags &= ~(CAPY_URI_SCHEME | CAPY_URI_AUTHORITY);
-    uri.flags |= base.flags & (CAPY_URI_SCHEME | CAPY_URI_AUTHORITY);
+    output->scheme = base.scheme;
+    output->authority = base.authority;
+    output->userinfo = base.userinfo;
+    output->host = base.host;
+    output->port = base.port;
+    output->flags &= ~(CAPY_URI_SCHEME | CAPY_URI_AUTHORITY);
+    output->flags |= base.flags & (CAPY_URI_SCHEME | CAPY_URI_AUTHORITY);
 
     if (reference.path.size)
     {
         if (reference.path.data[0] == '/')
         {
-            uri.path = capy_uri_path_removedots(arena, reference.path);
+            err = capy_uri_remove_pathdots(arena, &output->path, reference.path);
+
+            if (err.code)
+            {
+                return err;
+            }
         }
         else
         {
-            uri.path = uri_merge_paths(arena, base.path, reference.path);
-            uri.path = capy_uri_path_removedots(arena, uri.path);
+            err = uri_merge_paths(arena, &output->path, base.path, reference.path);
+
+            if (err.code)
+            {
+                return err;
+            }
+
+            err = capy_uri_remove_pathdots(arena, &output->path, output->path);
+
+            if (err.code)
+            {
+                return err;
+            }
         }
     }
     else
     {
-        uri.path = base.path;
+        output->path = base.path;
 
         if (reference.query.size == 0)
         {
-            uri.query = base.query;
-            uri.flags &= ~CAPY_URI_QUERY;
-            uri.flags |= base.flags & CAPY_URI_QUERY;
+            output->query = base.query;
+            output->flags &= ~CAPY_URI_QUERY;
+            output->flags |= base.flags & CAPY_URI_QUERY;
         }
     }
 
-    return uri;
+    return Ok;
 }
 
-capy_string capy_uri_string(capy_arena *arena, capy_uri uri)
+capy_err capy_uri_string(capy_arena *arena, capy_string *output, capy_uri uri)
 {
     size_t buffer_max = uri.scheme.size +
                         uri.authority.size +
@@ -856,8 +905,13 @@ capy_string capy_uri_string(capy_arena *arena, capy_uri uri)
                         uri.fragment.size +
                         6;
 
-    char *buffer = Make(arena, char, buffer_max);
     size_t buffer_size = 0;
+    char *buffer = Make(arena, char, buffer_max);
+
+    if (buffer == NULL)
+    {
+        return ErrStd(ENOMEM);
+    }
 
     if (uri.flags & CAPY_URI_SCHEME)
     {
@@ -895,5 +949,7 @@ capy_string capy_uri_string(capy_arena *arena, capy_uri uri)
         buffer_size += uri.fragment.size;
     }
 
-    return capy_string_bytes(buffer_size, buffer);
+    *output = capy_string_bytes(buffer_size, buffer);
+
+    return Ok;
 }

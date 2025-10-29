@@ -13,7 +13,7 @@ Platform static capy_err tcp_close(capy_tcp *tcp);
 Platform static capy_err tcp_keepalive(capy_tcp *tcp, int enabled, int idle, int count, int interval);
 Platform static capy_err tcp_nodelay(capy_tcp *tcp, int enabled);
 Platform static capy_err tcp_tls_server(capy_tcp *server, const char *chain, const char *key);
-Platform static capy_err tcp_tls_client(capy_tcp *client);
+Platform static capy_err tcp_tls_client(capy_tcp *client, bool insecure);
 Platform static capy_fd tcp_fd(capy_tcp *tcp);
 
 //
@@ -30,9 +30,9 @@ capy_err capy_tcp_tls_server(capy_tcp *server, const char *chain, const char *ke
     return tcp_tls_server(server, chain, key);
 }
 
-capy_err capy_tcp_tls_client(capy_tcp *client)
+capy_err capy_tcp_tls_client(capy_tcp *client, bool insecure)
 {
-    return tcp_tls_client(client);
+    return tcp_tls_client(client, insecure);
 }
 
 capy_err capy_tcp_listen(struct capy_tcp *tcp, const char *host, const char *port, size_t backlog)
@@ -131,16 +131,32 @@ Linux struct capy_tcp
 
 Linux static capy_err tcp_recv_tls(capy_tcp *tcp, capy_buffer *buffer, uint64_t timeout);
 Linux static capy_err tcp_send_tls(capy_tcp *tcp, capy_buffer *buffer, uint64_t timeout);
-Linux static int tcp_sslerr(const char *buffer, size_t len, Unused void *userdata);
+Linux static capy_err tcp_err_openssl(const char *msg);
 Linux static void tcp_get_address(char *output, uint16_t *port, struct sockaddr *sa);
 
 //
 
-Linux static int tcp_sslerr(const char *buffer, size_t len, Unused void *userdata)
+Linux static capy_err tcp_err_openssl(const char *msg)
 {
-    len = (len > 0) ? len - 1 : 0;
-    LogErr("%.*s", (int)len, buffer);
-    return 0;
+    capy_err err;
+
+    unsigned long code = ERR_get_error();
+
+    if (ERR_SYSTEM_ERROR(code))
+    {
+        err = ErrStd(ERR_GET_REASON(code));
+    }
+    else
+    {
+        err = ErrFmt(EPROTO, "%s", ERR_reason_error_string(code));
+    }
+
+    if (msg == NULL)
+    {
+        return err;
+    }
+
+    return ErrWrap(err, msg);
 }
 
 Linux static capy_tcp *tcp_init(capy_arena *arena)
@@ -195,14 +211,12 @@ Linux static capy_err tcp_tls_server(struct capy_tcp *server, const char *chain,
 
     if (server->ssl_ctx == NULL)
     {
-        ERR_print_errors_cb(tcp_sslerr, NULL);
-        return ErrFmt(EPROTO, "Failed to create server SSL_CTX");
+        return tcp_err_openssl("Failed to create OpenSSL context");
     }
 
     if (!SSL_CTX_set_min_proto_version(server->ssl_ctx, TLS1_2_VERSION))
     {
-        ERR_print_errors_cb(tcp_sslerr, NULL);
-        return ErrFmt(EPROTO, "Failed to set the minimum TLS protocol version");
+        return tcp_err_openssl("Failed to set the minimum TLS protocol version");
     }
 
     SSL_CTX_set_options(server->ssl_ctx, (SSL_OP_IGNORE_UNEXPECTED_EOF |
@@ -211,14 +225,12 @@ Linux static capy_err tcp_tls_server(struct capy_tcp *server, const char *chain,
 
     if (!SSL_CTX_use_certificate_chain_file(server->ssl_ctx, chain))
     {
-        ERR_print_errors_cb(tcp_sslerr, NULL);
-        return ErrFmt(EPROTO, "Failed to load the server certificate chain file");
+        return tcp_err_openssl("Failed to load the certificate chain file");
     }
 
     if (!SSL_CTX_use_PrivateKey_file(server->ssl_ctx, key, SSL_FILETYPE_PEM))
     {
-        ERR_print_errors_cb(tcp_sslerr, NULL);
-        return ErrFmt(EPROTO, "Failed to load the server private key file");
+        return tcp_err_openssl("Failed to load the certificate key file");
     }
 
     static const unsigned char id[] = "capy-https-server";
@@ -232,29 +244,37 @@ Linux static capy_err tcp_tls_server(struct capy_tcp *server, const char *chain,
     return Ok;
 }
 
-Linux static capy_err tcp_tls_client(struct capy_tcp *client)
+Linux static capy_err tcp_tls_client(struct capy_tcp *client, bool insecure)
 {
-    client->ssl_ctx = SSL_CTX_new(TLS_client_method());
+    thread_local static struct ssl_ctx_st *cached_ssl_ctx = NULL;
 
-    if (client->ssl_ctx == NULL)
+    if (cached_ssl_ctx != NULL)
     {
-        ERR_print_errors_cb(tcp_sslerr, NULL);
-        return ErrFmt(EPROTO, "Failed to create client SSL context");
+        client->ssl_ctx = cached_ssl_ctx;
+        return Ok;
     }
 
-    if (!SSL_CTX_set_default_verify_paths(client->ssl_ctx))
+    struct ssl_ctx_st *ssl_ctx = SSL_CTX_new(TLS_client_method());
+
+    if (ssl_ctx == NULL)
     {
-        ERR_print_errors_cb(tcp_sslerr, NULL);
-        return ErrFmt(EPROTO, "Failed to set the default trusted certificate store");
+        return tcp_err_openssl("Failed to create OpenSSL context");
     }
 
-    if (!SSL_CTX_set_min_proto_version(client->ssl_ctx, TLS1_2_VERSION))
+    if (!SSL_CTX_set_default_verify_paths(ssl_ctx))
     {
-        ERR_print_errors_cb(tcp_sslerr, NULL);
-        return ErrFmt(EPROTO, "Failed to set the minimum TLS protocol version");
+        return tcp_err_openssl("Failed to set the default trusted certificate store");
     }
 
-    SSL_CTX_set_verify(client->ssl_ctx, SSL_VERIFY_PEER, NULL);
+    if (!SSL_CTX_set_min_proto_version(ssl_ctx, TLS1_2_VERSION))
+    {
+        return tcp_err_openssl("Failed to set the minimum TLS protocol version");
+    }
+
+    SSL_CTX_set_verify(ssl_ctx, (insecure) ? SSL_VERIFY_NONE : SSL_VERIFY_PEER, NULL);
+
+    cached_ssl_ctx = ssl_ctx;
+    client->ssl_ctx = ssl_ctx;
 
     return Ok;
 }
@@ -413,50 +433,46 @@ Linux static capy_err tcp_accept(struct capy_tcp *server, struct capy_tcp *clien
     {
         client->fd = accept4(server->fd, address, &address_size, SOCK_NONBLOCK);
 
-        if (client->fd == -1)
+        if (client->fd >= 0)
         {
-            capy_err err = ErrStd(errno);
-
-            if (err.code == EWOULDBLOCK || err.code == EAGAIN)
-            {
-                err = capy_waitfd(server->fd, false, 0);
-
-                if (err.code)
-                {
-                    return err;
-                }
-
-                continue;
-            }
-
-            return ErrWrap(err, "Failed to accept connection");
+            break;
         }
 
-        tcp_get_address(client->addr, &client->port, address);
+        capy_err err = ErrStd(errno);
 
-        capy_err err;
-
-        if (server->ssl_ctx != NULL)
+        if (err.code != EWOULDBLOCK && err.code != EAGAIN)
         {
-            client->ssl = SSL_new(server->ssl_ctx);
-
-            if (client->ssl == NULL)
-            {
-                ERR_print_errors_cb(tcp_sslerr, &err);
-                return ErrFmt(EPROTO, "Failed to create SSL object");
-            }
-
-            if (!SSL_set_fd(client->ssl, client->fd))
-            {
-                ERR_print_errors_cb(tcp_sslerr, &err);
-                return ErrFmt(EPROTO, "Failed to set SSL fd");
-            }
-
-            SSL_set_accept_state(client->ssl);
+            return err;
         }
 
-        return Ok;
+        err = capy_waitfd(server->fd, false, 0);
+
+        if (err.code)
+        {
+            return err;
+        }
     }
+
+    tcp_get_address(client->addr, &client->port, address);
+
+    if (server->ssl_ctx != NULL)
+    {
+        client->ssl = SSL_new(server->ssl_ctx);
+
+        if (client->ssl == NULL)
+        {
+            return tcp_err_openssl("Failed to create OpenSSL state");
+        }
+
+        if (!SSL_set_fd(client->ssl, client->fd))
+        {
+            return tcp_err_openssl("Failed to set OpenSSL file descriptor");
+        }
+
+        SSL_set_accept_state(client->ssl);
+    }
+
+    return Ok;
 }
 
 Linux static capy_err tcp_recv(capy_tcp *tcp, capy_buffer *buffer, uint64_t timeout)
@@ -466,6 +482,7 @@ Linux static capy_err tcp_recv(capy_tcp *tcp, capy_buffer *buffer, uint64_t time
         return tcp_recv_tls(tcp, buffer, timeout);
     }
 
+    capy_err err;
     size_t bytes_wanted = buffer->capacity - buffer->size;
 
     if (bytes_wanted == 0)
@@ -477,32 +494,32 @@ Linux static capy_err tcp_recv(capy_tcp *tcp, capy_buffer *buffer, uint64_t time
     {
         ssize_t bytes_read = recv(tcp->fd, buffer->data + buffer->size, bytes_wanted, 0);
 
-        if (bytes_read == -1)
+        if (bytes_read >= 0)
         {
-            capy_err err = ErrStd(errno);
+            buffer->size += Cast(size_t, bytes_read);
+            return Ok;
+        }
 
-            if (err.code == EWOULDBLOCK || err.code == EAGAIN)
-            {
-                capy_err err = capy_waitfd(tcp->fd, false, timeout);
+        err = ErrStd(errno);
 
-                if (err.code)
-                {
-                    return err;
-                }
-
-                continue;
-            }
-
+        if (err.code != EWOULDBLOCK && err.code != EAGAIN)
+        {
             return err;
         }
 
-        buffer->size += Cast(size_t, bytes_read);
-        return Ok;
+        err = capy_waitfd(tcp->fd, false, timeout);
+
+        if (err.code)
+        {
+            return err;
+        }
     }
 }
 
 Linux static capy_err tcp_recv_tls(capy_tcp *tcp, capy_buffer *buffer, uint64_t timeout)
 {
+    capy_err err;
+
     size_t bytes_wanted = buffer->capacity - buffer->size;
     size_t bytes_read = 0;
 
@@ -515,46 +532,38 @@ Linux static capy_err tcp_recv_tls(capy_tcp *tcp, capy_buffer *buffer, uint64_t 
     {
         ERR_clear_error();
 
-        if (!SSL_read_ex(tcp->ssl, buffer->data + buffer->size, bytes_wanted, &bytes_read))
+        if (SSL_read_ex(tcp->ssl, buffer->data + buffer->size, bytes_wanted, &bytes_read))
         {
-            int ssl_err = SSL_get_error(tcp->ssl, 0);
-
-            switch (ssl_err)
-            {
-                case SSL_ERROR_WANT_READ:
-                case SSL_ERROR_WANT_WRITE:
-                {
-                    capy_err err = capy_waitfd(tcp->fd, ssl_err == SSL_ERROR_WANT_WRITE, timeout);
-
-                    if (err.code)
-                    {
-                        return err;
-                    }
-
-                    continue;
-                }
-
-                case SSL_ERROR_ZERO_RETURN:
-                {
-                    return Ok;
-                }
-
-                case SSL_ERROR_SYSCALL:
-                {
-                    tcp->ssl_fatal = true;
-                    return ErrStd(errno);
-                }
-
-                default:
-                {
-                    tcp->ssl_fatal = true;
-                    return ErrStd(EPROTO);
-                }
-            }
+            buffer->size += Cast(size_t, bytes_read);
+            return Ok;
         }
 
-        buffer->size += Cast(size_t, bytes_read);
-        return Ok;
+        int code = SSL_get_error(tcp->ssl, 0);
+
+        switch (code)
+        {
+            case SSL_ERROR_WANT_READ:
+            case SSL_ERROR_WANT_WRITE:
+                break;
+
+            case SSL_ERROR_ZERO_RETURN:
+                return Ok;
+
+            case SSL_ERROR_SYSCALL:
+                tcp->ssl_fatal = true;
+                return ErrStd(errno);
+
+            default:
+                tcp->ssl_fatal = true;
+                return tcp_err_openssl("TLS receive error");
+        }
+
+        err = capy_waitfd(tcp->fd, code == SSL_ERROR_WANT_WRITE, timeout);
+
+        if (err.code)
+        {
+            return err;
+        }
     }
 }
 
@@ -571,78 +580,70 @@ Linux static capy_err tcp_send(capy_tcp *tcp, capy_buffer *buffer, uint64_t time
     {
         ssize_t bytes_written = send(tcp->fd, buffer->data, buffer->size, 0);
 
-        if (bytes_written == -1)
+        if (bytes_written >= 0)
         {
-            err = ErrStd(errno);
+            capy_buffer_shl(buffer, Cast(size_t, bytes_written));
+            return Ok;
+        }
 
-            if (err.code == EWOULDBLOCK || err.code == EAGAIN)
-            {
-                capy_err err = capy_waitfd(tcp->fd, true, timeout);
+        err = ErrStd(errno);
 
-                if (err.code)
-                {
-                    return err;
-                }
-
-                continue;
-            }
-
+        if (err.code != EWOULDBLOCK && err.code != EAGAIN)
+        {
             return err;
         }
 
-        capy_buffer_shl(buffer, Cast(size_t, bytes_written));
-        return Ok;
+        err = capy_waitfd(tcp->fd, true, timeout);
+
+        if (err.code)
+        {
+            return err;
+        }
     }
 }
 
 Linux static capy_err tcp_send_tls(capy_tcp *tcp, capy_buffer *buffer, uint64_t timeout)
 {
+    capy_err err;
+
     size_t bytes_written = 0;
 
     for (;;)
     {
         ERR_clear_error();
 
-        if (!SSL_write_ex(tcp->ssl, buffer->data, buffer->size, &bytes_written))
+        if (SSL_write_ex(tcp->ssl, buffer->data, buffer->size, &bytes_written))
         {
-            int ssl_err = SSL_get_error(tcp->ssl, 0);
-
-            switch (ssl_err)
-            {
-                case SSL_ERROR_WANT_READ:
-                case SSL_ERROR_WANT_WRITE:
-                {
-                    capy_err err = capy_waitfd(tcp->fd, ssl_err == SSL_ERROR_WANT_WRITE, timeout);
-
-                    if (err.code)
-                    {
-                        return err;
-                    }
-
-                    continue;
-                }
-
-                case SSL_ERROR_ZERO_RETURN:
-                {
-                    return Ok;
-                }
-
-                case SSL_ERROR_SYSCALL:
-                {
-                    tcp->ssl_fatal = true;
-                    return ErrStd(errno);
-                }
-
-                default:
-                {
-                    tcp->ssl_fatal = true;
-                    return ErrStd(EPROTO);
-                }
-            }
+            capy_buffer_shl(buffer, Cast(size_t, bytes_written));
+            return Ok;
         }
 
-        capy_buffer_shl(buffer, Cast(size_t, bytes_written));
-        return Ok;
+        int code = SSL_get_error(tcp->ssl, 0);
+
+        switch (code)
+        {
+            case SSL_ERROR_WANT_READ:
+            case SSL_ERROR_WANT_WRITE:
+                break;
+
+            case SSL_ERROR_ZERO_RETURN:
+                return Ok;
+
+            case SSL_ERROR_SYSCALL:
+                tcp->ssl_fatal = true;
+                return ErrStd(errno);
+
+            default:
+                tcp->ssl_fatal = true;
+                return tcp_err_openssl("TLS send error");
+        }
+
+        err = capy_waitfd(tcp->fd, code == SSL_ERROR_WANT_WRITE, timeout);
+
+        if (err.code)
+        {
+            return err;
+        }
     }
 }
 

@@ -19,7 +19,7 @@ MustCheck capy_err capy_vec_insert(capy_arena *arena, capy_vec *vec, size_t posi
             return ErrStd(ENOMEM);
         }
 
-        size_t new_capacity = next_pow2(new_size);
+        size_t new_capacity = capy_next_pow2(new_size);
 
         char *tmp = capy_arena_realloc(arena,
                                        vec->items,

@@ -38,7 +38,6 @@ linux/debug: FLAGS  := ${FLAGS_CC} ${FLAGS_LINUX} -g -fprofile-arcs -ftest-cover
 linux/debug: TARGET := build/debug
 linux/debug: LIBS   += -lssl -lcrypto
 linux/debug: linux/build
-	echo "${FLAGS} -Wno-unused-includes" | tr ' ' '\n' > compile_flags.txt
 
 
 .PHONY: linux/release
@@ -83,7 +82,7 @@ certificates:
 	mkdir -p build/certificates/
 	cd build/certificates/ && \
 	openssl genrsa > server_key.pem && \
-	openssl req -new -x509 -key server_key.pem > server_chain.pem
+	openssl req -new -x509 -key server_key.pem -subj "/O=capy" > server_chain.pem
 
 
 .PHONY: update/rapidhash
@@ -93,7 +92,9 @@ update/rapidhash:
 	curl -fsSLO https://github.com/Nicoshev/rapidhash/raw/refs/heads/master/rapidhash.h && \
 	curl -fsSLO https://github.com/Nicoshev/rapidhash/raw/refs/heads/master/LICENSE
 
+
 vscode:
 	mkdir -p .vscode/
 	cp contrib/vscode/launch.json .vscode/launch.json
 	cp contrib/vscode/tasks.json .vscode/tasks.json
+	echo "${FLAGS_CC} ${FLAGS_LINUX} -Wno-unused-includes" | tr ' ' '\n' > compile_flags.txt

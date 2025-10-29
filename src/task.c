@@ -66,7 +66,7 @@ struct taskscheduler
 };
 
 Platform static size_t task_thread_id(void);
-Platform static size_t task_cpu_count(void);
+Platform static size_t task_ncpus(void);
 Platform static void task_cancel(void);
 
 Platform static void taskpoll_wait(void *data);
@@ -216,9 +216,9 @@ size_t capy_thread_id(void)
     return task_thread_id();
 }
 
-size_t capy_cpus(void)
+size_t capy_ncpus(void)
 {
-    return task_cpu_count();
+    return task_ncpus();
 }
 
 // INTERNAL DEFINITIONS
@@ -492,7 +492,7 @@ static capy_err scheduler_waitfd(struct taskscheduler *scheduler, struct task *t
 
     if (timeout == 0)
     {
-        timeout = Years(50);
+        timeout = Years(50ull);
     }
 
     task->deadline = capy_timespec_addms(capy_now(), timeout);
@@ -656,6 +656,7 @@ Linux static void taskpoll_wait(void *data)
 
                 if (events[i].data.u64 == 0)
                 {
+                    close(scheduler->poll->signal_fd);
                     scheduler->canceled = true;
                     task = scheduler->main;
                 }
@@ -789,7 +790,7 @@ Linux static size_t task_thread_id(void)
     return pthread_self();
 }
 
-Linux static size_t task_cpu_count(void)
+Linux static size_t task_ncpus(void)
 {
     return (size_t)(sysconf(_SC_NPROCESSORS_CONF));
 }

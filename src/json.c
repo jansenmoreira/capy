@@ -1,88 +1,13 @@
 #include <capy/macros.h>
 
-// PUBLIC DEFINITIONS
+static capy_err json_serialize(capy_buffer *buffer, capy_jsonval value, int tabsize, int tabs);
+static capy_err json_deserialize(capy_arena *arena, capy_jsonval *value, capy_string *input);
+static capy_err json_parse_number(double *number, capy_string *input);
+static capy_err json_parse_string(capy_arena *arena, const char **cstr, capy_string *input);
 
-capy_jsonval capy_json_null(void)
-{
-    return (capy_jsonval){.kind = CAPY_JSON_NULL};
-}
+// INTERNAL DEFINITIONS
 
-capy_jsonval capy_json_string(const char *string)
-{
-    return (capy_jsonval){.kind = CAPY_JSON_STRING, .string = string};
-}
-
-capy_jsonval capy_json_number(double number)
-{
-    return (capy_jsonval){.kind = CAPY_JSON_NUMBER, .number = number};
-}
-
-capy_jsonval capy_json_bool(int boolean)
-{
-    return (capy_jsonval){.kind = CAPY_JSON_BOOL, .boolean = boolean};
-}
-
-capy_jsonval capy_json_object(capy_arena *arena)
-{
-    size_t capacity = 8;
-
-    char *addr = capy_arena_alloc(arena, sizeof(capy_jsonobj) + (sizeof(capy_jsonkv) * capacity), 8, true);
-
-    if (addr == NULL)
-    {
-        return (capy_jsonval){.kind = CAPY_JSON_OBJECT, .object = NULL};
-    }
-
-    capy_jsonobj *obj = Cast(capy_jsonobj *, addr);
-
-    obj->size = 0;
-    obj->capacity = capacity;
-    obj->element_size = sizeof(capy_jsonkv);
-    obj->arena = arena;
-    obj->items = Cast(capy_jsonkv *, addr + sizeof(capy_jsonobj));
-
-    return (capy_jsonval){.kind = CAPY_JSON_OBJECT, .object = obj};
-}
-
-capy_err capy_json_object_set(capy_jsonobj *object, const char *key, capy_jsonval value)
-{
-    capy_jsonkv kv = {.key = capy_string_cstr(key), .value = value};
-    return capy_strmap_set(object->arena, &object->strmap, &kv);
-}
-
-capy_jsonval *capy_json_object_get(capy_jsonobj *object, const char *key)
-{
-    return capy_strmap_get(&object->strmap, capy_string_cstr(key));
-}
-
-capy_jsonval capy_json_array(capy_arena *arena)
-{
-    size_t capacity = 8;
-
-    char *addr = capy_arena_alloc(arena, sizeof(capy_jsonarr) + (capacity * sizeof(capy_jsonval)), 8, false);
-
-    if (addr == NULL)
-    {
-        return (capy_jsonval){.kind = CAPY_JSON_ARRAY, .array = NULL};
-    }
-
-    capy_jsonarr *arr = Cast(capy_jsonarr *, addr);
-
-    arr->size = 0;
-    arr->capacity = capacity;
-    arr->element_size = sizeof(capy_jsonval);
-    arr->arena = arena;
-    arr->data = Cast(capy_jsonval *, addr + sizeof(capy_jsonarr));
-
-    return (capy_jsonval){.kind = CAPY_JSON_ARRAY, .array = arr};
-}
-
-capy_err capy_json_array_push(capy_jsonarr *array, capy_jsonval value)
-{
-    return capy_vec_insert(array->arena, &array->vec, array->size, 1, &value);
-}
-
-static capy_err capy_json_serialize_(capy_buffer *buffer, capy_jsonval value, int tabsize, int tabs)
+static capy_err json_serialize(capy_buffer *buffer, capy_jsonval value, int tabsize, int tabs)
 {
     switch (value.kind)
     {
@@ -176,7 +101,7 @@ static capy_err capy_json_serialize_(capy_buffer *buffer, capy_jsonval value, in
                     }
                 }
 
-                err = capy_json_serialize_(buffer, keyval.value, tabsize, tabs);
+                err = json_serialize(buffer, keyval.value, tabsize, tabs);
 
                 if (err.code)
                 {
@@ -244,7 +169,7 @@ static capy_err capy_json_serialize_(capy_buffer *buffer, capy_jsonval value, in
                     }
                 }
 
-                err = capy_json_serialize_(buffer, el, tabsize, tabs);
+                err = json_serialize(buffer, el, tabsize, tabs);
 
                 if (err.code)
                 {
@@ -277,12 +202,273 @@ static capy_err capy_json_serialize_(capy_buffer *buffer, capy_jsonval value, in
     return Ok;
 }
 
-capy_err capy_json_serialize(capy_buffer *buffer, capy_jsonval value, int tabsize)
+static capy_err json_deserialize(capy_arena *arena, capy_jsonval *value, capy_string *input)
 {
-    return capy_json_serialize_(buffer, value, tabsize, 0);
+    capy_err err;
+
+    *input = capy_string_ltrim(*input, " \t\r\n");
+
+    if (input->size == 0)
+    {
+        return ErrFmt(EINVAL, "unexpected end of data");
+    }
+
+    switch (input->data[0])
+    {
+        case 'n':
+        {
+            if (input->size < 4 && !ArrCmp4(input->data, 'n', 'u', 'l', 'l'))
+            {
+                return ErrFmt(EINVAL, "unexpected keyword");
+            }
+
+            *value = capy_json_null();
+            *input = capy_string_shl(*input, 4);
+        }
+        break;
+
+        case 't':
+        {
+            if (input->size < 4 && !ArrCmp4(input->data, 't', 'r', 'u', 'e'))
+            {
+                return ErrFmt(EINVAL, "unexpected keyword");
+            }
+
+            *value = capy_json_bool(true);
+            *input = capy_string_shl(*input, 4);
+        }
+        break;
+
+        case 'f':
+        {
+            if (input->size < 5 && !ArrCmp5(input->data, 'f', 'a', 'l', 's', 'e'))
+            {
+                return ErrFmt(EINVAL, "unexpected keyword");
+            }
+
+            *value = capy_json_bool(false);
+            *input = capy_string_shl(*input, 5);
+        }
+        break;
+
+        case '"':
+        {
+            const char *string;
+
+            err = json_parse_string(arena, &string, input);
+
+            if (err.code)
+            {
+                return err;
+            }
+
+            *value = capy_json_string(string);
+        }
+        break;
+
+        case '-':
+        case '0':
+        case '1':
+        case '2':
+        case '3':
+        case '4':
+        case '5':
+        case '6':
+        case '7':
+        case '8':
+        case '9':
+        {
+            double number = 0;
+
+            err = json_parse_number(&number, input);
+
+            if (err.code)
+            {
+                return err;
+            }
+
+            *value = capy_json_number(number);
+        }
+        break;
+
+        case '[':
+        {
+            *input = capy_string_shl(*input, 1);
+            *input = capy_string_ltrim(*input, " \t\r\n");
+
+            if (input->size > 0 && input->data[0] == ']')
+            {
+                *input = capy_string_shl(*input, 1);
+                *value = (capy_jsonval){.kind = CAPY_JSON_ARRAY, .object = NULL};
+            }
+            else
+            {
+                capy_jsonval arr = capy_json_array(arena);
+
+                if (arr.array == NULL)
+                {
+                    return ErrStd(ENOMEM);
+                }
+
+                for (;;)
+                {
+                    capy_jsonval element;
+
+                    err = json_deserialize(arena, &element, input);
+
+                    if (err.code)
+                    {
+                        return err;
+                    }
+
+                    err = capy_json_array_push(arr.array, element);
+
+                    if (err.code)
+                    {
+                        return err;
+                    }
+
+                    *input = capy_string_ltrim(*input, " \t\r\n");
+
+                    if (input->size == 0)
+                    {
+                        return ErrFmt(EINVAL, "end of data when ',' or ']' was expected");
+                    }
+
+                    if (input->data[0] == ',')
+                    {
+                        *input = capy_string_shl(*input, 1);
+                    }
+                    else if (input->data[0] == ']')
+                    {
+                        *input = capy_string_shl(*input, 1);
+                        break;
+                    }
+                    else
+                    {
+                        return ErrFmt(EINVAL, "expected ',' or ']' after array element");
+                    }
+                }
+
+                *value = arr;
+            }
+        }
+        break;
+
+        case '{':
+        {
+            *input = capy_string_shl(*input, 1);
+            *input = capy_string_ltrim(*input, " \t\r\n");
+
+            if (input->size == 0)
+            {
+                return ErrFmt(EINVAL, "end of data while reading object contents");
+            }
+
+            if (input->data[0] == '}')
+            {
+                *input = capy_string_shl(*input, 1);
+                *value = (capy_jsonval){.kind = CAPY_JSON_OBJECT, .object = NULL};
+            }
+            else
+            {
+                capy_jsonval obj = capy_json_object(arena);
+
+                if (obj.object == NULL)
+                {
+                    return ErrStd(ENOMEM);
+                }
+
+                for (;;)
+                {
+                    *input = capy_string_ltrim(*input, " \t\r\n");
+
+                    if (input->size == 0)
+                    {
+                        return ErrFmt(EINVAL, "end of data when property name was expected");
+                    }
+
+                    if (input->data[0] != '"')
+                    {
+                        return ErrFmt(EINVAL, "expected property name or '}'");
+                    }
+
+                    const char *key;
+
+                    err = json_parse_string(arena, &key, input);
+
+                    if (err.code)
+                    {
+                        return err;
+                    }
+
+                    *input = capy_string_ltrim(*input, " \t\r\n");
+
+                    if (input->size == 0)
+                    {
+                        return ErrFmt(EINVAL, "end of data after property name when ':' was expected");
+                    }
+
+                    if (input->data[0] != ':')
+                    {
+                        return ErrFmt(EINVAL, "expected ':' after property name in object");
+                    }
+
+                    *input = capy_string_shl(*input, 1);
+                    *input = capy_string_ltrim(*input, " \t\r\n");
+
+                    capy_jsonval element;
+
+                    err = json_deserialize(arena, &element, input);
+
+                    if (err.code)
+                    {
+                        return err;
+                    }
+
+                    err = capy_json_object_set(obj.object, key, element);
+
+                    if (err.code)
+                    {
+                        return err;
+                    }
+
+                    *input = capy_string_ltrim(*input, " \t\r\n");
+
+                    if (input->size == 0)
+                    {
+                        return ErrFmt(EINVAL, "end of data after property value in object");
+                    }
+
+                    if (input->data[0] == ',')
+                    {
+                        *input = capy_string_shl(*input, 1);
+                    }
+                    else if (input->data[0] == '}')
+                    {
+                        *input = capy_string_shl(*input, 1);
+                        break;
+                    }
+                    else
+                    {
+                        return ErrFmt(EINVAL, "expected double-quoted property name");
+                    }
+                }
+
+                *value = obj;
+            }
+        }
+        break;
+
+        default:
+            return ErrFmt(EINVAL, "unexpected character");
+            break;
+    }
+
+    return Ok;
 }
 
-static capy_err capy_json_parse_number(double *number, capy_string *input)
+static capy_err json_parse_number(double *number, capy_string *input)
 {
     // always starts with '-' or a digit
 
@@ -391,7 +577,7 @@ static capy_err capy_json_parse_number(double *number, capy_string *input)
     return Ok;
 }
 
-static capy_err capy_json_parse_string(capy_arena *arena, const char **cstr, capy_string *input)
+static capy_err json_parse_string(capy_arena *arena, const char **cstr, capy_string *input)
 {
     // always starts with '"'
 
@@ -563,282 +749,113 @@ static capy_err capy_json_parse_string(capy_arena *arena, const char **cstr, cap
     return Ok;
 }
 
-static capy_err capy_json_deserialize_(capy_arena *arena, capy_jsonval *value, capy_string *input)
+// PUBLIC DEFINITIONS
+
+capy_jsonval capy_json_null(void)
 {
-    capy_err err;
+    return (capy_jsonval){.kind = CAPY_JSON_NULL};
+}
 
-    *input = capy_string_ltrim(*input, " \t\r\n");
+capy_jsonval capy_json_string(const char *string)
+{
+    return (capy_jsonval){.kind = CAPY_JSON_STRING, .string = string};
+}
 
-    if (input->size == 0)
+capy_jsonval capy_json_number(double number)
+{
+    return (capy_jsonval){.kind = CAPY_JSON_NUMBER, .number = number};
+}
+
+capy_jsonval capy_json_bool(int boolean)
+{
+    return (capy_jsonval){.kind = CAPY_JSON_BOOL, .boolean = boolean};
+}
+
+capy_jsonval capy_json_object(capy_arena *arena)
+{
+    size_t capacity = 8;
+
+    char *addr = capy_arena_alloc(arena, sizeof(capy_jsonobj) + (sizeof(capy_jsonkv) * capacity), 8, true);
+
+    if (addr == NULL)
     {
-        return ErrFmt(EINVAL, "unexpected end of data");
+        return (capy_jsonval){.kind = CAPY_JSON_OBJECT, .object = NULL};
     }
 
-    switch (input->data[0])
+    capy_jsonobj *obj = Cast(capy_jsonobj *, addr);
+
+    obj->size = 0;
+    obj->capacity = capacity;
+    obj->element_size = sizeof(capy_jsonkv);
+    obj->arena = arena;
+    obj->items = Cast(capy_jsonkv *, addr + sizeof(capy_jsonobj));
+
+    return (capy_jsonval){.kind = CAPY_JSON_OBJECT, .object = obj};
+}
+
+capy_err capy_json_object_set(capy_jsonobj *object, const char *key, capy_jsonval value)
+{
+    capy_jsonkv kv = {.key = capy_string_cstr(key), .value = value};
+    return capy_strmap_set(object->arena, &object->strmap, &kv);
+}
+
+capy_jsonval *capy_json_object_get(capy_jsonobj *object, const char *key)
+{
+    return capy_strmap_get(&object->strmap, capy_string_cstr(key));
+}
+
+capy_jsonval capy_json_array(capy_arena *arena)
+{
+    size_t capacity = 8;
+
+    char *addr = capy_arena_alloc(arena, sizeof(capy_jsonarr) + (capacity * sizeof(capy_jsonval)), 8, false);
+
+    if (addr == NULL)
     {
-        case 'n':
-        {
-            if (input->size < 4 && !ArrCmp4(input->data, 'n', 'u', 'l', 'l'))
-            {
-                return ErrFmt(EINVAL, "unexpected keyword");
-            }
-
-            *value = capy_json_null();
-            *input = capy_string_shl(*input, 4);
-        }
-        break;
-
-        case 't':
-        {
-            if (input->size < 4 && !ArrCmp4(input->data, 't', 'r', 'u', 'e'))
-            {
-                return ErrFmt(EINVAL, "unexpected keyword");
-            }
-
-            *value = capy_json_bool(true);
-            *input = capy_string_shl(*input, 4);
-        }
-        break;
-
-        case 'f':
-        {
-            if (input->size < 5 && !ArrCmp5(input->data, 'f', 'a', 'l', 's', 'e'))
-            {
-                return ErrFmt(EINVAL, "unexpected keyword");
-            }
-
-            *value = capy_json_bool(false);
-            *input = capy_string_shl(*input, 5);
-        }
-        break;
-
-        case '"':
-        {
-            const char *string;
-
-            err = capy_json_parse_string(arena, &string, input);
-
-            if (err.code)
-            {
-                return err;
-            }
-
-            *value = capy_json_string(string);
-        }
-        break;
-
-        case '-':
-        case '0':
-        case '1':
-        case '2':
-        case '3':
-        case '4':
-        case '5':
-        case '6':
-        case '7':
-        case '8':
-        case '9':
-        {
-            double number = 0;
-
-            err = capy_json_parse_number(&number, input);
-
-            if (err.code)
-            {
-                return err;
-            }
-
-            *value = capy_json_number(number);
-        }
-        break;
-
-        case '[':
-        {
-            *input = capy_string_shl(*input, 1);
-            *input = capy_string_ltrim(*input, " \t\r\n");
-
-            if (input->size > 0 && input->data[0] == ']')
-            {
-                *input = capy_string_shl(*input, 1);
-                *value = (capy_jsonval){.kind = CAPY_JSON_ARRAY, .object = NULL};
-            }
-            else
-            {
-                capy_jsonval arr = capy_json_array(arena);
-
-                if (arr.array == NULL)
-                {
-                    return ErrStd(ENOMEM);
-                }
-
-                for (;;)
-                {
-                    capy_jsonval element;
-
-                    err = capy_json_deserialize_(arena, &element, input);
-
-                    if (err.code)
-                    {
-                        return err;
-                    }
-
-                    err = capy_json_array_push(arr.array, element);
-
-                    if (err.code)
-                    {
-                        return err;
-                    }
-
-                    *input = capy_string_ltrim(*input, " \t\r\n");
-
-                    if (input->size == 0)
-                    {
-                        return ErrFmt(EINVAL, "end of data when ',' or ']' was expected");
-                    }
-
-                    if (input->data[0] == ',')
-                    {
-                        *input = capy_string_shl(*input, 1);
-                    }
-                    else if (input->data[0] == ']')
-                    {
-                        *input = capy_string_shl(*input, 1);
-                        break;
-                    }
-                    else
-                    {
-                        return ErrFmt(EINVAL, "expected ',' or ']' after array element");
-                    }
-                }
-
-                *value = arr;
-            }
-        }
-        break;
-
-        case '{':
-        {
-            *input = capy_string_shl(*input, 1);
-            *input = capy_string_ltrim(*input, " \t\r\n");
-
-            if (input->size == 0)
-            {
-                return ErrFmt(EINVAL, "end of data while reading object contents");
-            }
-
-            if (input->data[0] == '}')
-            {
-                *input = capy_string_shl(*input, 1);
-                *value = (capy_jsonval){.kind = CAPY_JSON_OBJECT, .object = NULL};
-            }
-            else
-            {
-                capy_jsonval obj = capy_json_object(arena);
-
-                if (obj.object == NULL)
-                {
-                    return ErrStd(ENOMEM);
-                }
-
-                for (;;)
-                {
-                    *input = capy_string_ltrim(*input, " \t\r\n");
-
-                    if (input->size == 0)
-                    {
-                        return ErrFmt(EINVAL, "end of data when property name was expected");
-                    }
-
-                    if (input->data[0] != '"')
-                    {
-                        return ErrFmt(EINVAL, "expected property name or '}'");
-                    }
-
-                    const char *key;
-
-                    err = capy_json_parse_string(arena, &key, input);
-
-                    if (err.code)
-                    {
-                        return err;
-                    }
-
-                    *input = capy_string_ltrim(*input, " \t\r\n");
-
-                    if (input->size == 0)
-                    {
-                        return ErrFmt(EINVAL, "end of data after property name when ':' was expected");
-                    }
-
-                    if (input->data[0] != ':')
-                    {
-                        return ErrFmt(EINVAL, "expected ':' after property name in object");
-                    }
-
-                    *input = capy_string_shl(*input, 1);
-                    *input = capy_string_ltrim(*input, " \t\r\n");
-
-                    capy_jsonval element;
-
-                    err = capy_json_deserialize_(arena, &element, input);
-
-                    if (err.code)
-                    {
-                        return err;
-                    }
-
-                    err = capy_json_object_set(obj.object, key, element);
-
-                    if (err.code)
-                    {
-                        return err;
-                    }
-
-                    *input = capy_string_ltrim(*input, " \t\r\n");
-
-                    if (input->size == 0)
-                    {
-                        return ErrFmt(EINVAL, "end of data after property value in object");
-                    }
-
-                    if (input->data[0] == ',')
-                    {
-                        *input = capy_string_shl(*input, 1);
-                    }
-                    else if (input->data[0] == '}')
-                    {
-                        *input = capy_string_shl(*input, 1);
-                        break;
-                    }
-                    else
-                    {
-                        return ErrFmt(EINVAL, "expected double-quoted property name");
-                    }
-                }
-
-                *value = obj;
-            }
-        }
-        break;
-
-        default:
-            return ErrFmt(EINVAL, "unexpected character");
-            break;
+        return (capy_jsonval){.kind = CAPY_JSON_ARRAY, .array = NULL};
     }
 
-    return Ok;
+    capy_jsonarr *arr = Cast(capy_jsonarr *, addr);
+
+    arr->size = 0;
+    arr->capacity = capacity;
+    arr->element_size = sizeof(capy_jsonval);
+    arr->arena = arena;
+    arr->data = Cast(capy_jsonval *, addr + sizeof(capy_jsonarr));
+
+    return (capy_jsonval){.kind = CAPY_JSON_ARRAY, .array = arr};
+}
+
+capy_err capy_json_array_push(capy_jsonarr *array, capy_jsonval value)
+{
+    return capy_vec_insert(array->arena, &array->vec, array->size, 1, &value);
+}
+
+capy_err capy_json_serialize(capy_buffer *buffer, capy_jsonval value, int tabsize)
+{
+    return json_serialize(buffer, value, tabsize, 0);
 }
 
 capy_err capy_json_deserialize(capy_arena *arena, capy_jsonval *value, const char *in)
 {
     capy_string input = capy_string_cstr(in);
-    capy_string cursor = input;
+    capy_string remainder = input;
 
-    capy_err err = capy_json_deserialize_(arena, value, &cursor);
+    capy_err err = json_deserialize(arena, value, &remainder);
+
+    if (!err.code)
+    {
+        remainder = capy_string_ltrim(remainder, " ");
+
+        if (remainder.size > 0)
+        {
+            err = ErrFmt(EINVAL, "unexpected non-whitespace character after JSON data");
+        }
+    }
 
     if (err.code)
     {
-        size_t index = input.size - cursor.size;
+        size_t index = input.size - remainder.size;
         size_t line = 1;
         size_t column = 1;
 

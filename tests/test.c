@@ -282,141 +282,141 @@ static int test_capy_arena_realloc(void)
     return true;
 }
 
-static int test_capy_http_parse_method(void)
+static int test_http_parse_method(void)
 {
-    ExpectEqS(capy_http_parse_method(Str("GET")), CAPY_HTTP_GET);
-    ExpectEqS(capy_http_parse_method(Str("_ET")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("G_T")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("GE_")), CAPY_HTTP_METHOD_UNK);
+    ExpectEqS(http_parse_method(Str("GET")), CAPY_HTTP_GET);
+    ExpectEqS(http_parse_method(Str("_ET")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("G_T")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("GE_")), CAPY_HTTP_INVALID_METHOD);
 
-    ExpectEqS(capy_http_parse_method(Str("PUT")), CAPY_HTTP_PUT);
-    ExpectEqS(capy_http_parse_method(Str("_UT")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("P_T")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("PU_")), CAPY_HTTP_METHOD_UNK);
+    ExpectEqS(http_parse_method(Str("PUT")), CAPY_HTTP_PUT);
+    ExpectEqS(http_parse_method(Str("_UT")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("P_T")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("PU_")), CAPY_HTTP_INVALID_METHOD);
 
-    ExpectEqS(capy_http_parse_method(Str("HEAD")), CAPY_HTTP_HEAD);
-    ExpectEqS(capy_http_parse_method(Str("_EAD")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("H_AD")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("HE_D")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("HEA_")), CAPY_HTTP_METHOD_UNK);
+    ExpectEqS(http_parse_method(Str("HEAD")), CAPY_HTTP_HEAD);
+    ExpectEqS(http_parse_method(Str("_EAD")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("H_AD")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("HE_D")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("HEA_")), CAPY_HTTP_INVALID_METHOD);
 
-    ExpectEqS(capy_http_parse_method(Str("POST")), CAPY_HTTP_POST);
-    ExpectEqS(capy_http_parse_method(Str("_OST")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("P_ST")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("PO_T")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("POS_")), CAPY_HTTP_METHOD_UNK);
+    ExpectEqS(http_parse_method(Str("POST")), CAPY_HTTP_POST);
+    ExpectEqS(http_parse_method(Str("_OST")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("P_ST")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("PO_T")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("POS_")), CAPY_HTTP_INVALID_METHOD);
 
-    ExpectEqS(capy_http_parse_method(Str("TRACE")), CAPY_HTTP_TRACE);
-    ExpectEqS(capy_http_parse_method(Str("_RACE")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("T_ACE")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("TR_CE")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("TRA_E")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("TRAC_")), CAPY_HTTP_METHOD_UNK);
+    ExpectEqS(http_parse_method(Str("TRACE")), CAPY_HTTP_TRACE);
+    ExpectEqS(http_parse_method(Str("_RACE")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("T_ACE")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("TR_CE")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("TRA_E")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("TRAC_")), CAPY_HTTP_INVALID_METHOD);
 
-    ExpectEqS(capy_http_parse_method(Str("PATCH")), CAPY_HTTP_PATCH);
-    ExpectEqS(capy_http_parse_method(Str("_ATCH")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("P_TCH")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("PA_CH")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("PAT_H")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("PATC_")), CAPY_HTTP_METHOD_UNK);
+    ExpectEqS(http_parse_method(Str("PATCH")), CAPY_HTTP_PATCH);
+    ExpectEqS(http_parse_method(Str("_ATCH")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("P_TCH")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("PA_CH")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("PAT_H")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("PATC_")), CAPY_HTTP_INVALID_METHOD);
 
-    ExpectEqS(capy_http_parse_method(Str("DELETE")), CAPY_HTTP_DELETE);
-    ExpectEqS(capy_http_parse_method(Str("_ELETE")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("D_LETE")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("DE_ETE")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("DEL_TE")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("DELE_E")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("DELET_")), CAPY_HTTP_METHOD_UNK);
+    ExpectEqS(http_parse_method(Str("DELETE")), CAPY_HTTP_DELETE);
+    ExpectEqS(http_parse_method(Str("_ELETE")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("D_LETE")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("DE_ETE")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("DEL_TE")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("DELE_E")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("DELET_")), CAPY_HTTP_INVALID_METHOD);
 
-    ExpectEqS(capy_http_parse_method(Str("CONNECT")), CAPY_HTTP_CONNECT);
-    ExpectEqS(capy_http_parse_method(Str("_ONNECT")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("C_NNECT")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("CO_NECT")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("CON_ECT")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("CONN_CT")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("CONNE_T")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("CONNEC_")), CAPY_HTTP_METHOD_UNK);
+    ExpectEqS(http_parse_method(Str("CONNECT")), CAPY_HTTP_CONNECT);
+    ExpectEqS(http_parse_method(Str("_ONNECT")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("C_NNECT")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("CO_NECT")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("CON_ECT")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("CONN_CT")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("CONNE_T")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("CONNEC_")), CAPY_HTTP_INVALID_METHOD);
 
-    ExpectEqS(capy_http_parse_method(Str("OPTIONS")), CAPY_HTTP_OPTIONS);
-    ExpectEqS(capy_http_parse_method(Str("_PTIONS")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("O_TIONS")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("OP_IONS")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("OPT_ONS")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("OPTI_NS")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("OPTIO_S")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("OPTION_")), CAPY_HTTP_METHOD_UNK);
+    ExpectEqS(http_parse_method(Str("OPTIONS")), CAPY_HTTP_OPTIONS);
+    ExpectEqS(http_parse_method(Str("_PTIONS")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("O_TIONS")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("OP_IONS")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("OPT_ONS")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("OPTI_NS")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("OPTIO_S")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("OPTION_")), CAPY_HTTP_INVALID_METHOD);
 
-    ExpectEqS(capy_http_parse_method(Str("AA")), CAPY_HTTP_METHOD_UNK);
-    ExpectEqS(capy_http_parse_method(Str("AAAAAAAA")), CAPY_HTTP_METHOD_UNK);
+    ExpectEqS(http_parse_method(Str("AA")), CAPY_HTTP_INVALID_METHOD);
+    ExpectEqS(http_parse_method(Str("AAAAAAAA")), CAPY_HTTP_INVALID_METHOD);
 
     return true;
 }
 
-static int test_capy_http_parse_version(void)
+static int test_http_parse_version(void)
 {
-    ExpectEqS(capy_http_parse_version(Str("HTTP/0.9")), CAPY_HTTP_09);
-    ExpectEqS(capy_http_parse_version(Str("HTTP/1.0")), CAPY_HTTP_10);
-    ExpectEqS(capy_http_parse_version(Str("HTTP/1.1")), CAPY_HTTP_11);
-    ExpectEqS(capy_http_parse_version(Str("HTTP/2.0")), CAPY_HTTP_20);
-    ExpectEqS(capy_http_parse_version(Str("HTTP/3.0")), CAPY_HTTP_30);
+    ExpectEqS(http_parse_version(Str("HTTP/0.9")), CAPY_HTTP_09);
+    ExpectEqS(http_parse_version(Str("HTTP/1.0")), CAPY_HTTP_10);
+    ExpectEqS(http_parse_version(Str("HTTP/1.1")), CAPY_HTTP_11);
+    ExpectEqS(http_parse_version(Str("HTTP/2.0")), CAPY_HTTP_20);
+    ExpectEqS(http_parse_version(Str("HTTP/3.0")), CAPY_HTTP_30);
 
-    ExpectEqS(capy_http_parse_version(Str("HTTP/0.8")), CAPY_HTTP_VERSION_UNK);
-    ExpectEqS(capy_http_parse_version(Str("HTTP/1.2")), CAPY_HTTP_VERSION_UNK);
-    ExpectEqS(capy_http_parse_version(Str("HTTP/2.1")), CAPY_HTTP_VERSION_UNK);
-    ExpectEqS(capy_http_parse_version(Str("HTTP/3.1")), CAPY_HTTP_VERSION_UNK);
-    ExpectEqS(capy_http_parse_version(Str("HTTP/4.0")), CAPY_HTTP_VERSION_UNK);
+    ExpectEqS(http_parse_version(Str("HTTP/0.8")), CAPY_HTTP_INVALID_VERSION);
+    ExpectEqS(http_parse_version(Str("HTTP/1.2")), CAPY_HTTP_INVALID_VERSION);
+    ExpectEqS(http_parse_version(Str("HTTP/2.1")), CAPY_HTTP_INVALID_VERSION);
+    ExpectEqS(http_parse_version(Str("HTTP/3.1")), CAPY_HTTP_INVALID_VERSION);
+    ExpectEqS(http_parse_version(Str("HTTP/4.0")), CAPY_HTTP_INVALID_VERSION);
 
-    ExpectEqS(capy_http_parse_version(Str("_TTP/1.1")), CAPY_HTTP_VERSION_UNK);
-    ExpectEqS(capy_http_parse_version(Str("H_TP/1.1")), CAPY_HTTP_VERSION_UNK);
-    ExpectEqS(capy_http_parse_version(Str("HT_P/1.1")), CAPY_HTTP_VERSION_UNK);
-    ExpectEqS(capy_http_parse_version(Str("HTT_/1.1")), CAPY_HTTP_VERSION_UNK);
-    ExpectEqS(capy_http_parse_version(Str("HTTP_1.1")), CAPY_HTTP_VERSION_UNK);
-    ExpectEqS(capy_http_parse_version(Str("HTTP/1_1")), CAPY_HTTP_VERSION_UNK);
-    ExpectEqS(capy_http_parse_version(Str("HTTP/1.1 ")), CAPY_HTTP_VERSION_UNK);
+    ExpectEqS(http_parse_version(Str("_TTP/1.1")), CAPY_HTTP_INVALID_VERSION);
+    ExpectEqS(http_parse_version(Str("H_TP/1.1")), CAPY_HTTP_INVALID_VERSION);
+    ExpectEqS(http_parse_version(Str("HT_P/1.1")), CAPY_HTTP_INVALID_VERSION);
+    ExpectEqS(http_parse_version(Str("HTT_/1.1")), CAPY_HTTP_INVALID_VERSION);
+    ExpectEqS(http_parse_version(Str("HTTP_1.1")), CAPY_HTTP_INVALID_VERSION);
+    ExpectEqS(http_parse_version(Str("HTTP/1_1")), CAPY_HTTP_INVALID_VERSION);
+    ExpectEqS(http_parse_version(Str("HTTP/1.1 ")), CAPY_HTTP_INVALID_VERSION);
 
     return true;
 }
 
-static int test_capy_http_parse_reqline(void)
+static int test_http_parse_reqline(void)
 {
     capy_arena *arena = capy_arena_init(0, KiB(4));
 
     capy_httpreq *request = Make(arena, capy_httpreq, 1);
 
-    ExpectOk(capy_http_parse_reqline(arena, request, Str("CONNECT localhost:8080 HTTP/1.1")));
-    ExpectOk(capy_http_parse_reqline(arena, request, Str("OPTIONS * HTTP/1.1")));
-    ExpectOk(capy_http_parse_reqline(arena, request, Str("OPTIONS /index.html HTTP/1.1")));
-    ExpectOk(capy_http_parse_reqline(arena, request, Str("GET /index.html?id=1 HTTP/1.1")));
-    ExpectOk(capy_http_parse_reqline(arena, request, Str("GET http://localhost:8080/index.html HTTP/1.1")));
-    ExpectOk(capy_http_parse_reqline(arena, request, Str("GET HTTP://LOCALHOST:80/../%4D%30/abc/./../test HTTP/1.1")));
-    ExpectOk(capy_http_parse_reqline(arena, request, Str("GET ../%4D%20/abc/./../test HTTP/1.1")));
-    ExpectOk(capy_http_parse_reqline(arena, request, Str("GET / HTTP/1.1")));
+    ExpectOk(http_parse_reqline(arena, request, Str("CONNECT localhost:8080 HTTP/1.1")));
+    ExpectOk(http_parse_reqline(arena, request, Str("OPTIONS * HTTP/1.1")));
+    ExpectOk(http_parse_reqline(arena, request, Str("OPTIONS /index.html HTTP/1.1")));
+    ExpectOk(http_parse_reqline(arena, request, Str("GET /index.html?id=1 HTTP/1.1")));
+    ExpectOk(http_parse_reqline(arena, request, Str("GET http://localhost:8080/index.html HTTP/1.1")));
+    ExpectOk(http_parse_reqline(arena, request, Str("GET HTTP://LOCALHOST:80/../%4D%30/abc/./../test HTTP/1.1")));
+    ExpectOk(http_parse_reqline(arena, request, Str("GET ../%4D%20/abc/./../test HTTP/1.1")));
+    ExpectOk(http_parse_reqline(arena, request, Str("GET / HTTP/1.1")));
 
-    ExpectErr(capy_http_parse_reqline(arena, request, Str("GET  / HTTP/1.1")));
-    ExpectErr(capy_http_parse_reqline(arena, request, Str("GET /  HTTP/1.1")));
-    ExpectErr(capy_http_parse_reqline(arena, request, Str("GET / HTTP/1.1 ")));
-    ExpectErr(capy_http_parse_reqline(arena, request, Str("get / HTTP/1.1")));
-    ExpectErr(capy_http_parse_reqline(arena, request, Str("GET /%gg/ HTTP/1.1")));
-    ExpectErr(capy_http_parse_reqline(arena, request, Str("GET / http/1.1")));
+    ExpectErr(http_parse_reqline(arena, request, Str("GET  / HTTP/1.1")));
+    ExpectErr(http_parse_reqline(arena, request, Str("GET /  HTTP/1.1")));
+    ExpectErr(http_parse_reqline(arena, request, Str("GET / HTTP/1.1 ")));
+    ExpectErr(http_parse_reqline(arena, request, Str("get / HTTP/1.1")));
+    ExpectErr(http_parse_reqline(arena, request, Str("GET /%gg/ HTTP/1.1")));
+    ExpectErr(http_parse_reqline(arena, request, Str("GET / http/1.1")));
 
     capy_arena_destroy(arena);
     return true;
 }
 
-static int test_capy_http_parse_field(void)
+static int test_http_parse_field(void)
 {
     capy_arena *arena = capy_arena_init(0, KiB(4));
 
     capy_strkvnmap *fields = capy_strkvnmap_init(arena, 16);
 
-    ExpectErr(capy_http_parse_field(fields, Str("\x01: localhost:8080")));
-    ExpectErr(capy_http_parse_field(fields, Str(": localhost:8080")));
-    ExpectErr(capy_http_parse_field(fields, Str("Host : localhost:8080")));
-    ExpectErr(capy_http_parse_field(fields, Str("Host")));
-    ExpectErr(capy_http_parse_field(fields, Str("Host: \x01")));
-    ExpectOk(capy_http_parse_field(fields, Str("transfer-Encoding:  deflate ; a=1 ")));
-    ExpectOk(capy_http_parse_field(fields, Str("Transfer-encoding: gzip\t; b=2 ")));
-    ExpectOk(capy_http_parse_field(fields, Str("transfer-encoding: chunked")));
+    ExpectErr(http_parse_field(fields, Str("\x01: localhost:8080")));
+    ExpectErr(http_parse_field(fields, Str(": localhost:8080")));
+    ExpectErr(http_parse_field(fields, Str("Host : localhost:8080")));
+    ExpectErr(http_parse_field(fields, Str("Host")));
+    ExpectErr(http_parse_field(fields, Str("Host: \x01")));
+    ExpectOk(http_parse_field(fields, Str("transfer-Encoding:  deflate ; a=1 ")));
+    ExpectOk(http_parse_field(fields, Str("Transfer-encoding: gzip\t; b=2 ")));
+    ExpectOk(http_parse_field(fields, Str("transfer-encoding: chunked")));
 
     capy_strkvn *field = capy_strkvnmap_get(fields, Str("Transfer-Encoding"));
 
@@ -440,113 +440,113 @@ static int test_capy_http_request_validate(void)
     capy_strkvnmap_clear(fields);
     *request = (capy_httpreq){.headers = fields};
 
-    ExpectOk(capy_http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
-    ExpectOk(capy_http_parse_field(request->headers, Str("Host: localhost:80")));
-    ExpectOk(capy_http_parse_field(request->headers, Str("Transfer-Encoding: chunked")));
-    ExpectOk(capy_http_validate_request(arena, request));
+    ExpectOk(http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
+    ExpectOk(http_parse_field(request->headers, Str("Host: localhost:80")));
+    ExpectOk(http_parse_field(request->headers, Str("Transfer-Encoding: chunked")));
+    ExpectOk(http_validate_request(arena, request));
     ExpectEqU(request->content_length, 0);
     ExpectEqS(request->chunked, 1);
 
     capy_strkvnmap_clear(fields);
     *request = (capy_httpreq){.headers = fields};
 
-    ExpectOk(capy_http_parse_reqline(arena, request, Str("GET http://127.0.0.1/test HTTP/1.1")));
-    ExpectOk(capy_http_parse_field(request->headers, Str("Host: localhost:80")));
-    ExpectOk(capy_http_validate_request(arena, request));
+    ExpectOk(http_parse_reqline(arena, request, Str("GET http://127.0.0.1/test HTTP/1.1")));
+    ExpectOk(http_parse_field(request->headers, Str("Host: localhost:80")));
+    ExpectOk(http_validate_request(arena, request));
 
     capy_strkvnmap_clear(fields);
     *request = (capy_httpreq){.headers = fields};
 
-    ExpectOk(capy_http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
-    ExpectOk(capy_http_parse_field(request->headers, Str("Host: localhost:80")));
-    ExpectOk(capy_http_parse_field(request->headers, Str("Content-Length: 100")));
-    ExpectOk(capy_http_validate_request(arena, request));
+    ExpectOk(http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
+    ExpectOk(http_parse_field(request->headers, Str("Host: localhost:80")));
+    ExpectOk(http_parse_field(request->headers, Str("Content-Length: 100")));
+    ExpectOk(http_validate_request(arena, request));
     ExpectEqU(request->content_length, 100);
     ExpectEqS(request->chunked, 0);
 
     capy_strkvnmap_clear(fields);
     *request = (capy_httpreq){.headers = fields};
 
-    ExpectOk(capy_http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
-    ExpectOk(capy_http_parse_field(request->headers, Str("Host: localhost")));
-    ExpectOk(capy_http_validate_request(arena, request));
+    ExpectOk(http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
+    ExpectOk(http_parse_field(request->headers, Str("Host: localhost")));
+    ExpectOk(http_validate_request(arena, request));
 
     capy_strkvnmap_clear(fields);
     *request = (capy_httpreq){.headers = fields};
 
-    ExpectOk(capy_http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
-    ExpectOk(capy_http_parse_field(request->headers, Str("Host: localhost:80")));
-    ExpectOk(capy_http_parse_field(request->headers, Str("Transfer-Encoding: gzip")));
-    ExpectErr(capy_http_validate_request(arena, request));
+    ExpectOk(http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
+    ExpectOk(http_parse_field(request->headers, Str("Host: localhost:80")));
+    ExpectOk(http_parse_field(request->headers, Str("Transfer-Encoding: gzip")));
+    ExpectErr(http_validate_request(arena, request));
 
     capy_strkvnmap_clear(fields);
     *request = (capy_httpreq){.headers = fields};
 
-    ExpectOk(capy_http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
-    ExpectOk(capy_http_parse_field(request->headers, Str("Host: localhost:80")));
-    ExpectOk(capy_http_parse_field(request->headers, Str("Transfer-Encoding: gzip")));
-    ExpectOk(capy_http_parse_field(request->headers, Str("Transfer-Encoding: chunked")));
-    ExpectErr(capy_http_validate_request(arena, request));
+    ExpectOk(http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
+    ExpectOk(http_parse_field(request->headers, Str("Host: localhost:80")));
+    ExpectOk(http_parse_field(request->headers, Str("Transfer-Encoding: gzip")));
+    ExpectOk(http_parse_field(request->headers, Str("Transfer-Encoding: chunked")));
+    ExpectErr(http_validate_request(arena, request));
 
     capy_strkvnmap_clear(fields);
     *request = (capy_httpreq){.headers = fields};
 
-    ExpectOk(capy_http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
-    ExpectOk(capy_http_parse_field(request->headers, Str("Host: localhost:80")));
-    ExpectOk(capy_http_parse_field(request->headers, Str("Transfer-Encoding: chunked")));
-    ExpectOk(capy_http_parse_field(request->headers, Str("Content-Length: 100")));
-    ExpectErr(capy_http_validate_request(arena, request));
+    ExpectOk(http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
+    ExpectOk(http_parse_field(request->headers, Str("Host: localhost:80")));
+    ExpectOk(http_parse_field(request->headers, Str("Transfer-Encoding: chunked")));
+    ExpectOk(http_parse_field(request->headers, Str("Content-Length: 100")));
+    ExpectErr(http_validate_request(arena, request));
 
     capy_strkvnmap_clear(fields);
     *request = (capy_httpreq){.headers = fields};
 
-    ExpectOk(capy_http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
-    ExpectOk(capy_http_parse_field(request->headers, Str("Host: localhost:80")));
-    ExpectOk(capy_http_parse_field(request->headers, Str("Content-Length: 100")));
-    ExpectOk(capy_http_parse_field(request->headers, Str("Content-Length: 15")));
-    ExpectErr(capy_http_validate_request(arena, request));
+    ExpectOk(http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
+    ExpectOk(http_parse_field(request->headers, Str("Host: localhost:80")));
+    ExpectOk(http_parse_field(request->headers, Str("Content-Length: 100")));
+    ExpectOk(http_parse_field(request->headers, Str("Content-Length: 15")));
+    ExpectErr(http_validate_request(arena, request));
 
     request = Make(arena, capy_httpreq, 1);
     request->headers = capy_strkvnmap_init(arena, 16);
 
-    ExpectOk(capy_http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
-    ExpectOk(capy_http_parse_field(request->headers, Str("Host: localhost:80")));
-    ExpectOk(capy_http_parse_field(request->headers, Str("Content-Length: af")));
-    ExpectErr(capy_http_validate_request(arena, request));
+    ExpectOk(http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
+    ExpectOk(http_parse_field(request->headers, Str("Host: localhost:80")));
+    ExpectOk(http_parse_field(request->headers, Str("Content-Length: af")));
+    ExpectErr(http_validate_request(arena, request));
 
     capy_strkvnmap_clear(fields);
     *request = (capy_httpreq){.headers = fields};
 
-    ExpectOk(capy_http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
-    ExpectErr(capy_http_validate_request(arena, request));
+    ExpectOk(http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
+    ExpectErr(http_validate_request(arena, request));
 
     capy_strkvnmap_clear(fields);
     *request = (capy_httpreq){.headers = fields};
 
-    ExpectOk(capy_http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
-    ExpectOk(capy_http_parse_field(request->headers, Str("Host: localhost:aa")));
-    ExpectErr(capy_http_validate_request(arena, request));
+    ExpectOk(http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
+    ExpectOk(http_parse_field(request->headers, Str("Host: localhost:aa")));
+    ExpectErr(http_validate_request(arena, request));
 
     capy_strkvnmap_clear(fields);
     *request = (capy_httpreq){.headers = fields};
 
-    ExpectOk(capy_http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
-    ExpectOk(capy_http_parse_field(request->headers, Str("Host: foo@localhost:8080")));
-    ExpectErr(capy_http_validate_request(arena, request));
+    ExpectOk(http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
+    ExpectOk(http_parse_field(request->headers, Str("Host: foo@localhost:8080")));
+    ExpectErr(http_validate_request(arena, request));
 
     capy_strkvnmap_clear(fields);
     *request = (capy_httpreq){.headers = fields};
 
-    ExpectOk(capy_http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
-    ExpectOk(capy_http_parse_field(request->headers, Str("Host: localhost:80")));
-    ExpectOk(capy_http_parse_field(request->headers, Str("Host: example:80")));
-    ExpectErr(capy_http_validate_request(arena, request));
+    ExpectOk(http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
+    ExpectOk(http_parse_field(request->headers, Str("Host: localhost:80")));
+    ExpectOk(http_parse_field(request->headers, Str("Host: example:80")));
+    ExpectErr(http_validate_request(arena, request));
 
     capy_arena_destroy(arena);
     return true;
 }
 
-static int test_capy_http_write_response(void)
+static int test_http_write_response(void)
 {
     capy_arena *arena = capy_arena_init(0, KiB(4));
 
@@ -573,7 +573,7 @@ static int test_capy_http_write_response(void)
         .headers = fields,
     };
 
-    ExpectOk(capy_http_write_response(buffer, &response, false));
+    ExpectOk(http_write_response(buffer, &response, false));
 
     // char expected_response[] =
     //     "HTTP/1.1 200\r\n"
@@ -591,13 +591,13 @@ static int test_capy_http_write_response(void)
     return true;
 }
 
-static int test_capy_http_parse_uriparams(void)
+static int test_http_parse_uriparams(void)
 {
     capy_arena *arena = capy_arena_init(0, KiB(32));
 
     capy_strkvnmap *params = capy_strkvnmap_init(arena, 8);
 
-    ExpectOk(capy_http_parse_uriparams(params, Str("foo/test/bar/fe037abd-a9b8-4881-b875-a2f667e2e4ed/baz"), Str("foo/^file/bar/^id/baz")));
+    ExpectOk(http_parse_uriparams(params, Str("foo/test/bar/fe037abd-a9b8-4881-b875-a2f667e2e4ed/baz"), Str("foo/^file/bar/^id/baz")));
     ExpectNotNull(params);
 
     capy_strkvn *param = capy_strkvnmap_get(params, Str("id"));
@@ -1363,7 +1363,7 @@ static int test_uri_parse(void)
     {
         capy_uri uri = capy_uri_parse(uris[i].raw);
 
-        ExpectEqS(capy_uri_valid(uri), uris[i].is_valid);
+        ExpectEqS(capy_uri_validate(uri), uris[i].is_valid);
         ExpectEqStr(uri.scheme, uris[i].scheme);
         ExpectEqStr(uri.authority, uris[i].authority);
         ExpectEqStr(uri.userinfo, uris[i].userinfo);
@@ -1438,10 +1438,12 @@ static int test_uri_resolve_reference(void)
 
     for (size_t i = 0; i < ArrLen(uris_reference); i++)
     {
-        capy_uri base = capy_uri_parse(uris_reference[i].base);
+        capy_string result;
+        capy_uri uri = capy_uri_parse(uris_reference[i].base);
         capy_uri reference = capy_uri_parse(uris_reference[i].reference);
-        capy_uri uri = capy_uri_resolve_reference(arena, base, reference);
-        capy_string result = capy_uri_string(arena, uri);
+
+        ExpectOk(capy_uri_resolve_reference(arena, &uri, uri, reference));
+        ExpectOk(capy_uri_string(arena, &result, uri));
 
         ExpectEqStr(result, uris_reference[i].expected);
     }
@@ -1470,12 +1472,12 @@ int main(void)
     runtest(&t, test_capy_arena_free, "capy_arena_free");
     runtest(&t, test_capy_arena_realloc, "capy_arena_realloc");
     runtest(&t, test_capy_http_request_validate, "capy_http_request_validate");
-    runtest(&t, test_capy_http_parse_method, "capy_http_parse_method");
-    runtest(&t, test_capy_http_parse_version, "capy_http_parse_version");
-    runtest(&t, test_capy_http_parse_reqline, "capy_http_parse_reqline");
-    runtest(&t, test_capy_http_parse_field, "capy_http_parse_field");
-    runtest(&t, test_capy_http_write_response, "capy_http_write_response");
-    runtest(&t, test_capy_http_parse_uriparams, "capy_http_parse_uriparams");
+    runtest(&t, test_http_parse_method, "http_parse_method");
+    runtest(&t, test_http_parse_version, "http_parse_version");
+    runtest(&t, test_http_parse_reqline, "http_parse_reqline");
+    runtest(&t, test_http_parse_field, "http_parse_field");
+    runtest(&t, test_http_write_response, "http_write_response");
+    runtest(&t, test_http_parse_uriparams, "http_parse_uriparams");
     runtest(&t, test_capy_json_serialize, "capy_json_serialize");
     runtest(&t, test_capy_json_deserialize, "capy_json_deserialize");
     runtest(&t, test_capy_string_cstr, "capy_string_cstr");

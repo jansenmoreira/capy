@@ -48,11 +48,15 @@
 #define GiB(v) ((v) * 1024 * 1024 * 1024)
 #define TiB(v) ((v) * 1024 * 1024 * 1024 * 1024)
 
-#define Seconds(v) (Cast(uint64_t, v) * 1000)
-#define Minutes(v) (Cast(uint64_t, v) * 1000 * 60)
-#define Hours(v) (Cast(uint64_t, v) * 1000 * 60 * 60)
-#define Days(v) (Cast(uint64_t, v) * 1000 * 60 * 60 * 24)
-#define Years(v) (Cast(uint64_t, v) * 1000 * 60 * 60 * 24 * 365)
+#define Seconds(v) ((v) * 1000)
+#define Minutes(v) ((v) * 1000 * 60)
+#define Hours(v) ((v) * 1000 * 60 * 60)
+#define Days(v) ((v) * 1000 * 60 * 60 * 24)
+#define Years(v) ((v) * 1000 * 60 * 60 * 24 * 365)
+
+#define MicrosecondsNano(v) ((v) * 1000)
+#define MillisecondsNano(v) ((v) * MicrosecondsNano(1000))
+#define SecondsNano(v) ((v) * MillisecondsNano(1000))
 
 #define Make(arena, T, size) \
     (capy_arena_alloc((arena), sizeof(T) * (size), alignof(T), true))

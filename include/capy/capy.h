@@ -49,12 +49,11 @@
 // Utility Functions
 //
 
-size_t align_to(size_t v, size_t n);
-size_t next_pow2(size_t v);
+size_t capy_next_pow2(size_t v);
 int64_t capy_timespec_diff(struct timespec a, struct timespec b);
 struct timespec capy_timespec_addms(struct timespec t, uint64_t ms);
 struct timespec capy_now(void);
-void nanoseconds_normalize(int64_t *ns, const char **unit);
+void capy_normalize_ns(int64_t *ns, const char **unit);
 
 //
 // ERROR HANDLING
@@ -424,13 +423,13 @@ MustCheck capy_err capy_buffer_write_base64std(capy_buffer *buffer, size_t n, co
 // URI
 //
 
-typedef enum capy_uriflags
+enum
 {
     CAPY_URI_SCHEME = 1 << 0,
     CAPY_URI_AUTHORITY = 1 << 1,
     CAPY_URI_QUERY = 1 << 2,
     CAPY_URI_FRAGMENT = 1 << 3,
-} capy_uriflags;
+};
 
 typedef struct capy_uri
 {
@@ -445,13 +444,13 @@ typedef struct capy_uri
     int flags;
 } capy_uri;
 
-int capy_uri_valid(capy_uri uri);
-capy_string capy_uri_string(capy_arena *arena, capy_uri uri);
+int capy_uri_validate(capy_uri uri);
 capy_uri capy_uri_parse(capy_string input);
 capy_uri capy_uri_parse_authority(capy_uri uri);
-capy_uri capy_uri_resolve_reference(capy_arena *arena, capy_uri base, capy_uri relative);
-MustCheck capy_err capy_uri_normalize(capy_arena *arena, capy_string *output, capy_string input, int lowercase);
-capy_string capy_uri_path_removedots(capy_arena *arena, capy_string path);
+MustCheck capy_err capy_uri_string(capy_arena *arena, Out capy_string *output, capy_uri uri);
+MustCheck capy_err capy_uri_resolve_reference(capy_arena *arena, Out capy_uri *output, capy_uri base, capy_uri reference);
+MustCheck capy_err capy_uri_normalize(capy_arena *arena, Out capy_string *output, capy_string input, int lowercase);
+MustCheck capy_err capy_uri_remove_pathdots(capy_arena *arena, Out capy_string *output, capy_string path);
 
 //
 // IO
@@ -469,7 +468,7 @@ typedef struct capy_tcp capy_tcp;
 
 capy_tcp *capy_tcp_init(capy_arena *arena);
 capy_err capy_tcp_tls_server(capy_tcp *tcp, const char *chain, const char *key);
-capy_err capy_tcp_tls_client(capy_tcp *tcp);
+capy_err capy_tcp_tls_client(capy_tcp *tcp, bool insecure);
 
 capy_err capy_tcp_listen(struct capy_tcp *tcp, const char *host, const char *port, size_t backlog);
 capy_err capy_tcp_connect(struct capy_tcp *tcp, const char *host, const char *port);
@@ -546,7 +545,7 @@ typedef enum capy_httpstatus
 
 typedef enum capy_httpmethod
 {
-    CAPY_HTTP_METHOD_UNK,
+    CAPY_HTTP_INVALID_METHOD,
     CAPY_HTTP_CONNECT,
     CAPY_HTTP_DELETE,
     CAPY_HTTP_GET,
@@ -560,7 +559,7 @@ typedef enum capy_httpmethod
 
 typedef enum capy_httpversion
 {
-    CAPY_HTTP_VERSION_UNK,
+    CAPY_HTTP_INVALID_VERSION,
     CAPY_HTTP_09,
     CAPY_HTTP_10,
     CAPY_HTTP_11,
@@ -607,7 +606,6 @@ typedef struct capy_httpserveropt
     const char *port;
 
     int routes_size;
-
     capy_httproute *routes;
 
     size_t workers;
@@ -620,16 +618,6 @@ typedef struct capy_httpserveropt
     const char *certificate_chain;
     const char *certificate_key;
 } capy_httpserveropt;
-
-capy_httpmethod capy_http_parse_method(capy_string input);
-capy_httpversion capy_http_parse_version(capy_string input);
-
-MustCheck capy_err capy_http_parse_reqline(capy_arena *arena, capy_httpreq *request, capy_string input);
-MustCheck capy_err capy_http_parse_field(capy_strkvnmap *fields, capy_string line);
-MustCheck capy_err capy_http_parse_uriparams(capy_strkvnmap *params, capy_string path, capy_string handler_path);
-MustCheck capy_err capy_http_parse_query(capy_strkvnmap *fields, capy_string line);
-MustCheck capy_err capy_http_validate_request(capy_arena *arena, capy_httpreq *request);
-MustCheck capy_err capy_http_write_response(capy_buffer *buffer, capy_httpresp *response, int close);
 
 capy_err capy_http_serve(capy_httpserveropt options);
 
@@ -647,7 +635,7 @@ typedef enum capy_jsonkind
     CAPY_JSON_ARRAY,
 } capy_jsonkind;
 
-typedef struct capy_json_value
+typedef struct capy_jsonval
 {
     capy_jsonkind kind;
     union
@@ -718,7 +706,7 @@ capy_err capy_shutdown(uint64_t timeout);
 void capy_cancel(void);
 bool capy_canceled(void);
 size_t capy_thread_id(void);
-size_t capy_cpus(void);
+size_t capy_ncpus(void);
 
 #undef Format
 #undef Unused

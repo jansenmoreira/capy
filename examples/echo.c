@@ -92,13 +92,20 @@ static capy_err echo_handler(capy_arena *arena, capy_httpreq *request, capy_http
 
     capy_err err;
 
-    capy_string uri = capy_uri_string(arena, request->uri);
+    capy_string uri;
+
+    err = capy_uri_string(arena, &uri, request->uri);
+
+    if (err.code)
+    {
+        return ErrWrap(err, "Failed to serialize URI");
+    }
 
     err = capy_buffer_write_fmt(response->body, 0, "uri: %s\n", uri.data);
 
     if (err.code)
     {
-        return ErrWrap(err, "Failed to create URI");
+        return ErrWrap(err, "Failed to write URI");
     }
 
     for (size_t i = 0; i < request->headers->capacity; i++)
@@ -176,9 +183,6 @@ int main(int argc, char *argv[])
     capy_httpserveropt options = {
         .workers = 0,
     };
-
-    options.host = "127.0.0.1";
-    options.port = "8080";
 
     int opt;
 

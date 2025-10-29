@@ -2,13 +2,7 @@
 
 // PUBLIC DEFINITIONS
 
-size_t align_to(size_t v, size_t n)
-{
-    size_t rem = v % n;
-    return (rem == 0) ? v : v + n - rem;
-}
-
-size_t next_pow2(size_t v)
+size_t capy_next_pow2(size_t v)
 {
     if (v == 0)
     {
@@ -50,22 +44,26 @@ struct timespec capy_now(void)
     return now;
 }
 
-void nanoseconds_normalize(int64_t *ns, const char **unit)
+void capy_normalize_ns(int64_t *ns, const char **unit)
 {
-    if (*ns > 1000000000)
+    const int64_t s = SecondsNano(1);
+    const int64_t ms = MillisecondsNano(1);
+    const int64_t us = MicrosecondsNano(1);
+
+    if (*ns > s)
     {
         *unit = "s";
-        *ns /= 1000000000;
+        *ns /= s;
     }
-    else if (*ns > 1000000)
+    else if (*ns > ms)
     {
         *unit = "ms";
-        *ns /= 1000000;
+        *ns /= ms;
     }
-    else if (*ns > 1000)
+    else if (*ns > us)
     {
         *unit = "μs";
-        *ns /= 1000;
+        *ns /= us;
     }
     else
     {
