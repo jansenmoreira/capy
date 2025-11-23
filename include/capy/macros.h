@@ -67,6 +67,19 @@
 #define Cast(T, v) ((T)(v))
 #define ReinterpretCast(T, v) ((T)((char *)(v)))
 
+#define U8(v) ((uint8_t)(v))
+#define U16(v) ((uint16_t)(v))
+#define U32(v) ((uint32_t)(v))
+#define U64(v) ((uint64_t)(v))
+
+#define S8(v) ((int8_t)(v))
+#define S16(v) ((int16_t)(v))
+#define S32(v) ((int32_t)(v))
+#define S64(v) ((int64_t)(v))
+
+#define F32(v) ((float)(v))
+#define F64(v) ((double)(v))
+
 #define ErrStd capy_err_errno
 #define ErrWrap capy_err_wrap
 #define ErrFmt capy_err_fmt

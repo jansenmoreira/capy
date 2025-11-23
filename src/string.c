@@ -1,5 +1,7 @@
 #include <capy/macros.h>
 
+#include "capy/capy.h"
+
 #define capy_string_empty ((capy_string){.data = NULL, .size = 0})
 
 // PUBLIC DEFINITIONS
@@ -102,7 +104,7 @@ capy_err capy_string_copy(capy_arena *arena, capy_string *output, capy_string in
 
     if (buffer == NULL)
     {
-        return ErrStd(ENOMEM);
+        return capy_err_last();
     }
 
     memcpy(buffer, input.data, input.size);
@@ -123,7 +125,7 @@ capy_err capy_string_lower(capy_arena *arena, capy_string *output, capy_string i
 
     if (data == NULL)
     {
-        return ErrStd(ENOMEM);
+        return capy_err_last();
     }
 
     for (size_t i = 0; i < input.size; i++)
@@ -349,8 +351,8 @@ capy_string capy_string_trim(capy_string s, const char *chars)
 uint32_t capy_unicode_utf16(uint16_t high, uint16_t low)
 {
     uint32_t result = 0;
-    result += (Cast(uint32_t, high) - 0xD800) * 0x400;
-    result += Cast(uint32_t, low) - 0xDC00;
+    result += (U32(high) - 0xD800) * 0x400;
+    result += U32(low) - 0xDC00;
     return result + 0x10000;
 }
 

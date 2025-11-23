@@ -1,30 +1,32 @@
 #include <capy/macros.h>
 
+#include "capy/capy.h"
+
 // PUBLIC DEFINITIONS
 
-capy_buffer *capy_buffer_init(capy_arena *arena, size_t capacity)
+capy_err capy_buffer_init(capy_buffer *buf, capy_arena *arena, size_t capacity)
 {
-    char *addr = capy_arena_alloc(arena, sizeof(capy_buffer) + capacity, 8, false);
+    char *data = MakeNZ(arena, char, capacity);
 
-    if (addr == NULL)
+    if (data == NULL)
     {
-        return NULL;
+        return capy_err_last();
     }
 
-    capy_buffer *buf = Cast(capy_buffer *, addr);
+    *buf = (capy_buffer){
+        .size = 0,
+        .capacity = capacity,
+        .element_size = sizeof(char),
+        .data = data,
+        .arena = arena,
+    };
 
-    buf->size = 0;
-    buf->capacity = capacity;
-    buf->element_size = sizeof(char);
-    buf->arena = arena;
-    buf->data = addr + sizeof(capy_buffer);
-
-    return buf;
+    return Ok;
 }
 
 capy_err capy_buffer_write_bytes(capy_buffer *buf, size_t size, const char *bytes)
 {
-    return capy_vec_insert(buf->arena, &buf->vec, buf->size, size, bytes);
+    return capy_vec_insert(&buf->vec, buf->arena, buf->size, size, bytes);
 }
 
 capy_err capy_buffer_write_null(capy_buffer *buf)

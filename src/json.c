@@ -828,7 +828,7 @@ capy_jsonval capy_json_array(capy_arena *arena)
 
 capy_err capy_json_array_push(capy_jsonarr *array, capy_jsonval value)
 {
-    return capy_vec_insert(array->arena, &array->vec, array->size, 1, &value);
+    return capy_vec_insert(&array->vec, array->arena, array->size, 1, &value);
 }
 
 capy_err capy_json_serialize(capy_buffer *buffer, capy_jsonval value, int tabsize)

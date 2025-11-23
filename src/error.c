@@ -1,6 +1,9 @@
 #include <capy/macros.h>
+#include <threads.h>
 
 #define CAPY_EBUFSIZE 512
+
+thread_local static capy_err err_lasterr = {.code = 0};
 
 static char *err_get_buffer(void);
 static capy_err err_from_errno(int err);
@@ -27,13 +30,28 @@ static char *err_get_buffer(void)
 
 // PUBLIC DEFINITIONS
 
+void capy_err_set(capy_err err)
+{
+    err_lasterr = err;
+}
+
+capy_err capy_err_last(void)
+{
+    return err_lasterr;
+}
+
 capy_err capy_err_fmt(int code, const char *fmt, ...)
 {
     char *buffer = err_get_buffer();
 
     va_list args;
     va_start(args, fmt);
-    vsnprintf(buffer, CAPY_EBUFSIZE, fmt, args);
+
+    if (vsnprintf(buffer, CAPY_EBUFSIZE, fmt, args) < 0)
+    {
+        strcpy(buffer, "(bad error msg)");
+    }
+
     va_end(args);
 
     return (capy_err){.code = code, .msg = buffer};

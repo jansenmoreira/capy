@@ -1,6 +1,6 @@
 #include <capy/macros.h>
 
-Platform static capy_tcp *tcp_init(capy_arena *arena);
+Platform static capy_err tcp_init(capy_tcp **tcp, capy_arena *arena);
 Platform static const char *tcp_addr(capy_tcp *tcp);
 Platform static uint16_t tcp_port(capy_tcp *tcp);
 Platform static capy_err tcp_listen(struct capy_tcp *tcp, const char *host, const char *port, size_t backlog);
@@ -20,9 +20,9 @@ Platform static capy_fd tcp_fd(capy_tcp *tcp);
 // PUBLIC DEFINITIONS
 //
 
-capy_tcp *capy_tcp_init(capy_arena *arena)
+capy_err capy_tcp_init(capy_tcp **tcp, capy_arena *arena)
 {
-    return tcp_init(arena);
+    return tcp_init(tcp, arena);
 }
 
 capy_err capy_tcp_tls_server(capy_tcp *server, const char *chain, const char *key)
@@ -159,18 +159,18 @@ Linux static capy_err tcp_err_openssl(const char *msg)
     return ErrWrap(err, msg);
 }
 
-Linux static capy_tcp *tcp_init(capy_arena *arena)
+Linux static capy_err tcp_init(capy_tcp **tcp, capy_arena *arena)
 {
-    struct capy_tcp *tcp = Make(arena, capy_tcp, 1);
+    *tcp = Make(arena, capy_tcp, 1);
 
     if (tcp == NULL)
     {
-        return NULL;
+        return capy_err_last();
     }
 
-    tcp->fd = -1;
+    (*tcp)->fd = -1;
 
-    return tcp;
+    return Ok;
 }
 
 Linux static const char *tcp_addr(capy_tcp *tcp)

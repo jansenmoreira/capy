@@ -1,5 +1,7 @@
 #include <capy/macros.h>
 
+#include "capy/capy.h"
+
 typedef union httproutermap
 {
     capy_strmap strmap;
@@ -55,10 +57,9 @@ typedef struct httpconn
     httpconnstate state;
     httpconnstate after_read;
 
-    capy_buffer *line_buffer;
-
-    capy_buffer *content_buffer;
-    capy_buffer *response_buffer;
+    capy_buffer line_buffer;
+    capy_buffer content_buffer;
+    capy_buffer response_buffer;
 
     size_t line_cursor;
     size_t chunk_size;
@@ -455,14 +456,14 @@ static capy_err httpresp_write_status(capy_httpresp *response)
 {
     capy_string status_text = http_status_string[response->status];
 
-    capy_err err = capy_strkvnmap_add(response->headers, Str("Content-Type"), Str("text/plain; charset=UTF-8"));
+    capy_err err = capy_strkvnmap_add(&response->headers, Str("Content-Type"), Str("text/plain; charset=UTF-8"));
 
     if (err.code)
     {
         return err;
     }
 
-    err = capy_buffer_write_fmt(response->body, 0, "%u %s\n", response->status, status_text.data);
+    err = capy_buffer_write_fmt(&response->body, 0, "%u %s\n", response->status, status_text.data);
 
     if (err.code)
     {
@@ -474,14 +475,14 @@ static capy_err httpresp_write_status(capy_httpresp *response)
 
 static capy_err httpresp_write_cstr(capy_httpresp *response, const char *msg)
 {
-    capy_err err = capy_strkvnmap_add(response->headers, Str("Content-Type"), Str("text/plain; charset=UTF-8"));
+    capy_err err = capy_strkvnmap_add(&response->headers, Str("Content-Type"), Str("text/plain; charset=UTF-8"));
 
     if (err.code)
     {
         return err;
     }
 
-    err = capy_buffer_write_fmt(response->body, 0, "%s\n", msg);
+    err = capy_buffer_write_fmt(&response->body, 0, "%s\n", msg);
 
     if (err.code)
     {
@@ -675,14 +676,14 @@ capy_err httprouter_handle_request(capy_arena *arena, httprouter *router, capy_h
         return httpresp_write_status(response);
     }
 
-    err = http_parse_uriparams(request->params, request->uri.path, route->path);
+    err = http_parse_uriparams(&request->params, request->uri.path, route->path);
 
     if (err.code)
     {
         return ErrWrap(err, "Failed to parse uri params");
     }
 
-    err = http_parse_query(request->params, request->uri.query);
+    err = http_parse_query(&request->params, request->uri.query);
 
     if (err.code)
     {
@@ -702,11 +703,11 @@ capy_err httprouter_handle_request(capy_arena *arena, httprouter *router, capy_h
 
 static int httpconn_parse_eol(httpconn *conn, capy_string *line)
 {
-    while (conn->line_cursor <= conn->line_buffer->size)
+    while (conn->line_cursor <= conn->line_buffer.size)
     {
         if (conn->line_cursor >= 2 &&
-            conn->line_buffer->data[conn->line_cursor - 2] == '\r' &&
-            conn->line_buffer->data[conn->line_cursor - 1] == '\n')
+            conn->line_buffer.data[conn->line_cursor - 2] == '\r' &&
+            conn->line_buffer.data[conn->line_cursor - 1] == '\n')
         {
             break;
         }
@@ -714,19 +715,19 @@ static int httpconn_parse_eol(httpconn *conn, capy_string *line)
         conn->line_cursor += 1;
     }
 
-    if (conn->line_cursor > conn->line_buffer->size)
+    if (conn->line_cursor > conn->line_buffer.size)
     {
         return -1;
     }
 
-    *line = capy_string_bytes(conn->line_cursor - 2, conn->line_buffer->data);
+    *line = capy_string_bytes(conn->line_cursor - 2, conn->line_buffer.data);
 
     return 0;
 }
 
 static void httpconn_consume_bytes(httpconn *conn, size_t size)
 {
-    capy_buffer_shl(conn->line_buffer, size);
+    capy_buffer_shl(&conn->line_buffer, size);
 
     if (size >= conn->line_cursor)
     {
@@ -793,7 +794,7 @@ static capy_err httpconn_parse_headers(httpconn *conn)
             break;
         }
 
-        err = http_parse_field(conn->request.headers, line);
+        err = http_parse_field(&conn->request.headers, line);
 
         if (err.code == EINVAL)
         {
@@ -858,7 +859,7 @@ static capy_err httpconn_parse_trailers(httpconn *conn)
             break;
         }
 
-        err = http_parse_field(conn->request.trailers, line);
+        err = http_parse_field(&conn->request.trailers, line);
 
         if (err.code == EINVAL)
         {
@@ -917,11 +918,11 @@ static capy_err httpconn_parse_chunkdata(httpconn *conn)
 {
     capy_err err;
 
-    size_t msg_size = conn->line_buffer->size;
+    size_t msg_size = conn->line_buffer.size;
 
     if (conn->chunk_size + 2 > msg_size)
     {
-        err = capy_buffer_write_bytes(conn->content_buffer, msg_size, conn->line_buffer->data);
+        err = capy_buffer_write_bytes(&conn->content_buffer, msg_size, conn->line_buffer.data);
 
         if (err.code)
         {
@@ -937,7 +938,7 @@ static capy_err httpconn_parse_chunkdata(httpconn *conn)
         return Ok;
     }
 
-    const char *end = conn->line_buffer->data + conn->chunk_size;
+    const char *end = conn->line_buffer.data + conn->chunk_size;
 
     if (end[0] != '\r' || end[1] != '\n')
     {
@@ -945,7 +946,7 @@ static capy_err httpconn_parse_chunkdata(httpconn *conn)
         return Ok;
     }
 
-    err = capy_buffer_write_bytes(conn->content_buffer, conn->chunk_size, conn->line_buffer->data);
+    err = capy_buffer_write_bytes(&conn->content_buffer, conn->chunk_size, conn->line_buffer.data);
 
     if (err.code)
     {
@@ -962,11 +963,11 @@ static capy_err httpconn_parse_reqbody(httpconn *conn)
 {
     capy_err err;
 
-    size_t message_size = conn->line_buffer->size;
+    size_t message_size = conn->line_buffer.size;
 
     if (conn->chunk_size > message_size)
     {
-        err = capy_buffer_write_bytes(conn->content_buffer, message_size, conn->line_buffer->data);
+        err = capy_buffer_write_bytes(&conn->content_buffer, message_size, conn->line_buffer.data);
 
         if (err.code)
         {
@@ -982,7 +983,7 @@ static capy_err httpconn_parse_reqbody(httpconn *conn)
         return Ok;
     }
 
-    err = capy_buffer_write_bytes(conn->content_buffer, conn->chunk_size, conn->line_buffer->data);
+    err = capy_buffer_write_bytes(&conn->content_buffer, conn->chunk_size, conn->line_buffer.data);
 
     if (err.code)
     {
@@ -1009,7 +1010,7 @@ static capy_err httpconn_prepare_badrequest(httpconn *conn)
         return ErrWrap(err, "Failed to generate BAD_REQUEST");
     }
 
-    err = http_write_response(conn->response_buffer, &conn->response, true);
+    err = http_write_response(&conn->response_buffer, &conn->response, true);
 
     if (err.code)
     {
@@ -1021,14 +1022,14 @@ static capy_err httpconn_prepare_badrequest(httpconn *conn)
 
 static capy_err httpconn_route_request(httpconn *conn)
 {
-    capy_err err = capy_buffer_write_null(conn->content_buffer);
+    capy_err err = capy_buffer_write_null(&conn->content_buffer);
 
     if (err.code)
     {
         return ErrWrap(err, "Failed to write null terminator");
     }
 
-    conn->request.content = capy_string_bytes(conn->content_buffer->size, conn->content_buffer->data);
+    conn->request.content = capy_string_bytes(conn->content_buffer.size, conn->content_buffer.data);
 
     err = httprouter_handle_request(conn->arena, conn->router, &conn->request, &conn->response);
 
@@ -1037,7 +1038,7 @@ static capy_err httpconn_route_request(httpconn *conn)
         return ErrWrap(err, "Failed to handle request");
     }
 
-    err = http_write_response(conn->response_buffer, &conn->response, conn->request.close);
+    err = http_write_response(&conn->response_buffer, &conn->response, conn->request.close);
 
     if (err.code)
     {
@@ -1057,31 +1058,78 @@ static capy_err httpconn_reset(httpconn *conn)
         return err;
     }
 
-    conn->line_buffer->size = 0;
-    conn->line_cursor = 2;
-    conn->after_read = STATE_UNKNOWN;
-
-    conn->request = (capy_httpreq){
-        .headers = capy_strkvnmap_init(conn->arena, 16),
-        .trailers = capy_strkvnmap_init(conn->arena, 4),
-        .params = capy_strkvnmap_init(conn->arena, 8),
-        .query = capy_strkvnmap_init(conn->arena, 8),
+    *conn = (httpconn){
+        .tcp = conn->tcp,
+        .conn_id = conn->conn_id,
+        .arena = conn->arena,
+        .arena_reset_mark = conn->arena_reset_mark,
+        .router = conn->router,
+        .options = conn->options,
+        .created = conn->created,
+        .timestamp = conn->timestamp,
+        .state = STATE_PARSE_REQLINE,
+        .after_read = STATE_UNKNOWN,
+        .line_buffer = conn->line_buffer,
+        .line_cursor = 2,
     };
 
-    conn->response = (capy_httpresp){
-        .headers = capy_strkvnmap_init(conn->arena, 16),
-        .body = capy_buffer_init(conn->arena, 256),
-    };
+    conn->line_buffer.size = 0;
 
-    conn->content_buffer = capy_buffer_init(conn->arena, 256);
-    conn->response_buffer = capy_buffer_init(conn->arena, 512);
+    err = capy_buffer_init(&conn->content_buffer, conn->arena, 256);
 
-    conn->mem_headers = 0;
-    conn->mem_content = 0;
-    conn->mem_trailers = 0;
-    conn->mem_response = 0;
+    if (err.code)
+    {
+        return err;
+    }
 
-    conn->state = STATE_PARSE_REQLINE;
+    err = capy_buffer_init(&conn->response_buffer, conn->arena, 512);
+
+    if (err.code)
+    {
+        return err;
+    }
+
+    err = capy_strkvnmap_init(&conn->request.headers, conn->arena, 16);
+
+    if (err.code)
+    {
+        return err;
+    }
+
+    err = capy_strkvnmap_init(&conn->request.trailers, conn->arena, 4);
+
+    if (err.code)
+    {
+        return err;
+    }
+
+    err = capy_strkvnmap_init(&conn->request.params, conn->arena, 8);
+
+    if (err.code)
+    {
+        return err;
+    }
+
+    err = capy_strkvnmap_init(&conn->request.query, conn->arena, 8);
+
+    if (err.code)
+    {
+        return err;
+    }
+
+    err = capy_strkvnmap_init(&conn->response.headers, conn->arena, 16);
+
+    if (err.code)
+    {
+        return err;
+    }
+
+    err = capy_buffer_init(&conn->response.body, conn->arena, 256);
+
+    if (err.code)
+    {
+        return err;
+    }
 
     return Ok;
 }
@@ -1097,8 +1145,8 @@ static void httpconn_trace(httpconn *conn)
     conn->timestamp = timestamp;
 
     size_t mem_total = capy_arena_used(conn->arena);
-    size_t to_read = (conn->line_buffer) ? conn->line_buffer->size : 0;
-    size_t to_write = (conn->response_buffer) ? conn->response_buffer->size : 0;
+    size_t to_read = conn->line_buffer.size;
+    size_t to_write = conn->response_buffer.size;
 
     LogDbg("worker: %-21s | MH:%-8zu MC:%-8zu MT:%-8zu MR:%-8zu MA:%-8zu RS:%-8zu WS:%-8zu | %3" PRIi64 " %-2s | %s %d",
            httpconnstate_cstr[conn->state],
@@ -1111,9 +1159,9 @@ static capy_err httpconn_write_response(httpconn *conn)
 {
     capy_err err;
 
-    size_t old_size = conn->response_buffer->size;
+    size_t old_size = conn->response_buffer.size;
 
-    err = capy_tcp_send(conn->tcp, conn->response_buffer, conn->options->inactivity_timeout);
+    err = capy_tcp_send(conn->tcp, &conn->response_buffer, conn->options->inactivity_timeout);
 
     if (err.code)
     {
@@ -1128,13 +1176,13 @@ static capy_err httpconn_write_response(httpconn *conn)
         }
     }
 
-    if (conn->response_buffer->size == old_size)
+    if (conn->response_buffer.size == old_size)
     {
         conn->state = STATE_CLOSE;
         return Ok;
     }
 
-    if (conn->response_buffer->size > 0)
+    if (conn->response_buffer.size > 0)
     {
         conn->state = STATE_WRITE_RESPONSE;
     }
@@ -1155,7 +1203,7 @@ static capy_err httpconn_read_request(httpconn *conn)
 {
     capy_err err;
 
-    size_t bytes_wanted = conn->line_buffer->capacity - conn->line_buffer->size;
+    size_t bytes_wanted = conn->line_buffer.capacity - conn->line_buffer.size;
 
     if (bytes_wanted == 0)
     {
@@ -1163,9 +1211,9 @@ static capy_err httpconn_read_request(httpconn *conn)
         return Ok;
     }
 
-    size_t old_size = conn->line_buffer->size;
+    size_t old_size = conn->line_buffer.size;
 
-    err = capy_tcp_recv(conn->tcp, conn->line_buffer, conn->options->inactivity_timeout);
+    err = capy_tcp_recv(conn->tcp, &conn->line_buffer, conn->options->inactivity_timeout);
 
     if (err.code)
     {
@@ -1180,7 +1228,7 @@ static capy_err httpconn_read_request(httpconn *conn)
         }
     }
 
-    if (conn->line_buffer->size == old_size)
+    if (conn->line_buffer.size == old_size)
     {
         conn->state = STATE_CLOSE;
         return Ok;
@@ -1371,10 +1419,23 @@ static capy_err httpserver_accept(httpserver *server)
         conn->arena = arena;
         conn->router = server->router;
         conn->options = server->options;
-        conn->line_buffer = capy_buffer_init(arena, server->options->line_buffer_size);
-        conn->line_buffer->arena = NULL;
         conn->state = STATE_RESET;
-        conn->tcp = capy_tcp_init(arena);
+
+        err = capy_tcp_init(&conn->tcp, arena);
+
+        if (err.code)
+        {
+            return err;
+        }
+
+        err = capy_buffer_init(&conn->line_buffer, arena, server->options->line_buffer_size);
+
+        if (err.code)
+        {
+            return err;
+        }
+
+        conn->line_buffer.arena = NULL;
 
         err = capy_tcp_accept(server->tcp, conn->tcp);
 
@@ -1588,7 +1649,7 @@ static capy_err http_write_response(capy_buffer *buffer, capy_httpresp *response
     struct tm ct;
     gmtime_r(&t, &ct);
 
-    size_t content_length = (response->body) ? response->body->size : 0;
+    size_t content_length = response->body.size;
     const char *close_header = (close) ? "Connection: close\r\n" : "";
 
     err = capy_buffer_write_fmt(buffer, 0,
@@ -1607,9 +1668,9 @@ static capy_err http_write_response(capy_buffer *buffer, capy_httpresp *response
         return err;
     }
 
-    for (size_t i = 0; i < response->headers->capacity; i++)
+    for (size_t i = 0; i < response->headers.capacity; i++)
     {
-        for (capy_strkvn *header = capy_strkvnmap_at(response->headers, i); header != NULL; header = header->next)
+        for (capy_strkvn *header = capy_strkvnmap_at(&response->headers, i); header != NULL; header = header->next)
         {
             err = capy_buffer_write_fmt(buffer, 0, "%s: %s\r\n", header->key.data, header->value.data);
 
@@ -1627,7 +1688,7 @@ static capy_err http_write_response(capy_buffer *buffer, capy_httpresp *response
         return err;
     }
 
-    return capy_buffer_write_bytes(buffer, response->body->size, response->body->data);
+    return capy_buffer_write_bytes(buffer, response->body.size, response->body.data);
 }
 
 static capy_err http_parse_reqline(capy_arena *arena, capy_httpreq *request, capy_string line)
@@ -1828,7 +1889,7 @@ static capy_err http_validate_request(capy_arena *arena, capy_httpreq *request)
             return ErrStd(EINVAL);
     }
 
-    capy_strkvn *host = capy_strkvnmap_get(request->headers, Str("Host"));
+    capy_strkvn *host = capy_strkvnmap_get(&request->headers, Str("Host"));
 
     if (host == NULL || host->next != NULL)
     {
@@ -1886,7 +1947,7 @@ static capy_err http_validate_request(capy_arena *arena, capy_httpreq *request)
         return err;
     }
 
-    capy_strkvn *transfer_encoding = capy_strkvnmap_get(request->headers, Str("Transfer-Encoding"));
+    capy_strkvn *transfer_encoding = capy_strkvnmap_get(&request->headers, Str("Transfer-Encoding"));
 
     if (transfer_encoding != NULL)
     {
@@ -1899,7 +1960,7 @@ static capy_err http_validate_request(capy_arena *arena, capy_httpreq *request)
         request->content_length = 0;
     }
 
-    capy_strkvn *content_length = capy_strkvnmap_get(request->headers, Str("Content-Length"));
+    capy_strkvn *content_length = capy_strkvnmap_get(&request->headers, Str("Content-Length"));
 
     if (content_length != NULL)
     {
@@ -1912,7 +1973,7 @@ static capy_err http_validate_request(capy_arena *arena, capy_httpreq *request)
         request->chunked = 0;
     }
 
-    capy_strkvn *connection = capy_strkvnmap_get(request->headers, Str("Connection"));
+    capy_strkvn *connection = capy_strkvnmap_get(&request->headers, Str("Connection"));
 
     if (connection != NULL)
     {
@@ -1935,7 +1996,7 @@ static capy_err http_validate_request(capy_arena *arena, capy_httpreq *request)
         }
     }
 
-    err = http_parse_query(request->query, request->uri.query);
+    err = http_parse_query(&request->query, request->uri.query);
 
     if (err.code)
     {
@@ -2022,6 +2083,8 @@ static capy_err http_parse_uriparams(capy_strkvnmap *params, capy_string path, c
 
 capy_err capy_http_serve(capy_httpserveropt options)
 {
+    capy_err err;
+
     options = httpserveropt_default(options);
 
     capy_arena *arena = capy_arena_init(0, MiB(1));
@@ -2051,16 +2114,17 @@ capy_err capy_http_serve(capy_httpserveropt options)
 
         server->options = &options;
         server->router = router;
-        server->tcp = capy_tcp_init(arena);
 
-        if (server->tcp == NULL)
+        err = capy_tcp_init(&server->tcp, arena);
+
+        if (err.code)
         {
-            return ErrStd(ENOMEM);
+            return err;
         }
 
         if (options.protocol == CAPY_HTTPS)
         {
-            capy_err err = capy_tcp_tls_server(server->tcp, options.certificate_chain, options.certificate_key);
+            err = capy_tcp_tls_server(server->tcp, options.certificate_chain, options.certificate_key);
 
             if (err.code)
             {
@@ -2074,7 +2138,7 @@ capy_err capy_http_serve(capy_httpserveropt options)
            (options.protocol == CAPY_HTTPS) ? "https" : "http",
            options.workers);
 
-    capy_err err = httpserver_workers(options.workers, servers);
+    err = httpserver_workers(options.workers, servers);
 
     capy_arena_destroy(arena);
 

@@ -9,10 +9,6 @@
 #define CAPY_ARCH_AMD64
 #endif
 
-#if defined(CAPY_OS_LINUX) && defined(CAPY_ARCH_AMD64)
-#define CAPY_LINUX_AMD64
-#endif
-
 #ifdef __GNUC__
 #define Format(i) __attribute__((format(printf, (i), (i) + 1)))
 #define MustCheck __attribute__((warn_unused_result))
@@ -49,6 +45,7 @@
 // Utility Functions
 //
 
+size_t capy_align_to(size_t v, size_t n);
 size_t capy_next_pow2(size_t v);
 int64_t capy_timespec_diff(struct timespec a, struct timespec b);
 struct timespec capy_timespec_addms(struct timespec t, uint64_t ms);
@@ -64,6 +61,9 @@ typedef struct capy_err
     int code;
     const char *msg;
 } capy_err;
+
+void capy_err_set(capy_err err);
+capy_err capy_err_last(void);
 
 Format(2) capy_err capy_err_fmt(int code, const char *fmt, ...);
 capy_err capy_err_errno(int err);
@@ -108,13 +108,13 @@ MustCheck void *capy_arena_realloc(capy_arena *arena, void *addr, size_t cur_siz
 MustCheck capy_err capy_arena_free(capy_arena *arena, void *addr);
 
 // Returns a pointer to the end of an Arena.
-void *capy_arena_end(capy_arena *arena);
+void *capy_arena_end(const capy_arena *arena);
 
 // Returns the number of bytes allocated by an Arena.
-size_t capy_arena_used(capy_arena *arena);
+size_t capy_arena_used(const capy_arena *arena);
 
 // Returns the number of bytes not allocated by an Arena.
-size_t capy_arena_available(capy_arena *arena);
+size_t capy_arena_available(const capy_arena *arena);
 
 // Creates a stack of size `size` at the end Arena's memory region.
 void *capy_arena_create_stack(capy_arena *arena, size_t size);
@@ -246,19 +246,22 @@ uint64_t capy_hash(const void *key, uint64_t length);
 // Helper functions to manage generic Vectors
 //
 
+#define capy_vec_fields(T, name) \
+    size_t size;                 \
+    size_t capacity;             \
+    size_t element_size;         \
+    T *name
+
 typedef struct capy_vec
 {
-    size_t size;
-    size_t capacity;
-    size_t element_size;
-    char *items;
+    capy_vec_fields(char, items);
 } capy_vec;
 
 // Inserts `count` values from `values` at index `position` in `vec.items`.
 // If needed, reallocates the `items` memory block using `arena`.
 // If `values` is `NULL`, the function will only reserve `count` elements at `position`.
 // If allocation fails, returns `ENOMEM`.
-MustCheck capy_err capy_vec_insert(capy_arena *arena, capy_vec *vec, size_t position, size_t count, const void *values);
+MustCheck capy_err capy_vec_insert(capy_vec *vec, capy_arena *arena, size_t position, size_t count, const void *values);
 
 // Deletes `count` elements at index `position` in `vec.items`.
 capy_err capy_vec_delete(capy_vec *vec, size_t position, size_t count);
@@ -276,17 +279,14 @@ typedef union capy_buffer
     capy_vec vec;
     struct
     {
-        size_t size;
-        size_t capacity;
-        size_t element_size;
-        char *data;
+        capy_vec_fields(char, data);
         capy_arena *arena;
     };
 } capy_buffer;
 
 // Initializes a Buffer with `arena` as the memory allocator and allocates `capacity` bytes of space.
 // If initialization fails, returns NULL.
-MustCheck capy_buffer *capy_buffer_init(capy_arena *arena, size_t capacity);
+MustCheck capy_err capy_buffer_init(capy_buffer *buffer, capy_arena *arena, size_t capacity);
 
 // Writes a String to the end of the Buffer
 // If allocation fails, returns a non-zero error code.
@@ -317,12 +317,15 @@ void capy_buffer_shl(capy_buffer *buffer, size_t size);
 // String Map
 //
 
+#define capy_strmap_fields(T, name) \
+    size_t size;                    \
+    size_t capacity;                \
+    size_t element_size;            \
+    T *name
+
 typedef struct capy_strmap
 {
-    size_t size;
-    size_t capacity;
-    size_t element_size;
-    char *items;
+    capy_strmap_fields(char, items);
 } capy_strmap;
 
 MustCheck capy_err capy_strmap_set(capy_arena *arena, capy_strmap *map, const void *entry);
@@ -334,15 +337,12 @@ typedef union capy_strset
     capy_strmap strmap;
     struct
     {
-        size_t size;
-        size_t capacity;
-        size_t element_size;
-        capy_string *items;
+        capy_strmap_fields(capy_string, items);
         capy_arena *arena;
     };
 } capy_strset;
 
-MustCheck capy_strset *capy_strset_init(capy_arena *arena, size_t capacity);
+MustCheck capy_err capy_strset_init(capy_strset *s, capy_arena *arena, size_t capacity);
 int capy_strset_has(capy_strset *s, capy_string key);
 MustCheck capy_err capy_strset_add(capy_strset *s, capy_string key);
 void capy_strset_delete(capy_strset *s, capy_string key);
@@ -358,15 +358,12 @@ typedef union capy_strkvmap
     capy_strmap strmap;
     struct
     {
-        size_t size;
-        size_t capacity;
-        size_t element_size;
-        capy_strkv *items;
+        capy_strmap_fields(capy_strkv, items);
         capy_arena *arena;
     };
 } capy_strkvmap;
 
-MustCheck capy_strkvmap *capy_strkvmap_init(capy_arena *arena, size_t capacity);
+MustCheck capy_err capy_strkvmap_init(capy_strkvmap *m, capy_arena *arena, size_t capacity);
 capy_strkv *capy_strkvmap_get(capy_strkvmap *m, capy_string key);
 MustCheck capy_err capy_strkvmap_set(capy_strkvmap *m, capy_string key, capy_string value);
 void capy_strkvmap_delete(capy_strkvmap *m, capy_string key);
@@ -387,15 +384,12 @@ typedef union capy_strkvnmap
     capy_strmap strmap;
     struct
     {
-        size_t size;
-        size_t capacity;
-        size_t element_size;
-        capy_strkvn *items;
+        capy_strmap_fields(capy_strkvn, items);
         capy_arena *arena;
     };
 } capy_strkvnmap;
 
-MustCheck capy_strkvnmap *capy_strkvnmap_init(capy_arena *arena, size_t capacity);
+MustCheck capy_err capy_strkvnmap_init(capy_strkvnmap *mm, capy_arena *arena, size_t capacity);
 capy_strkvn *capy_strkvnmap_get(capy_strkvnmap *mm, capy_string key);
 MustCheck capy_err capy_strkvnmap_set(capy_strkvnmap *mm, capy_string key, capy_string value);
 MustCheck capy_err capy_strkvnmap_add(capy_strkvnmap *mm, capy_string key, capy_string value);
@@ -407,17 +401,23 @@ capy_strkvn *capy_strkvnmap_at(capy_strkvnmap *mm, size_t index);
 // Base64
 //
 
-size_t capy_base64(char *output, const char *encoding, size_t n, const char *input, int padding);
-size_t capy_base64url(char *output, size_t n, const char *input, int padding);
-size_t capy_base64std(char *output, size_t n, const char *input, int padding);
+struct capy_base64enc
+{
+    const char *encoding;
+    int padding;
+};
 
-MustCheck capy_err capy_string_base64(capy_arena *arena, capy_string *output, capy_string input, const char *encoding, int padding);
-MustCheck capy_err capy_string_base64url(capy_arena *arena, capy_string *output, capy_string input, int padding);
-MustCheck capy_err capy_string_base64std(capy_arena *arena, capy_string *output, capy_string input, int padding);
+size_t capy_base64enc_encode(struct capy_base64enc encoder, char *output, size_t n, const char *input);
+capy_err capy_base64enc_string(struct capy_base64enc encoder, capy_arena *arena, capy_string *output, size_t n, const char *input);
+capy_err capy_base64enc_buffer(struct capy_base64enc encoder, capy_buffer *buffer, size_t n, const char *input);
 
-MustCheck capy_err capy_buffer_write_base64(capy_buffer *buffer, size_t n, const char *input, const char *encoding, int padding);
-MustCheck capy_err capy_buffer_write_base64url(capy_buffer *buffer, size_t n, const char *input, int padding);
-MustCheck capy_err capy_buffer_write_base64std(capy_buffer *buffer, size_t n, const char *input, int padding);
+size_t capy_base64(char *output, size_t n, const char *input);
+capy_err capy_base64_string(capy_arena *arena, capy_string *output, size_t n, const char *input);
+capy_err capy_base64_buffer(capy_buffer *buffer, size_t n, const char *input);
+
+size_t capy_base64_url(char *output, size_t n, const char *input);
+capy_err capy_base64_url_string(capy_arena *arena, capy_string *output, size_t n, const char *input);
+capy_err capy_base64_url_buffer(capy_buffer *buffer, size_t n, const char *input);
 
 //
 // URI
@@ -466,7 +466,7 @@ typedef int capy_fd;
 
 typedef struct capy_tcp capy_tcp;
 
-capy_tcp *capy_tcp_init(capy_arena *arena);
+capy_err capy_tcp_init(capy_tcp **tcp, capy_arena *arena);
 capy_err capy_tcp_tls_server(capy_tcp *tcp, const char *chain, const char *key);
 capy_err capy_tcp_tls_client(capy_tcp *tcp, bool insecure);
 
@@ -573,10 +573,10 @@ typedef struct capy_httpreq
     capy_httpversion version;
     capy_uri uri;
     capy_string uri_raw;
-    capy_strkvnmap *headers;
-    capy_strkvnmap *trailers;
-    capy_strkvnmap *params;
-    capy_strkvnmap *query;
+    capy_strkvnmap headers;
+    capy_strkvnmap trailers;
+    capy_strkvnmap params;
+    capy_strkvnmap query;
     capy_string content;
 
     size_t content_length;
@@ -587,8 +587,8 @@ typedef struct capy_httpreq
 typedef struct capy_httpresp
 {
     capy_httpstatus status;
-    capy_strkvnmap *headers;
-    capy_buffer *body;
+    capy_strkvnmap headers;
+    capy_buffer body;
 } capy_httpresp;
 
 typedef capy_err (*capy_http_handler)(capy_arena *arena, capy_httpreq *request, capy_httpresp *response);

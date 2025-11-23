@@ -2,12 +2,19 @@
 
 // INTERNAL VARIABLES
 
-static char base64_std_enc[65] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-static char base64_url_enc[65] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+static struct capy_base64enc base64_stdenc = {
+    .encoding = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/",
+    .padding = true,
+};
+
+static struct capy_base64enc base64_urlenc = {
+    .encoding = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_",
+    .padding = false,
+};
 
 // PUBLIC DEFINITIONS
 
-size_t capy_base64(char *output, const char *encoding, size_t n, const char *input, int padding)
+size_t capy_base64enc_encode(struct capy_base64enc encoder, char *output, size_t n, const char *input)
 {
     size_t i, bytes = 0;
 
@@ -15,28 +22,28 @@ size_t capy_base64(char *output, const char *encoding, size_t n, const char *inp
 
     for (i = 0; (i + 2) < n; i += 3)
     {
-        v = Cast(uint32_t, Cast(uint8_t, input[i])) << 16;
-        v |= Cast(uint32_t, Cast(uint8_t, input[i + 1])) << 8;
-        v |= Cast(uint32_t, Cast(uint8_t, input[i + 2]));
+        v = U32(U8(input[i])) << 16;
+        v |= U32(U8(input[i + 1])) << 8;
+        v |= U32(U8(input[i + 2]));
 
-        output[bytes++] = encoding[(v >> 18) & 0x3F];
-        output[bytes++] = encoding[(v >> 12) & 0x3F];
-        output[bytes++] = encoding[(v >> 6) & 0x3F];
-        output[bytes++] = encoding[(v) & 0x3F];
+        output[bytes++] = encoder.encoding[(v >> 18) & 0x3F];
+        output[bytes++] = encoder.encoding[(v >> 12) & 0x3F];
+        output[bytes++] = encoder.encoding[(v >> 6) & 0x3F];
+        output[bytes++] = encoder.encoding[(v) & 0x3F];
     }
 
     switch (n - i)
     {
         case 2:
         {
-            v = Cast(uint32_t, Cast(uint8_t, input[i])) << 16;
-            v |= Cast(uint32_t, Cast(uint8_t, input[i + 1])) << 8;
+            v = U32(U8(input[i])) << 16;
+            v |= U32(U8(input[i + 1])) << 8;
 
-            output[bytes++] = encoding[(v >> 18) & 0x3F];
-            output[bytes++] = encoding[(v >> 12) & 0x3F];
-            output[bytes++] = encoding[(v >> 6) & 0x3F];
+            output[bytes++] = encoder.encoding[(v >> 18) & 0x3F];
+            output[bytes++] = encoder.encoding[(v >> 12) & 0x3F];
+            output[bytes++] = encoder.encoding[(v >> 6) & 0x3F];
 
-            if (padding)
+            if (encoder.padding)
             {
                 output[bytes++] = '=';
             }
@@ -45,12 +52,12 @@ size_t capy_base64(char *output, const char *encoding, size_t n, const char *inp
 
         case 1:
         {
-            v = Cast(uint32_t, Cast(uint8_t, input[i])) << 16;
+            v = U32(U8(input[i])) << 16;
 
-            output[bytes++] = encoding[(v >> 18) & 0x3F];
-            output[bytes++] = encoding[(v >> 12) & 0x3F];
+            output[bytes++] = encoder.encoding[(v >> 18) & 0x3F];
+            output[bytes++] = encoder.encoding[(v >> 12) & 0x3F];
 
-            if (padding)
+            if (encoder.padding)
             {
                 output[bytes++] = '=';
                 output[bytes++] = '=';
@@ -62,67 +69,69 @@ size_t capy_base64(char *output, const char *encoding, size_t n, const char *inp
     return bytes;
 }
 
-size_t capy_base64url(char *output, size_t n, const char *input, int padding)
+capy_err capy_base64enc_string(struct capy_base64enc encoder, capy_arena *arena, capy_string *output, size_t n, const char *input)
 {
-    return capy_base64(output, base64_url_enc, n, input, padding);
-}
+    size_t size = (capy_align_to(n, 3) / 3) * 4;
 
-size_t capy_base64std(char *output, size_t n, const char *input, int padding)
-{
-    return capy_base64(output, base64_std_enc, n, input, padding);
-}
-
-capy_err capy_string_base64(capy_arena *arena, capy_string *output, capy_string input, const char *encoding, int padding)
-{
-    size_t n = align_to(input.size, 3) / 3 * 4;
-
-    char *buffer = MakeNZ(arena, char, n + 1);
+    char *buffer = MakeNZ(arena, char, size + 1);
 
     if (buffer == NULL)
     {
         return ErrStd(ENOMEM);
     }
 
-    n = capy_base64(buffer, encoding, input.size, input.data, padding);
-    buffer[n] = 0;
-    *output = capy_string_bytes(n, buffer);
+    size = capy_base64enc_encode(encoder, buffer, n, input);
+    buffer[size] = 0;
+    *output = capy_string_bytes(size, buffer);
 
     return Ok;
 }
 
-capy_err capy_string_base64url(capy_arena *arena, capy_string *output, capy_string input, int padding)
+capy_err capy_base64enc_buffer(struct capy_base64enc encoder, capy_buffer *buffer, size_t n, const char *input)
 {
-    return capy_string_base64(arena, output, input, base64_url_enc, padding);
-}
-
-capy_err capy_string_base64std(capy_arena *arena, capy_string *output, capy_string input, int padding)
-{
-    return capy_string_base64(arena, output, input, base64_std_enc, padding);
-}
-
-capy_err capy_buffer_write_base64(capy_buffer *buffer, size_t n, const char *input, const char *encoding, int padding)
-{
-    size_t s = align_to(n, 3) / 3 * 4;
+    size_t size = capy_align_to(n, 3) / 3 * 4;
     size_t index = buffer->size;
 
-    capy_err err = capy_buffer_write_bytes(buffer, s + 1, NULL);
+    capy_err err = capy_buffer_write_bytes(buffer, size + 1, NULL);
 
-    if (!err.code)
+    if (err.code)
     {
-        n = capy_base64(buffer->data + index, encoding, n, input, padding);
-        buffer->data[index + n] = 0;
-        buffer->size = index + n;
+        return err;
     }
 
-    return err;
+    size = capy_base64enc_encode(encoder, buffer->data + index, n, input);
+    buffer->data[index + size] = 0;
+    buffer->size = index + size;
+
+    return Ok;
 }
 
-capy_err capy_buffer_write_base64url(capy_buffer *buffer, size_t n, const char *input, int padding)
+size_t capy_base64(char *output, size_t n, const char *input)
 {
-    return capy_buffer_write_base64(buffer, n, input, base64_url_enc, padding);
+    return capy_base64enc_encode(base64_stdenc, output, n, input);
 }
 
-capy_err capy_buffer_write_base64std(capy_buffer *buffer, size_t n, const char *input, int padding)
+capy_err capy_base64_string(capy_arena *arena, capy_string *output, size_t n, const char *input)
 {
-    return capy_buffer_write_base64(buffer, n, input, base64_std_enc, padding);
+    return capy_base64enc_string(base64_stdenc, arena, output, n, input);
+}
+
+capy_err capy_base64_buffer(capy_buffer *buffer, size_t n, const char *input)
+{
+    return capy_base64enc_buffer(base64_stdenc, buffer, n, input);
+}
+
+size_t capy_base64_url(char *output, size_t n, const char *input)
+{
+    return capy_base64enc_encode(base64_urlenc, output, n, input);
+}
+
+capy_err capy_base64_url_string(capy_arena *arena, capy_string *output, size_t n, const char *input)
+{
+    return capy_base64enc_string(base64_urlenc, arena, output, n, input);
+}
+
+capy_err capy_base64_url_buffer(capy_buffer *buffer, size_t n, const char *input)
+{
+    return capy_base64enc_buffer(base64_urlenc, buffer, n, input);
 }

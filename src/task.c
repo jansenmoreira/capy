@@ -43,10 +43,7 @@ union taskqueue
     capy_vec vec;
     struct
     {
-        size_t size;
-        size_t capacity;
-        size_t element_size;
-        struct task **data;
+        capy_vec_fields(struct task *, data);
         capy_arena *arena;
     };
 };
@@ -315,7 +312,7 @@ static capy_err taskqueue_add(union taskqueue *queue, struct task *value)
 
     size_t pos = queue->size;
 
-    capy_err err = capy_vec_insert(queue->arena, &queue->vec, queue->size, 1, &value);
+    capy_err err = capy_vec_insert(&queue->vec, queue->arena, queue->size, 1, &value);
 
     if (err.code)
     {
@@ -806,7 +803,7 @@ Linux static void task_cancel(void)
 // LINUX AMD64 DEFINITIONS
 //
 
-#ifdef CAPY_LINUX_AMD64
+#if defined(CAPY_OS_LINUX) && defined(CAPY_ARCH_AMD64)
 
 struct taskctx
 {
@@ -833,9 +830,9 @@ LinuxAmd64 static struct taskctx *taskctx_init(capy_arena *arena, void *stack_, 
         uint64_t *stack = stack_;
 
         *(--stack) = 0;
-        *(--stack) = Cast(uint64_t, entrypoint);
+        *(--stack) = U64(entrypoint);
 
-        ctx->rsp = Cast(uint64_t, stack);
+        ctx->rsp = U64(stack);
     }
 
     return ctx;

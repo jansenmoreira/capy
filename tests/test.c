@@ -25,13 +25,15 @@ static int test_capy_buffer_init(void)
 {
     capy_arena *arena = capy_arena_init(0, KiB(4));
 
-    ExpectNull(capy_buffer_init(arena, KiB(8)));
+    capy_buffer buffer;
 
-    capy_buffer *buffer = capy_buffer_init(arena, 8);
-    ExpectEqU(buffer->size, 0);
-    ExpectGteU(buffer->capacity, 8);
-    ExpectEqPtr(buffer->arena, arena);
-    ExpectNotNull(buffer->data);
+    ExpectErr(capy_buffer_init(&buffer, arena, KiB(8)));
+
+    ExpectOk(capy_buffer_init(&buffer, arena, 8));
+    ExpectEqU(buffer.size, 0);
+    ExpectGteU(buffer.capacity, 8);
+    ExpectEqPtr(buffer.arena, arena);
+    ExpectNotNull(buffer.data);
 
     capy_arena_destroy(arena);
     return true;
@@ -46,8 +48,10 @@ static int test_buffer_wbytes_enomem(void)
     capy_string s = {.size = size, .data = Make(arena, char, size)};
     ExpectNotNull(s.data);
 
-    capy_buffer *buffer = capy_buffer_init(arena, 8);
-    ExpectErr(capy_buffer_write_bytes(buffer, s.size, s.data));
+    capy_buffer buffer;
+
+    ExpectOk(capy_buffer_init(&buffer, arena, 8));
+    ExpectErr(capy_buffer_write_bytes(&buffer, s.size, s.data));
     capy_arena_destroy(arena);
     return true;
 }
@@ -56,8 +60,9 @@ static int test_buffer_format_enomem(void)
 {
     capy_arena *arena = capy_arena_init(0, KiB(4));
 
-    capy_buffer *buffer = capy_buffer_init(arena, 8);
-    ExpectErr(capy_buffer_write_fmt(buffer, 0, "%*s", KiB(8), " "));
+    capy_buffer buffer;
+    ExpectOk(capy_buffer_init(&buffer, arena, 8));
+    ExpectErr(capy_buffer_write_fmt(&buffer, 0, "%*s", KiB(8), " "));
     capy_arena_destroy(arena);
     return true;
 }
@@ -66,20 +71,20 @@ static int test_buffer_writes(void)
 {
     capy_arena *arena = capy_arena_init(0, KiB(4));
 
-    capy_buffer *buffer = capy_buffer_init(arena, 8);
+    capy_buffer buffer;
+    ExpectOk(capy_buffer_init(&buffer, arena, 8));
+    ExpectOk(capy_buffer_write_string(&buffer, Str("foobar\n")));
+    ExpectOk(capy_buffer_write_cstr(&buffer, "baz"));
+    ExpectOk(capy_buffer_write_bytes(&buffer, 2, "baz"));
+    ExpectOk(capy_buffer_write_fmt(&buffer, 50, " %d %.1f", 5, 1.3f));
+    ExpectEqMem(buffer.data, "foobar\nbazba 5 1.3", buffer.size);
 
-    ExpectOk(capy_buffer_write_string(buffer, Str("foobar\n")));
-    ExpectOk(capy_buffer_write_cstr(buffer, "baz"));
-    ExpectOk(capy_buffer_write_bytes(buffer, 2, "baz"));
-    ExpectOk(capy_buffer_write_fmt(buffer, 50, " %d %.1f", 5, 1.3f));
-    ExpectEqMem(buffer->data, "foobar\nbazba 5 1.3", buffer->size);
+    capy_buffer_shl(&buffer, 7);
+    ExpectEqMem(buffer.data, "bazba 5 1.3", buffer.size);
 
-    capy_buffer_shl(buffer, 7);
-    ExpectEqMem(buffer->data, "bazba 5 1.3", buffer->size);
-
-    buffer->size = 0;
-    ExpectOk(capy_buffer_write_fmt(buffer, 4, "%d", 123456));
-    ExpectEqMem(buffer->data, "1234", buffer->size);
+    buffer.size = 0;
+    ExpectOk(capy_buffer_write_fmt(&buffer, 4, "%d", 123456));
+    ExpectEqMem(buffer.data, "1234", buffer.size);
 
     capy_arena_destroy(arena);
     return true;
@@ -90,35 +95,45 @@ static int test_capy_base64(void)
     char content[256];
     size_t bytes;
 
-    bytes = capy_base64url(content, 6, "foobar", false);
+    struct capy_base64enc enc = {
+        .encoding = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_",
+        .padding = false,
+    };
+
+    bytes = capy_base64enc_encode(enc, content, 6, "foobar");
     ExpectEqU(bytes, 8);
     ExpectEqMem(content, "Zm9vYmFy", bytes);
 
-    bytes = capy_base64url(content, 6, "abcdef", false);
+    bytes = capy_base64enc_encode(enc, content, 6, "abcdef");
     ExpectEqU(bytes, 8);
     ExpectEqMem(content, "YWJjZGVm", bytes);
 
-    bytes = capy_base64url(content, 7, "foobarb", false);
+    bytes = capy_base64enc_encode(enc, content, 7, "foobarb");
     ExpectEqU(bytes, 10);
     ExpectEqMem(content, "Zm9vYmFyYg", bytes);
 
-    bytes = capy_base64url(content, 7, "foobarb", true);
+    enc.padding = true;
+    bytes = capy_base64enc_encode(enc, content, 7, "foobarb");
     ExpectEqU(bytes, 12);
     ExpectEqMem(content, "Zm9vYmFyYg==", bytes);
 
-    bytes = capy_base64url(content, 8, "foobarbz", false);
+    enc.padding = false;
+    bytes = capy_base64enc_encode(enc, content, 8, "foobarbz");
     ExpectEqU(bytes, 11);
     ExpectEqMem(content, "Zm9vYmFyYno", bytes);
 
-    bytes = capy_base64url(content, 8, "foobarbz", true);
+    enc.padding = true;
+    bytes = capy_base64enc_encode(enc, content, 8, "foobarbz");
     ExpectEqU(bytes, 12);
     ExpectEqMem(content, "Zm9vYmFyYno=", bytes);
 
-    bytes = capy_base64url(content, 3, "\x00\x1F\xBF", false);
+    enc.padding = false;
+    bytes = capy_base64enc_encode(enc, content, 3, "\x00\x1F\xBF");
     ExpectEqU(bytes, 4);
     ExpectEqMem(content, "AB-_", bytes);
 
-    bytes = capy_base64std(content, 3, "\x00\x1F\xBF", false);
+    enc.encoding = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    bytes = capy_base64enc_encode(enc, content, 3, "\x00\x1F\xBF");
     ExpectEqU(bytes, 4);
     ExpectEqMem(content, "AB+/", bytes);
 
@@ -131,29 +146,20 @@ static int test_capy_string_base64(void)
 
     capy_string result;
 
-    ExpectOk(capy_string_base64url(arena, &result, Str("foobar"), false));
+    ExpectOk(capy_base64_url_string(arena, &result, 6, "foobar"));
     ExpectEqStr(result, Str("Zm9vYmFy"));
 
-    ExpectOk(capy_string_base64url(arena, &result, Str("abcdef"), false));
+    ExpectOk(capy_base64_url_string(arena, &result, 6, "abcdef"));
     ExpectEqStr(result, Str("YWJjZGVm"));
 
-    ExpectOk(capy_string_base64url(arena, &result, Str("foobarb"), false));
+    ExpectOk(capy_base64_url_string(arena, &result, 7, "foobarb"));
     ExpectEqStr(result, Str("Zm9vYmFyYg"));
 
-    ExpectOk(capy_string_base64url(arena, &result, Str("foobarb"), true));
-    ExpectEqStr(result, Str("Zm9vYmFyYg=="));
-
-    ExpectOk(capy_string_base64url(arena, &result, Str("foobarbz"), false));
+    ExpectOk(capy_base64_url_string(arena, &result, 8, "foobarbz"));
     ExpectEqStr(result, Str("Zm9vYmFyYno"));
 
-    ExpectOk(capy_string_base64url(arena, &result, Str("foobarbz"), true));
-    ExpectEqStr(result, Str("Zm9vYmFyYno="));
-
-    ExpectOk(capy_string_base64url(arena, &result, Str("\x00\x1F\xBF"), false));
+    ExpectOk(capy_base64_url_string(arena, &result, 3, "\x00\x1F\xBF"));
     ExpectEqStr(result, Str("AB-_"));
-
-    ExpectOk(capy_string_base64std(arena, &result, Str("\x00\x1F\xBF"), false));
-    ExpectEqStr(result, Str("AB+/"));
 
     capy_arena_destroy(arena);
     return true;
@@ -163,39 +169,29 @@ static int test_capy_buffer_base64(void)
 {
     capy_arena *arena = capy_arena_init(0, KiB(8));
 
-    capy_buffer *buffer = capy_buffer_init(arena, 1024);
+    capy_buffer buffer;
 
-    buffer->size = 0;
-    ExpectOk(capy_buffer_write_base64url(buffer, 6, "foobar", false));
-    ExpectEqMem(buffer->data, "Zm9vYmFy", buffer->size);
+    ExpectOk(capy_buffer_init(&buffer, arena, 1024));
 
-    buffer->size = 0;
-    ExpectOk(capy_buffer_write_base64url(buffer, 6, "abcdef", false));
-    ExpectEqMem(buffer->data, "YWJjZGVm", buffer->size);
+    buffer.size = 0;
+    ExpectOk(capy_base64_url_buffer(&buffer, 6, "foobar"));
+    ExpectEqMem(buffer.data, "Zm9vYmFy", buffer.size);
 
-    buffer->size = 0;
-    ExpectOk(capy_buffer_write_base64url(buffer, 7, "foobarb", false));
-    ExpectEqMem(buffer->data, "Zm9vYmFyYg", buffer->size);
+    buffer.size = 0;
+    ExpectOk(capy_base64_url_buffer(&buffer, 6, "abcdef"));
+    ExpectEqMem(buffer.data, "YWJjZGVm", buffer.size);
 
-    buffer->size = 0;
-    ExpectOk(capy_buffer_write_base64url(buffer, 7, "foobarb", true));
-    ExpectEqMem(buffer->data, "Zm9vYmFyYg==", buffer->size);
+    buffer.size = 0;
+    ExpectOk(capy_base64_url_buffer(&buffer, 7, "foobarb"));
+    ExpectEqMem(buffer.data, "Zm9vYmFyYg", buffer.size);
 
-    buffer->size = 0;
-    ExpectOk(capy_buffer_write_base64url(buffer, 8, "foobarbz", false));
-    ExpectEqMem(buffer->data, "Zm9vYmFyYno", buffer->size);
+    buffer.size = 0;
+    ExpectOk(capy_base64_url_buffer(&buffer, 8, "foobarbz"));
+    ExpectEqMem(buffer.data, "Zm9vYmFyYno", buffer.size);
 
-    buffer->size = 0;
-    ExpectOk(capy_buffer_write_base64url(buffer, 8, "foobarbz", true));
-    ExpectEqMem(buffer->data, "Zm9vYmFyYno=", buffer->size);
-
-    buffer->size = 0;
-    ExpectOk(capy_buffer_write_base64url(buffer, 3, "\x00\x1F\xBF", false));
-    ExpectEqMem(buffer->data, "AB-_", buffer->size);
-
-    buffer->size = 0;
-    ExpectOk(capy_buffer_write_base64std(buffer, 3, "\x00\x1F\xBF", false));
-    ExpectEqMem(buffer->data, "AB+/", buffer->size);
+    buffer.size = 0;
+    ExpectOk(capy_base64_url_buffer(&buffer, 3, "\x00\x1F\xBF"));
+    ExpectEqMem(buffer.data, "AB-_", buffer.size);
 
     capy_arena_destroy(arena);
     return true;
@@ -407,18 +403,20 @@ static int test_http_parse_field(void)
 {
     capy_arena *arena = capy_arena_init(0, KiB(4));
 
-    capy_strkvnmap *fields = capy_strkvnmap_init(arena, 16);
+    capy_strkvnmap fields;
 
-    ExpectErr(http_parse_field(fields, Str("\x01: localhost:8080")));
-    ExpectErr(http_parse_field(fields, Str(": localhost:8080")));
-    ExpectErr(http_parse_field(fields, Str("Host : localhost:8080")));
-    ExpectErr(http_parse_field(fields, Str("Host")));
-    ExpectErr(http_parse_field(fields, Str("Host: \x01")));
-    ExpectOk(http_parse_field(fields, Str("transfer-Encoding:  deflate ; a=1 ")));
-    ExpectOk(http_parse_field(fields, Str("Transfer-encoding: gzip\t; b=2 ")));
-    ExpectOk(http_parse_field(fields, Str("transfer-encoding: chunked")));
+    ExpectOk(capy_strkvnmap_init(&fields, arena, 16));
 
-    capy_strkvn *field = capy_strkvnmap_get(fields, Str("Transfer-Encoding"));
+    ExpectErr(http_parse_field(&fields, Str("\x01: localhost:8080")));
+    ExpectErr(http_parse_field(&fields, Str(": localhost:8080")));
+    ExpectErr(http_parse_field(&fields, Str("Host : localhost:8080")));
+    ExpectErr(http_parse_field(&fields, Str("Host")));
+    ExpectErr(http_parse_field(&fields, Str("Host: \x01")));
+    ExpectOk(http_parse_field(&fields, Str("transfer-Encoding:  deflate ; a=1 ")));
+    ExpectOk(http_parse_field(&fields, Str("Transfer-encoding: gzip\t; b=2 ")));
+    ExpectOk(http_parse_field(&fields, Str("transfer-encoding: chunked")));
+
+    capy_strkvn *field = capy_strkvnmap_get(&fields, Str("Transfer-Encoding"));
 
     ExpectNotNull(field);
     ExpectEqStr(field->key, Str("Transfer-Encoding"));
@@ -435,111 +433,112 @@ static int test_capy_http_request_validate(void)
     capy_arena *arena = capy_arena_init(0, KiB(4));
 
     capy_httpreq *request = Make(arena, capy_httpreq, 1);
-    capy_strkvnmap *fields = capy_strkvnmap_init(arena, 16);
 
-    capy_strkvnmap_clear(fields);
-    *request = (capy_httpreq){.headers = fields};
+    ExpectOk(capy_strkvnmap_init(&request->headers, arena, 16));
+
+    capy_strkvnmap_clear(&request->headers);
+    *request = (capy_httpreq){.headers = request->headers};
 
     ExpectOk(http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
-    ExpectOk(http_parse_field(request->headers, Str("Host: localhost:80")));
-    ExpectOk(http_parse_field(request->headers, Str("Transfer-Encoding: chunked")));
+    ExpectOk(http_parse_field(&request->headers, Str("Host: localhost:80")));
+    ExpectOk(http_parse_field(&request->headers, Str("Transfer-Encoding: chunked")));
     ExpectOk(http_validate_request(arena, request));
     ExpectEqU(request->content_length, 0);
     ExpectEqS(request->chunked, 1);
 
-    capy_strkvnmap_clear(fields);
-    *request = (capy_httpreq){.headers = fields};
+    capy_strkvnmap_clear(&request->headers);
+    *request = (capy_httpreq){.headers = request->headers};
 
     ExpectOk(http_parse_reqline(arena, request, Str("GET http://127.0.0.1/test HTTP/1.1")));
-    ExpectOk(http_parse_field(request->headers, Str("Host: localhost:80")));
+    ExpectOk(http_parse_field(&request->headers, Str("Host: localhost:80")));
     ExpectOk(http_validate_request(arena, request));
 
-    capy_strkvnmap_clear(fields);
-    *request = (capy_httpreq){.headers = fields};
+    capy_strkvnmap_clear(&request->headers);
+    *request = (capy_httpreq){.headers = request->headers};
 
     ExpectOk(http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
-    ExpectOk(http_parse_field(request->headers, Str("Host: localhost:80")));
-    ExpectOk(http_parse_field(request->headers, Str("Content-Length: 100")));
+    ExpectOk(http_parse_field(&request->headers, Str("Host: localhost:80")));
+    ExpectOk(http_parse_field(&request->headers, Str("Content-Length: 100")));
     ExpectOk(http_validate_request(arena, request));
     ExpectEqU(request->content_length, 100);
     ExpectEqS(request->chunked, 0);
 
-    capy_strkvnmap_clear(fields);
-    *request = (capy_httpreq){.headers = fields};
+    capy_strkvnmap_clear(&request->headers);
+    *request = (capy_httpreq){.headers = request->headers};
 
     ExpectOk(http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
-    ExpectOk(http_parse_field(request->headers, Str("Host: localhost")));
+    ExpectOk(http_parse_field(&request->headers, Str("Host: localhost")));
     ExpectOk(http_validate_request(arena, request));
 
-    capy_strkvnmap_clear(fields);
-    *request = (capy_httpreq){.headers = fields};
+    capy_strkvnmap_clear(&request->headers);
+    *request = (capy_httpreq){.headers = request->headers};
 
     ExpectOk(http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
-    ExpectOk(http_parse_field(request->headers, Str("Host: localhost:80")));
-    ExpectOk(http_parse_field(request->headers, Str("Transfer-Encoding: gzip")));
+    ExpectOk(http_parse_field(&request->headers, Str("Host: localhost:80")));
+    ExpectOk(http_parse_field(&request->headers, Str("Transfer-Encoding: gzip")));
     ExpectErr(http_validate_request(arena, request));
 
-    capy_strkvnmap_clear(fields);
-    *request = (capy_httpreq){.headers = fields};
+    capy_strkvnmap_clear(&request->headers);
+    *request = (capy_httpreq){.headers = request->headers};
 
     ExpectOk(http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
-    ExpectOk(http_parse_field(request->headers, Str("Host: localhost:80")));
-    ExpectOk(http_parse_field(request->headers, Str("Transfer-Encoding: gzip")));
-    ExpectOk(http_parse_field(request->headers, Str("Transfer-Encoding: chunked")));
+    ExpectOk(http_parse_field(&request->headers, Str("Host: localhost:80")));
+    ExpectOk(http_parse_field(&request->headers, Str("Transfer-Encoding: gzip")));
+    ExpectOk(http_parse_field(&request->headers, Str("Transfer-Encoding: chunked")));
     ExpectErr(http_validate_request(arena, request));
 
-    capy_strkvnmap_clear(fields);
-    *request = (capy_httpreq){.headers = fields};
+    capy_strkvnmap_clear(&request->headers);
+    *request = (capy_httpreq){.headers = request->headers};
 
     ExpectOk(http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
-    ExpectOk(http_parse_field(request->headers, Str("Host: localhost:80")));
-    ExpectOk(http_parse_field(request->headers, Str("Transfer-Encoding: chunked")));
-    ExpectOk(http_parse_field(request->headers, Str("Content-Length: 100")));
+    ExpectOk(http_parse_field(&request->headers, Str("Host: localhost:80")));
+    ExpectOk(http_parse_field(&request->headers, Str("Transfer-Encoding: chunked")));
+    ExpectOk(http_parse_field(&request->headers, Str("Content-Length: 100")));
     ExpectErr(http_validate_request(arena, request));
 
-    capy_strkvnmap_clear(fields);
-    *request = (capy_httpreq){.headers = fields};
+    capy_strkvnmap_clear(&request->headers);
+    *request = (capy_httpreq){.headers = request->headers};
 
     ExpectOk(http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
-    ExpectOk(http_parse_field(request->headers, Str("Host: localhost:80")));
-    ExpectOk(http_parse_field(request->headers, Str("Content-Length: 100")));
-    ExpectOk(http_parse_field(request->headers, Str("Content-Length: 15")));
+    ExpectOk(http_parse_field(&request->headers, Str("Host: localhost:80")));
+    ExpectOk(http_parse_field(&request->headers, Str("Content-Length: 100")));
+    ExpectOk(http_parse_field(&request->headers, Str("Content-Length: 15")));
     ExpectErr(http_validate_request(arena, request));
 
-    request = Make(arena, capy_httpreq, 1);
-    request->headers = capy_strkvnmap_init(arena, 16);
+    capy_strkvnmap_clear(&request->headers);
+    *request = (capy_httpreq){.headers = request->headers};
 
     ExpectOk(http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
-    ExpectOk(http_parse_field(request->headers, Str("Host: localhost:80")));
-    ExpectOk(http_parse_field(request->headers, Str("Content-Length: af")));
+    ExpectOk(http_parse_field(&request->headers, Str("Host: localhost:80")));
+    ExpectOk(http_parse_field(&request->headers, Str("Content-Length: af")));
     ExpectErr(http_validate_request(arena, request));
 
-    capy_strkvnmap_clear(fields);
-    *request = (capy_httpreq){.headers = fields};
+    capy_strkvnmap_clear(&request->headers);
+    *request = (capy_httpreq){.headers = request->headers};
 
     ExpectOk(http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
     ExpectErr(http_validate_request(arena, request));
 
-    capy_strkvnmap_clear(fields);
-    *request = (capy_httpreq){.headers = fields};
+    capy_strkvnmap_clear(&request->headers);
+    *request = (capy_httpreq){.headers = request->headers};
 
     ExpectOk(http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
-    ExpectOk(http_parse_field(request->headers, Str("Host: localhost:aa")));
+    ExpectOk(http_parse_field(&request->headers, Str("Host: localhost:aa")));
     ExpectErr(http_validate_request(arena, request));
 
-    capy_strkvnmap_clear(fields);
-    *request = (capy_httpreq){.headers = fields};
+    capy_strkvnmap_clear(&request->headers);
+    *request = (capy_httpreq){.headers = request->headers};
 
     ExpectOk(http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
-    ExpectOk(http_parse_field(request->headers, Str("Host: foo@localhost:8080")));
+    ExpectOk(http_parse_field(&request->headers, Str("Host: foo@localhost:8080")));
     ExpectErr(http_validate_request(arena, request));
 
-    capy_strkvnmap_clear(fields);
-    *request = (capy_httpreq){.headers = fields};
+    capy_strkvnmap_clear(&request->headers);
+    *request = (capy_httpreq){.headers = request->headers};
 
     ExpectOk(http_parse_reqline(arena, request, Str("GET /test HTTP/1.1")));
-    ExpectOk(http_parse_field(request->headers, Str("Host: localhost:80")));
-    ExpectOk(http_parse_field(request->headers, Str("Host: example:80")));
+    ExpectOk(http_parse_field(&request->headers, Str("Host: localhost:80")));
+    ExpectOk(http_parse_field(&request->headers, Str("Host: example:80")));
     ExpectErr(http_validate_request(arena, request));
 
     capy_arena_destroy(arena);
@@ -550,30 +549,29 @@ static int test_http_write_response(void)
 {
     capy_arena *arena = capy_arena_init(0, KiB(4));
 
-    capy_strkvnmap *fields = capy_strkvnmap_init(arena, 16);
+    capy_strkvnmap fields;
 
-    fields = capy_strkvnmap_init(arena, 16);
+    ExpectOk(capy_strkvnmap_init(&fields, arena, 16));
 
-    capy_buffer *body = capy_buffer_init(arena, 1024);
-
-    capy_strkvnmap_clear(fields);
-
-    ExpectOk(capy_strkvnmap_add(fields, Str("X-Foo"), Str("bar")));
-    ExpectOk(capy_strkvnmap_add(fields, Str("X-Foo"), Str("baz")));
-    ExpectOk(capy_strkvnmap_add(fields, Str("X-Foo"), Str("buz")));
-    ExpectOk(capy_strkvnmap_set(fields, Str("X-Bar"), Str("foo")));
-
-    ExpectOk(capy_buffer_write_cstr(body, "foobar"));
-
-    capy_buffer *buffer = capy_buffer_init(arena, 1024);
+    ExpectOk(capy_strkvnmap_add(&fields, Str("X-Foo"), Str("bar")));
+    ExpectOk(capy_strkvnmap_add(&fields, Str("X-Foo"), Str("baz")));
+    ExpectOk(capy_strkvnmap_add(&fields, Str("X-Foo"), Str("buz")));
+    ExpectOk(capy_strkvnmap_set(&fields, Str("X-Bar"), Str("foo")));
 
     capy_httpresp response = {
         .status = 200,
-        .body = body,
         .headers = fields,
     };
 
-    ExpectOk(http_write_response(buffer, &response, false));
+    ExpectOk(capy_buffer_init(&response.body, arena, 1024));
+
+    ExpectOk(capy_buffer_write_cstr(&response.body, "foobar"));
+
+    capy_buffer buffer;
+
+    ExpectOk(capy_buffer_init(&buffer, arena, 1024));
+
+    ExpectOk(http_write_response(&buffer, &response, false));
 
     // char expected_response[] =
     //     "HTTP/1.1 200\r\n"
@@ -595,22 +593,23 @@ static int test_http_parse_uriparams(void)
 {
     capy_arena *arena = capy_arena_init(0, KiB(32));
 
-    capy_strkvnmap *params = capy_strkvnmap_init(arena, 8);
+    capy_strkvnmap params;
 
-    ExpectOk(http_parse_uriparams(params, Str("foo/test/bar/fe037abd-a9b8-4881-b875-a2f667e2e4ed/baz"), Str("foo/^file/bar/^id/baz")));
-    ExpectNotNull(params);
+    ExpectOk(capy_strkvnmap_init(&params, arena, 8));
 
-    capy_strkvn *param = capy_strkvnmap_get(params, Str("id"));
+    ExpectOk(http_parse_uriparams(&params, Str("foo/test/bar/fe037abd-a9b8-4881-b875-a2f667e2e4ed/baz"), Str("foo/^file/bar/^id/baz")));
+
+    capy_strkvn *param = capy_strkvnmap_get(&params, Str("id"));
     ExpectNotNull(param);
     ExpectEqStr(param->key, Str("id"));
     ExpectEqStr(param->value, Str("fe037abd-a9b8-4881-b875-a2f667e2e4ed"));
 
-    param = capy_strkvnmap_get(params, Str("file"));
+    param = capy_strkvnmap_get(&params, Str("file"));
     ExpectNotNull(param);
     ExpectEqStr(param->key, Str("file"));
     ExpectEqStr(param->value, Str("test"));
 
-    param = capy_strkvnmap_get(params, Str("other"));
+    param = capy_strkvnmap_get(&params, Str("other"));
     ExpectNull(param);
 
     capy_arena_destroy(arena);
@@ -643,8 +642,10 @@ static int test_capy_json_deserialize(void)
     ExpectTrue(value.array->data[1].boolean);
     ExpectEqS(value.array->data[2].kind, CAPY_JSON_NULL);
 
-    capy_buffer *buffer = capy_buffer_init(arena, KiB(1));
-    capy_json_serialize(buffer, value, 3);
+    capy_buffer buffer;
+
+    ExpectOk(capy_buffer_init(&buffer, arena, KiB(1)));
+    capy_json_serialize(&buffer, value, 3);
     // printf("%s\n", buffer->data);
 
     ExpectOk(capy_json_deserialize(arena, &value, "300 "));
@@ -655,7 +656,9 @@ static int test_capy_json_deserialize(void)
 static int test_capy_json_serialize(void)
 {
     capy_arena *arena = capy_arena_init(0, KiB(4));
-    capy_buffer *buffer = capy_buffer_init(arena, KiB(1));
+    capy_buffer buffer;
+
+    ExpectOk(capy_buffer_init(&buffer, arena, KiB(1)));
 
     capy_jsonval arr = capy_json_array(arena);
     ExpectOk(capy_json_array_push(arr.array, capy_json_bool(true)));
@@ -668,11 +671,11 @@ static int test_capy_json_serialize(void)
     ExpectOk(capy_json_object_set(obj.object, "c", capy_json_number(16.32)));
     ExpectOk(capy_json_object_set(obj.object, "d", arr));
 
-    capy_json_serialize(buffer, obj, 0);
+    capy_json_serialize(&buffer, obj, 0);
     // printf("%s\n", buffer->data);
-    buffer->size = 0;
+    buffer.size = 0;
 
-    capy_json_serialize(buffer, obj, 3);
+    capy_json_serialize(&buffer, obj, 3);
     // printf("%s\n", buffer->data);
 
     return true;
@@ -849,28 +852,29 @@ static int test_capy_strset(void)
 {
     capy_arena *arena = capy_arena_init(0, KiB(4));
 
-    ExpectNull(capy_strset_init(arena, KiB(8)));
+    capy_strset strset;
 
-    capy_strset *strset = capy_strset_init(arena, 2);
+    ExpectErr(capy_strset_init(&strset, arena, KiB(8)));
 
-    ExpectNotNull(strset);
-    ExpectEqU(strset->capacity, 2);
-    ExpectEqU(strset->size, 0);
-    ExpectEqPtr(strset->arena, arena);
-    ExpectNotNull(strset->items);
+    ExpectOk(capy_strset_init(&strset, arena, 2));
 
-    ExpectEqS(capy_strset_has(strset, Str("foo")), false);
+    ExpectEqU(strset.capacity, 2);
+    ExpectEqU(strset.size, 0);
+    ExpectEqPtr(strset.arena, arena);
+    ExpectNotNull(strset.items);
 
-    ExpectOk(capy_strset_add(strset, Str("foo")));
-    ExpectEqS(capy_strset_has(strset, Str("foo")), true);
+    ExpectEqS(capy_strset_has(&strset, Str("foo")), false);
 
-    capy_strset_delete(strset, Str("foo"));
+    ExpectOk(capy_strset_add(&strset, Str("foo")));
+    ExpectEqS(capy_strset_has(&strset, Str("foo")), true);
 
-    ExpectEqS(capy_strset_has(strset, Str("foo")), false);
+    capy_strset_delete(&strset, Str("foo"));
 
-    ExpectOk(capy_strset_add(strset, Str("foo")));
+    ExpectEqS(capy_strset_has(&strset, Str("foo")), false);
+
+    ExpectOk(capy_strset_add(&strset, Str("foo")));
     ExpectNotNull(Make(arena, char, capy_arena_available(arena)));
-    ExpectErr(capy_strset_add(strset, Str("bar")));
+    ExpectErr(capy_strset_add(&strset, Str("bar")));
 
     capy_arena_destroy(arena);
     return true;
@@ -880,33 +884,33 @@ static int test_capy_strkvmap(void)
 {
     capy_arena *arena = capy_arena_init(0, KiB(4));
 
-    ExpectNull(capy_strkvmap_init(arena, KiB(8)));
+    capy_strkvmap strkvmap;
 
-    capy_strkvmap *strkvmap = capy_strkvmap_init(arena, 2);
+    ExpectErr(capy_strkvmap_init(&strkvmap, arena, KiB(8)));
 
-    ExpectNotNull(strkvmap);
-    ExpectEqU(strkvmap->capacity, 2);
-    ExpectEqU(strkvmap->size, 0);
-    ExpectEqPtr(strkvmap->arena, arena);
-    ExpectNotNull(strkvmap->items);
+    ExpectOk(capy_strkvmap_init(&strkvmap, arena, 2));
 
-    capy_strkv *kv = capy_strkvmap_get(strkvmap, Str("foo"));
-    ExpectNull(kv);
+    ExpectEqU(strkvmap.capacity, 2);
+    ExpectEqU(strkvmap.size, 0);
+    ExpectEqPtr(strkvmap.arena, arena);
+    ExpectNotNull(strkvmap.items);
 
-    ExpectOk(capy_strkvmap_set(strkvmap, Str("foo"), Str("bar")));
+    ExpectNull(capy_strkvmap_get(&strkvmap, Str("foo")));
 
-    kv = capy_strkvmap_get(strkvmap, Str("foo"));
+    ExpectOk(capy_strkvmap_set(&strkvmap, Str("foo"), Str("bar")));
+
+    capy_strkv *kv = capy_strkvmap_get(&strkvmap, Str("foo"));
     ExpectNotNull(kv);
     ExpectEqStr(kv->key, Str("foo"));
     ExpectEqStr(kv->value, Str("bar"));
 
-    capy_strkvmap_delete(strkvmap, Str("foo"));
-    ExpectNull(capy_strkvmap_get(strkvmap, Str("foo")));
+    capy_strkvmap_delete(&strkvmap, Str("foo"));
+    ExpectNull(capy_strkvmap_get(&strkvmap, Str("foo")));
 
-    ExpectOk(capy_strkvmap_set(strkvmap, Str("foo"), Str("bar")));
+    ExpectOk(capy_strkvmap_set(&strkvmap, Str("foo"), Str("bar")));
 
     ExpectNotNull(Make(arena, char, capy_arena_available(arena)));
-    ExpectErr(capy_strkvmap_set(strkvmap, Str("bar"), Str("foo")));
+    ExpectErr(capy_strkvmap_set(&strkvmap, Str("bar"), Str("foo")));
 
     capy_arena_destroy(arena);
     return true;
@@ -916,21 +920,22 @@ static int test_capy_strkvnmap(void)
 {
     capy_arena *arena = capy_arena_init(0, KiB(4));
 
-    ExpectNull(capy_strkvnmap_init(arena, KiB(8)));
+    capy_strkvnmap strkvnmap;
 
-    capy_strkvnmap *strkvnmap = capy_strkvnmap_init(arena, 2);
+    ExpectErr(capy_strkvnmap_init(&strkvnmap, arena, KiB(8)));
 
-    ExpectNotNull(strkvnmap);
-    ExpectEqU(strkvnmap->capacity, 2);
-    ExpectEqU(strkvnmap->size, 0);
-    ExpectEqPtr(strkvnmap->arena, arena);
-    ExpectNotNull(strkvnmap->items);
+    ExpectOk(capy_strkvnmap_init(&strkvnmap, arena, 2));
 
-    ExpectOk(capy_strkvnmap_add(strkvnmap, Str("foo"), Str("bar")));
-    ExpectOk(capy_strkvnmap_add(strkvnmap, Str("foo"), Str("baz")));
-    ExpectOk(capy_strkvnmap_add(strkvnmap, Str("foo"), Str("buz")));
+    ExpectEqU(strkvnmap.capacity, 2);
+    ExpectEqU(strkvnmap.size, 0);
+    ExpectEqPtr(strkvnmap.arena, arena);
+    ExpectNotNull(strkvnmap.items);
 
-    capy_strkvn *strkvn = capy_strkvnmap_get(strkvnmap, Str("foo"));
+    ExpectOk(capy_strkvnmap_add(&strkvnmap, Str("foo"), Str("bar")));
+    ExpectOk(capy_strkvnmap_add(&strkvnmap, Str("foo"), Str("baz")));
+    ExpectOk(capy_strkvnmap_add(&strkvnmap, Str("foo"), Str("buz")));
+
+    capy_strkvn *strkvn = capy_strkvnmap_get(&strkvnmap, Str("foo"));
     ExpectNotNull(strkvn);
     ExpectEqStr(strkvn->key, Str("foo"));
     ExpectEqStr(strkvn->value, Str("bar"));
@@ -942,26 +947,26 @@ static int test_capy_strkvnmap(void)
     ExpectEqStr(strkvn->next->next->value, Str("buz"));
     ExpectNull(strkvn->next->next->next);
 
-    ExpectOk(capy_strkvnmap_set(strkvnmap, Str("foo"), Str("bar")));
+    ExpectOk(capy_strkvnmap_set(&strkvnmap, Str("foo"), Str("bar")));
 
-    strkvn = capy_strkvnmap_get(strkvnmap, Str("foo"));
+    strkvn = capy_strkvnmap_get(&strkvnmap, Str("foo"));
     ExpectNotNull(strkvn);
     ExpectEqStr(strkvn->key, Str("foo"));
     ExpectEqStr(strkvn->value, Str("bar"));
     ExpectNull(strkvn->next);
 
-    capy_strkvnmap_delete(strkvnmap, Str("foo"));
-    strkvn = capy_strkvnmap_get(strkvnmap, Str("foo"));
+    capy_strkvnmap_delete(&strkvnmap, Str("foo"));
+    strkvn = capy_strkvnmap_get(&strkvnmap, Str("foo"));
     ExpectNull(strkvn);
 
-    ExpectOk(capy_strkvnmap_add(strkvnmap, Str("bar"), Str("foo")));
-    ExpectOk(capy_strkvnmap_add(strkvnmap, Str("foo"), Str("bar")));
-    ExpectOk(capy_strkvnmap_add(strkvnmap, Str("foo"), Str("baz")));
+    ExpectOk(capy_strkvnmap_add(&strkvnmap, Str("bar"), Str("foo")));
+    ExpectOk(capy_strkvnmap_add(&strkvnmap, Str("foo"), Str("bar")));
+    ExpectOk(capy_strkvnmap_add(&strkvnmap, Str("foo"), Str("baz")));
 
     ExpectNotNull(Make(arena, char, capy_arena_available(arena)));
-    ExpectErr(capy_strkvnmap_add(strkvnmap, Str("foo"), Str("fail")));
-    ExpectErr(capy_strkvnmap_add(strkvnmap, Str("baz"), Str("fail")));
-    ExpectErr(capy_strkvnmap_set(strkvnmap, Str("baz"), Str("fail")));
+    ExpectErr(capy_strkvnmap_add(&strkvnmap, Str("foo"), Str("fail")));
+    ExpectErr(capy_strkvnmap_add(&strkvnmap, Str("baz"), Str("fail")));
+    ExpectErr(capy_strkvnmap_set(&strkvnmap, Str("baz"), Str("fail")));
 
     return true;
 }
@@ -979,13 +984,13 @@ static int test_capy_vec_insert(void)
 
     vec.items = Make(arena, int, vec.capacity);
 
-    ExpectOk(capy_vec_insert(arena, &vec, 0, 5, Arr(int, 6, 7, 8, 9, 10)));
+    ExpectOk(capy_vec_insert(&vec, arena, 0, 5, Arr(int, 6, 7, 8, 9, 10)));
     ExpectEqU(vec.size, 5);
 
-    ExpectOk(capy_vec_insert(arena, &vec, 0, 5, Arr(int, 1, 2, 3, 4, 5)));
+    ExpectOk(capy_vec_insert(&vec, arena, 0, 5, Arr(int, 1, 2, 3, 4, 5)));
     ExpectEqU(vec.size, 10);
 
-    ExpectOk(capy_vec_insert(arena, &vec, 0, 1, NULL));
+    ExpectOk(capy_vec_insert(&vec, arena, 0, 1, NULL));
     ExpectEqU(vec.size, 11);
 
     int *data = Cast(int *, vec.items);
@@ -996,9 +1001,9 @@ static int test_capy_vec_insert(void)
         ExpectEqS(data[i], i);
     }
 
-    ExpectErr(capy_vec_insert(arena, &vec, 0, MiB(1), NULL));
-    ExpectErr(capy_vec_insert(arena, &vec, 20, 10, NULL));
-    ExpectErr(capy_vec_insert(NULL, &vec, 0, 6, NULL));
+    ExpectErr(capy_vec_insert(&vec, arena, 0, MiB(1), NULL));
+    ExpectErr(capy_vec_insert(&vec, arena, 20, 10, NULL));
+    ExpectErr(capy_vec_insert(&vec, NULL, 0, 6, NULL));
 
     return true;
 }
@@ -1016,7 +1021,7 @@ static int test_capy_vec_delete(void)
 
     vec.items = Make(arena, int, vec.capacity);
 
-    ExpectOk(capy_vec_insert(arena, &vec, 0, 11, Arr(int, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)));
+    ExpectOk(capy_vec_insert(&vec, arena, 0, 11, Arr(int, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)));
     ExpectEqU(vec.size, 11);
 
     ExpectOk(capy_vec_delete(&vec, 5, 0));

@@ -6,18 +6,18 @@ static capy_err error_response(capy_httpresp *response, capy_httpstatus status, 
     capy_err err;
 
     response->status = status;
-    response->body->size = 0;
+    response->body.size = 0;
 
-    err = capy_buffer_write_fmt(response->body, 0, "%s\n", message);
+    err = capy_buffer_write_fmt(&response->body, 0, "%s\n", message);
 
     if (err.code)
     {
         return err;
     }
 
-    capy_strkvnmap_clear(response->headers);
+    capy_strkvnmap_clear(&response->headers);
 
-    err = capy_strkvnmap_set(response->headers, Str("Content-Type"), Str("text/plain; chartset=UTF-8"));
+    err = capy_strkvnmap_set(&response->headers, Str("Content-Type"), Str("text/plain; chartset=UTF-8"));
 
     if (err.code)
     {
@@ -31,7 +31,7 @@ static capy_err explode_handler(Unused capy_arena *arena, Unused capy_httpreq *r
 {
     capy_err err;
 
-    err = capy_buffer_write_fmt(response->body, 0, "%*s", 1024, " ");
+    err = capy_buffer_write_fmt(&response->body, 0, "%*s", 1024, " ");
 
     if (err.code)
     {
@@ -58,9 +58,9 @@ static capy_err params_handler(Unused capy_arena *arena, capy_httpreq *request, 
 {
     capy_err err;
 
-    capy_strkvn *param = capy_strkvnmap_get(request->params, Str("id"));
+    capy_strkvn *param = capy_strkvnmap_get(&request->params, Str("id"));
 
-    err = capy_buffer_write_fmt(response->body, 0, "%.*s -> %.*s\n",
+    err = capy_buffer_write_fmt(&response->body, 0, "%.*s -> %.*s\n",
                                 (int)param->key.size, param->key.data,
                                 (int)param->value.size, param->value.data);
 
@@ -69,11 +69,11 @@ static capy_err params_handler(Unused capy_arena *arena, capy_httpreq *request, 
         return ErrWrap(err, "Failed to get URI params");
     }
 
-    for (size_t i = 0; i < request->query->capacity; i++)
+    for (size_t i = 0; i < request->query.capacity; i++)
     {
-        for (capy_strkvn *param = capy_strkvnmap_at(request->query, i); param != NULL; param = param->next)
+        for (capy_strkvn *param = capy_strkvnmap_at(&request->query, i); param != NULL; param = param->next)
         {
-            err = capy_buffer_write_fmt(response->body, 0, "%s: %s\n", param->key.data, param->value.data);
+            err = capy_buffer_write_fmt(&response->body, 0, "%s: %s\n", param->key.data, param->value.data);
 
             if (err.code)
             {
@@ -101,18 +101,18 @@ static capy_err echo_handler(capy_arena *arena, capy_httpreq *request, capy_http
         return ErrWrap(err, "Failed to serialize URI");
     }
 
-    err = capy_buffer_write_fmt(response->body, 0, "uri: %s\n", uri.data);
+    err = capy_buffer_write_fmt(&response->body, 0, "uri: %s\n", uri.data);
 
     if (err.code)
     {
         return ErrWrap(err, "Failed to write URI");
     }
 
-    for (size_t i = 0; i < request->headers->capacity; i++)
+    for (size_t i = 0; i < request->headers.capacity; i++)
     {
-        for (capy_strkvn *header = capy_strkvnmap_at(request->headers, i); header != NULL; header = header->next)
+        for (capy_strkvn *header = capy_strkvnmap_at(&request->headers, i); header != NULL; header = header->next)
         {
-            err = capy_buffer_write_fmt(response->body, 0, "%s: %s\n", header->key.data, header->value.data);
+            err = capy_buffer_write_fmt(&response->body, 0, "%s: %s\n", header->key.data, header->value.data);
 
             if (err.code)
             {
@@ -121,7 +121,7 @@ static capy_err echo_handler(capy_arena *arena, capy_httpreq *request, capy_http
         }
     }
 
-    err = capy_buffer_write_fmt(response->body, 0, "size: %lu\n", request->content_length);
+    err = capy_buffer_write_fmt(&response->body, 0, "size: %lu\n", request->content_length);
 
     if (err.code)
     {
@@ -132,7 +132,7 @@ static capy_err echo_handler(capy_arena *arena, capy_httpreq *request, capy_http
 
     int tabsize = 3;
 
-    capy_strkvn *qtab = capy_strkvnmap_get(request->query, Str("tabsize"));
+    capy_strkvn *qtab = capy_strkvnmap_get(&request->query, Str("tabsize"));
 
     if (qtab != NULL)
     {
@@ -150,21 +150,21 @@ static capy_err echo_handler(capy_arena *arena, capy_httpreq *request, capy_http
         return ErrWrap(err, "Failed to parse request body");
     }
 
-    err = capy_json_serialize(response->body, value, tabsize);
+    err = capy_json_serialize(&response->body, value, tabsize);
 
     if (err.code)
     {
         return ErrWrap(err, "Failed to serialize JSON value to response");
     }
 
-    err = capy_buffer_write_cstr(response->body, "\n");
+    err = capy_buffer_write_cstr(&response->body, "\n");
 
     if (err.code)
     {
         return ErrWrap(err, "Failed to write newline");
     }
 
-    err = capy_strkvnmap_set(response->headers, Str("Content-Type"), Str("application/json"));
+    err = capy_strkvnmap_set(&response->headers, Str("Content-Type"), Str("application/json"));
 
     if (err.code)
     {
